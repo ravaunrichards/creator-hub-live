@@ -1,8 +1,8 @@
 import { AccessToken } from 'livekit-server-sdk';
 
 /**
- * Validates a room name according to official LiveKit specifications.
- * @param {string} roomName - Name string to test.
+ * Validates a room name according to official LiveKit character specifications.
+ * @param {string} roomName - Name string to validate.
  * @returns {boolean}
  */
 export function validateRoomName(roomName) {
@@ -10,7 +10,7 @@ export function validateRoomName(roomName) {
 }
 
 /**
- * Generates an authenticated secure AccessToken for real-time WebRTC room validation.
+ * Generates an authenticated secure AccessToken for real-time WebRTC room token validation.
  * @param {Object} options - Parameter properties mapping block.
  * @param {string} options.userId - Unique reference UUID of the matching user profile.
  * @param {string} options.roomName - The designation target string of the stream channel.
