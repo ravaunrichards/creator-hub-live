@@ -1,0 +1,10 @@
+{
+  "name": "creator-hub-creator-network",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node tests/integration-check.js",
+    "backend:check": "cd backend && npm run check",
+    "backend:test": "cd backend && npm run test"
+  }
+}
