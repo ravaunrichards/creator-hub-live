@@ -1,10 +1,10 @@
-﻿// Creator Hub Live — browser-safe runtime configuration.
+// Creator Hub Live — browser-safe runtime configuration.
 // Private service credentials belong only in the deployed backend environment.
 (function () {
   'use strict';
   
-  // ✔️ FIXED: Connected directly to your active live Render backend API instance
-  var configuredBase = 'https://onrender.com';
+  // ✔️ FIXED: Pointed directly to your active live Render backend API instance
+  var configuredBase = 'https://creator-hub-live-02c1.onrender.com';
   
   var CreatorHubConfig = {
     app: {
@@ -67,6 +67,7 @@
   CreatorHubConfig.API_VERSION = 'v1';
   CreatorHubConfig.DEBUG = false;
 
+  // Global browser mapping definitions explicitly loaded for application pages
   window.CreatorHubConfig = CreatorHubConfig;
   window.CHL_CONFIG = CreatorHubConfig;
   window.APP_CONFIG = CreatorHubConfig;
