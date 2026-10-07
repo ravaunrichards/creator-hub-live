@@ -16,7 +16,6 @@ export function validateRoomName(roomName) {
 
 function validateIdentity(userId) {
   const identity = clean(userId);
-
   return identity.length > 0 && identity.length <= 128;
 }
 
@@ -33,10 +32,7 @@ function getLiveKitUrl() {
     );
   }
 
-  if (
-    !url.startsWith('wss://') &&
-    !url.startsWith('ws://')
-  ) {
+  if (!url.startsWith('wss://') && !url.startsWith('ws://')) {
     throw Object.assign(
       new Error('LIVEKIT_URL must be a valid ws:// or wss:// URL.'),
       {
