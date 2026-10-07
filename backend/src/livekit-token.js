@@ -8,34 +8,22 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
-/**
- * Validates a LiveKit room name.
- */
 export function validateRoomName(roomName) {
   return /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/.test(
     clean(roomName)
   );
 }
 
-/**
- * Validates a LiveKit participant identity.
- */
 function validateIdentity(userId) {
   const identity = clean(userId);
 
-  return (
-    identity.length > 0 &&
-    identity.length <= 128
-  );
+  return identity.length > 0 && identity.length <= 128;
 }
 
-/**
- * Validates the configured LiveKit WebSocket URL.
- */
 function getLiveKitUrl() {
-  const value = clean(process.env.LIVEKIT_URL);
+  const url = clean(process.env.LIVEKIT_URL);
 
-  if (!value) {
+  if (!url) {
     throw Object.assign(
       new Error('LIVEKIT_URL is not configured.'),
       {
@@ -46,8 +34,8 @@ function getLiveKitUrl() {
   }
 
   if (
-    !value.startsWith('wss://') &&
-    !value.startsWith('ws://')
+    !url.startsWith('wss://') &&
+    !url.startsWith('ws://')
   ) {
     throw Object.assign(
       new Error('LIVEKIT_URL must be a valid ws:// or wss:// URL.'),
@@ -58,12 +46,9 @@ function getLiveKitUrl() {
     );
   }
 
-  return value;
+  return url;
 }
 
-/**
- * Creates a secure LiveKit access token.
- */
 export async function createLiveKitToken({
   userId,
   roomName,
@@ -112,10 +97,9 @@ export async function createLiveKitToken({
 
   const requestedTtl = Number(ttlSeconds);
 
-  const safeTtl =
-    Number.isFinite(requestedTtl)
-      ? Math.trunc(requestedTtl)
-      : 3600;
+  const safeTtl = Number.isFinite(requestedTtl)
+    ? Math.trunc(requestedTtl)
+    : 3600;
 
   const boundedTtlSeconds = Math.max(
     MIN_TTL_SECONDS,
@@ -143,9 +127,6 @@ export async function createLiveKitToken({
   return await token.toJwt();
 }
 
-/**
- * Returns non-secret LiveKit configuration status.
- */
 export function livekitHealth() {
   const url = clean(process.env.LIVEKIT_URL);
   const apiKey = clean(process.env.LIVEKIT_API_KEY);
