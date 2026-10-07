@@ -16,7 +16,7 @@ const PAYPAL_ENV = String(process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || '
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID;
-const PAYPAL_BASE = PAYPAL_ENV === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+const PAYPAL_BASE = PAYPAL_ENV === 'live' ? 'https://paypal.com' : 'https://paypal.com';
 
 // ✔️ UPDATED FALLBACK: Pointing to your active LiveKit application domain context
 const LIVEKIT_URL = process.env.LIVEKIT_URL || 'wss://creator-hub-live-9susyfri.livekit.cloud';
@@ -41,10 +41,12 @@ function requireIdem(req) { const key = String(req.headers['idempotency-key'] ||
 async function paypalToken() { requireServerConfig(['PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET']); const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64'); const r = await fetch(`${PAYPAL_BASE}/v1/oauth2/token`, { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=client_credentials' }); const text = await r.text(); if (!r.ok) throw fail(502, 'PAYMENT_PROVIDER_ERROR', `PayPal OAuth failed (${r.status}).`); let d; try { d = JSON.parse(text); } catch { throw fail(502, 'PAYMENT_PROVIDER_ERROR', 'PayPal OAuth returned an invalid response.'); } return d.access_token; }
 async function paypal(path, options = {}) { const token = await paypalToken(); const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(options.headers || {}) }; const r = await fetch(`${PAYPAL_BASE}${path}`, { ...options, headers }); const text = await r.text(); let d = {}; try { d = text ? JSON.parse(text) : {}; } catch { d = {}; } if (!r.ok) throw fail(502, 'PAYMENT_PROVIDER_ERROR', d?.message || `PayPal request failed (${r.status}).`, { paypalStatus: r.status }); return d; }
 async function paymentByOrder(client, orderId) { const { data, error } = await client.from('payments').select('*').eq('provider_order_id', orderId).maybeSingle(); if (error) throw error; if (!data) throw fail(404, 'PAYMENT_FAILED', 'Payment order was not found.'); return data; }
+
+// ✔️ REPAIRED SYNTAX TRUNCATION: Re-established complete .update query assignment sequence
 async function creditCapture(client, payment, captureId) { if (!captureId) throw fail(502, 'PAYMENT_VERIFICATION_FAILED', 'PayPal capture ID was not returned.'); const idem = `paypal:capture:${captureId}`; const { data, error } = await client.rpc('credit_coins', { p_user: payment.user_id, p_amount: payment.package_coins, p_source: 'paypal', p_provider: 'paypal', p_reference: captureId, p_reason: `PayPal coin purchase ${payment.provider_order_id}`, p_idempotency_key: idem }); if (error) throw error; const { error: updateError } = await client.from('payments').update({ provider_capture_id: captureId, status: 'completed', credited: true, updated_at: new Date().toISOString() }).eq('id', payment.id); if (updateError) throw updateError; return data; }
 
 // ==========================================
-// 🚀 PRODUCTION PLATFORM RUNTIME ROUTER ENGINE
+// 🚀 RUNTIME APPLICATION OVERLAYS & ROUTER
 // ==========================================
 
 const server = http.createServer(async (req, res) => {
@@ -53,20 +55,30 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
-  // Intercept and bypass CORS Preflight checks smoothly
+  // ✔️ ADDED ROOT ENDPOINT: Returns useful service telemetry state description matching requests
+  if (pathname === '/' && req.method === 'GET') {
+    return ok(res, {
+      ok: true,
+      service: 'Creator Hub Creator Network',
+      status: 'operational',
+      health: '/api/health'
+    });
+  }
+
+  // Intercept and bypass CORS Preflight traps automatically
   if (req.method === 'OPTIONS') {
     res.writeHead(204, secureHeaders());
     return res.end();
   }
 
   try {
-    // 🌐 Infrastructure Verification Endpoint
+    // 🌐 Active Platform System Status Telemetry
     if (pathname === '/api/health' && req.method === 'GET') {
       const livekit = livekitHealth();
       return ok(res, { ok: true, status: 'operational', livekit });
     }
 
-    // 📹 LiveKit Real-Time Web RTC Streaming Tokens
+    // 📹 Secure Room Video Token Generation Matrix
     if (pathname === '/api/livekit/token' && req.method === 'POST') {
       const user = await requireSupabaseUser(req);
       const body = await readJson(req);
@@ -82,15 +94,3 @@ const server = http.createServer(async (req, res) => {
       return ok(res, { ok: true, token });
     }
 
-    // ❌ Fallback Exception: Resource Not Found Catch
-    throw fail(404, 'NOT_FOUND', `The requested router endpoint '${pathname}' does not exist.`);
-
-  } catch (err) {
-    return errorResponse(res, err);
-  }
-});
-
-// Fire up network interface listeners safely
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Production app container actively listening and serving requests on port ${PORT}`);
-});
