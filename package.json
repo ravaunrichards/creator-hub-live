@@ -1,0 +1,13 @@
+{
+  "name": "creator-hub-creator-network",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node tests/integration-check.js",
+    "backend:check": "cd backend && npm run check",
+    "backend:test": "cd backend && npm run test",
+    "sync:android-web": "node scripts/sync-web-assets.js",
+    "repair:contracts": "node tests/repair-contract.js",
+    "backend:smoke": "cd backend && npm run smoke"
+  }
+}
