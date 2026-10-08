@@ -259,7 +259,7 @@ function applyCors(req, res) {
 
   res.setHeader(
     'Access-Control-Allow-Methods',
-    'GET, POST, OPTIONS'
+    'GET, POST, PUT, OPTIONS'
   );
 }
 
@@ -1245,6 +1245,70 @@ const server = http.createServer(
           'PAYMENT_CAPTURE_FAILED',
           `PayPal capture status: ${captureResponse.status}`
         );
+      }
+
+      // ------------------------------------------------------------------
+      // PayPal Payout Info Management
+      // ------------------------------------------------------------------
+
+      if (pathname === '/api/payments/paypal/info' && method === 'GET') {
+        const user = await requireSupabaseUser(req);
+        const client = db();
+
+        const { data, error } = await client
+          .from('paypal_payout_info')
+          .select('paypal_email,is_verified,created_at,updated_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          const normalized = normalizeExternalError(error);
+          throw fail(500, 'PAYPAL_INFO_LOOKUP_FAILED', normalized.message);
+        }
+
+        return ok(res, {
+          paypalEmail: data?.paypal_email || null,
+          isVerified: data?.is_verified || false,
+          updatedAt: data?.updated_at || null
+        });
+      }
+
+      if (pathname === '/api/payments/paypal/info' && method === 'PUT') {
+        const user = await requireSupabaseUser(req);
+        const body = await readJson(req);
+        const paypalEmail = String(body.paypalEmail || body.email || '').trim().toLowerCase();
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!paypalEmail || !emailRegex.test(paypalEmail)) {
+          throw fail(400, 'INVALID_INPUT', 'A valid PayPal email address is required.');
+        }
+
+        const client = db();
+
+        const { data, error } = await client
+          .from('paypal_payout_info')
+          .upsert(
+            {
+              user_id: user.id,
+              paypal_email: paypalEmail,
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: 'user_id' }
+          )
+          .select('paypal_email,is_verified,updated_at')
+          .single();
+
+        if (error) {
+          const normalized = normalizeExternalError(error);
+          throw fail(500, 'PAYPAL_INFO_SAVE_FAILED', normalized.message);
+        }
+
+        return ok(res, {
+          saved: true,
+          paypalEmail: data.paypal_email,
+          isVerified: data.is_verified,
+          updatedAt: data.updated_at
+        });
       }
 
       // ------------------------------------------------------------------
