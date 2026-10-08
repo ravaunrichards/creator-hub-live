@@ -13,25 +13,48 @@ export async function verifyHostPublishing(roomName, identity) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const httpBase = livekitHttpBase();
+  
   if (!apiKey || !apiSecret || !httpBase) {
-    throw Object.assign(new Error('LiveKit server configuration is incomplete.'), { code: 'REQUIRES_CONFIGURATION', status: 503 });
+    throw Object.assign(new Error('LiveKit server configuration is incomplete.'), { 
+      code: 'REQUIRES_CONFIGURATION', 
+      status: 503 
+    });
   }
+
   const svc = new RoomServiceClient(httpBase, apiKey, apiSecret);
   let participants;
   try {
     participants = await svc.listParticipants(roomName);
   } catch (e) {
-    throw Object.assign(new Error('Unable to verify LIVE publication with LiveKit.'), { code: 'LIVEKIT_UNREACHABLE', status: 502, cause: e });
+    throw Object.assign(new Error('Unable to verify LIVE publication with LiveKit.'), { 
+      code: 'LIVEKIT_UNREACHABLE', 
+      status: 502, 
+      cause: e 
+    });
   }
+
   const host = (participants || []).find(p => String(p.identity) === String(identity));
   if (!host) {
-    throw Object.assign(new Error('Host is not connected to the LIVE room yet.'), { code: 'LIVE_PUBLISH_REQUIRED', status: 409 });
+    throw Object.assign(new Error('Host is not connected to the LIVE room yet.'), { 
+      code: 'LIVE_PUBLISH_REQUIRED', 
+      status: 409 
+    });
   }
-  const tracks = host.tracks || [];
-  const publishing = tracks.some(t => !t.muted);
+
+  // Handle both array and iterable/map track structures if returned by LiveKit SDK
+  const tracks = host.tracks ? Array.from(host.tracks) : [];
+  const publishing = tracks.some(t => {
+    const isMuted = t.muted !== undefined ? t.muted : t.isMuted;
+    return !isMuted;
+  });
+
   if (!publishing) {
-    throw Object.assign(new Error('Camera/microphone publication was not detected.'), { code: 'LIVE_PUBLISH_REQUIRED', status: 409 });
+    throw Object.assign(new Error('Camera/microphone publication was not detected.'), { 
+      code: 'LIVE_PUBLISH_REQUIRED', 
+      status: 409 
+    });
   }
+
   return { identity, trackCount: tracks.length };
 }
 
@@ -74,7 +97,6 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     canPublishData: true 
   });
 
-  // CRITICAL FIX: token.toJwt() is an asynchronous operation and MUST be awaited
   return await token.toJwt();
 }
 
