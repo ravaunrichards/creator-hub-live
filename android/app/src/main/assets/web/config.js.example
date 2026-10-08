@@ -1,3 +1,0 @@
-// Deployment override example.
-// Leave blank when frontend and Creator Hub backend share the same origin.
-window.__CREATOR_HUB_API_BASE__ = '';

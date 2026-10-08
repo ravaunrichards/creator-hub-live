@@ -1,6 +1,0 @@
-<resources>
-    <style name="Theme.CreatorHubLive" parent="Theme.AppCompat.DayNight.NoActionBar">
-        <item name="android:statusBarColor">#0B0B10</item>
-        <item name="android:windowBackground">#0B0B10</item>
-    </style>
-</resources>
