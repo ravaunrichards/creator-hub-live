@@ -8,6 +8,7 @@
   var apiCfg = cfg.api || {};
 
   CHL.cfg = cfg;
+
   CHL.brand =
     (cfg.app && cfg.app.name) ||
     cfg.BRAND ||
@@ -90,6 +91,10 @@
 
     var base = CHL.getApiBase();
 
+    if (!base) {
+      return p.replace(/^\/+/, '/');
+    }
+
     return (
       base +
       '/' +
@@ -106,14 +111,24 @@
       return null;
     }
 
-    var result = await sb.auth.getSession();
+    try {
+      var result =
+        await sb.auth.getSession();
 
-    return (
-      result &&
-      result.data
-        ? result.data.session || null
-        : null
-    );
+      return (
+        result &&
+        result.data
+          ? result.data.session || null
+          : null
+      );
+    } catch (e) {
+      console.warn(
+        'Unable to read Supabase session.',
+        e
+      );
+
+      return null;
+    }
   };
 
   CHL.getAccessToken = async function () {
@@ -187,10 +202,11 @@
         data.error
       );
 
-    var err = new Error(
-      message ||
-      ('HTTP ' + response.status)
-    );
+    var err =
+      new Error(
+        message ||
+        ('HTTP ' + response.status)
+      );
 
     err.status =
       response.status;
@@ -204,12 +220,54 @@
             ? 'FORBIDDEN'
             : response.status === 404
               ? 'NOT_FOUND'
-              : 'API_ERROR'
+              : response.status === 409
+                ? 'CONFLICT'
+                : response.status === 422
+                  ? 'VALIDATION_ERROR'
+                  : 'API_ERROR'
       );
 
     err.details =
       data &&
       data.details;
+
+    err.response =
+      response;
+
+    return err;
+  }
+
+  function createNetworkError(
+    original,
+    url
+  ) {
+    var message =
+      (
+        original &&
+        original.message
+      ) ||
+      'Network request failed.';
+
+    var err =
+      new Error(
+        message
+      );
+
+    err.name =
+      (
+        original &&
+        original.name
+      ) ||
+      'NetworkError';
+
+    err.code =
+      'BACKEND_UNAVAILABLE';
+
+    err.url =
+      url;
+
+    err.originalError =
+      original;
 
     return err;
   }
@@ -218,25 +276,48 @@
     path,
     options
   ) {
-    var opts = Object.assign(
-      {
-        method: 'GET',
-        headers: {},
-        timeoutMs: 15000
-      },
-      options || {}
-    );
+    var opts =
+      Object.assign(
+        {
+          method: 'GET',
+          headers: {},
+          timeoutMs: 15000
+        },
+        options || {}
+      );
+
+    var url =
+      CHL.apiUrl(path);
+
+    if (!url) {
+      var configError =
+        new Error(
+          'Creator Hub backend URL is not configured.'
+        );
+
+      configError.code =
+        'CONFIG_ERROR';
+
+      configError.status =
+        500;
+
+      throw configError;
+    }
 
     var headers =
       new Headers(
         opts.headers || {}
       );
 
+    /*
+     * JSON bodies.
+     */
     if (
       opts.body &&
       typeof opts.body === 'object' &&
       !(opts.body instanceof FormData) &&
-      !(opts.body instanceof Blob)
+      !(opts.body instanceof Blob) &&
+      !(opts.body instanceof ArrayBuffer)
     ) {
       headers.set(
         'Content-Type',
@@ -247,55 +328,126 @@
         JSON.stringify(opts.body);
     }
 
+    /*
+     * Allow callers to explicitly supply an
+     * AbortSignal while retaining our timeout.
+     */
     var controller =
       new AbortController();
+
+    var timeoutMs =
+      Number(
+        opts.timeoutMs
+      );
+
+    if (
+      !Number.isFinite(timeoutMs) ||
+      timeoutMs <= 0
+    ) {
+      timeoutMs = 15000;
+    }
 
     var timeout =
       setTimeout(
         function () {
           controller.abort();
         },
-        Number(
-          opts.timeoutMs || 15000
-        )
+        timeoutMs
       );
 
     var signal =
       opts.signal ||
       controller.signal;
 
+    /*
+     * IMPORTANT:
+     *
+     * Creator Hub frontend and backend are separate
+     * Render origins.
+     *
+     * Authentication is carried explicitly through
+     * the Authorization header.
+     *
+     * Do not rely on same-origin browser cookies.
+     */
+    var fetchOptions = {
+      method:
+        opts.method,
+
+      headers:
+        headers,
+
+      body:
+        opts.body,
+
+      signal:
+        signal,
+
+      credentials:
+        'omit',
+
+      mode:
+        'cors',
+
+      cache:
+        opts.cache ||
+        'no-store'
+    };
+
     try {
-      var response =
-        await fetch(
-          CHL.apiUrl(path),
-          {
-            method:
-              opts.method,
-            headers:
-              headers,
-            body:
-              opts.body,
-            signal:
-              signal,
-            credentials:
-              'same-origin'
-          }
+      var response;
+
+      try {
+        response =
+          await fetch(
+            url,
+            fetchOptions
+          );
+      } catch (networkError) {
+        if (
+          networkError &&
+          networkError.name ===
+            'AbortError'
+        ) {
+          var timeoutError =
+            new Error(
+              'The Creator Hub backend timed out.'
+            );
+
+          timeoutError.code =
+            'BACKEND_TIMEOUT';
+
+          timeoutError.status =
+            408;
+
+          timeoutError.url =
+            url;
+
+          throw timeoutError;
+        }
+
+        throw createNetworkError(
+          networkError,
+          url
         );
+      }
 
       var text =
         await response.text();
 
-      var data = null;
+      var data =
+        null;
 
-      try {
-        data =
-          text
-            ? JSON.parse(text)
-            : null;
-      } catch (_) {
-        data = {
-          raw: text
-        };
+      if (text) {
+        try {
+          data =
+            JSON.parse(text);
+        } catch (_) {
+          data = {
+            raw:
+              text
+          };
+        }
       }
 
       if (!response.ok) {
@@ -308,37 +460,66 @@
       return data;
 
     } catch (e) {
+      /*
+       * Preserve real API errors.
+       *
+       * Do not convert an HTTP 401/403/404/409/etc.
+       * into BACKEND_UNAVAILABLE.
+       */
       if (
         e &&
-        e.name === 'AbortError'
+        e.status
       ) {
-        e.code =
-          'BACKEND_TIMEOUT';
-
-        e.message =
-          'The Creator Hub backend timed out.';
+        throw e;
       }
 
       if (
-        !e.status &&
-        e.code !==
-          'BACKEND_TIMEOUT'
+        e &&
+        (
+          e.code ===
+            'AUTH_REQUIRED' ||
+          e.code ===
+            'FORBIDDEN' ||
+          e.code ===
+            'CONFLICT' ||
+          e.code ===
+            'VALIDATION_ERROR'
+        )
       ) {
-        e.code =
-          'BACKEND_UNAVAILABLE';
-
-        e.message =
-          e.message &&
-          e.message !==
-            'Failed to fetch'
-            ? e.message
-            : 'The Creator Hub backend is unavailable.';
+        throw e;
       }
 
-      throw e;
+      if (
+        e &&
+        e.code ===
+          'BACKEND_TIMEOUT'
+      ) {
+        throw e;
+      }
+
+      if (
+        e &&
+        e.code ===
+          'BACKEND_UNAVAILABLE'
+      ) {
+        throw e;
+      }
+
+      /*
+       * Final fallback for genuine network failures.
+       */
+      var finalError =
+        createNetworkError(
+          e,
+          url
+        );
+
+      throw finalError;
 
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(
+        timeout
+      );
     }
   };
 
@@ -363,7 +544,8 @@
         e.code =
           'AUTH_REQUIRED';
 
-        e.status = 401;
+        e.status =
+          401;
 
         throw e;
       }
@@ -380,7 +562,8 @@
           opts.headers || {},
           {
             Authorization:
-              'Bearer ' + token
+              'Bearer ' +
+              token
           }
         );
 
@@ -397,21 +580,15 @@
   CHL.getPublicConfig =
     function () {
       return CHL.apiRequest(
-        '/api/config/public'
+        (
+          apiCfg.publicConfigPath ||
+          '/api/config/public'
+        )
       );
     };
 
   /* ============================================================
      LIVEKIT TOKEN
-     ============================================================
-
-     Creator Hub keeps its application identifier as roomId.
-
-     The LiveKit integration uses roomName.
-
-     roomId -> roomName -> backend -> LiveKit
-
-     Private LiveKit credentials NEVER enter the browser.
      ============================================================ */
 
   CHL.getLiveKitToken =
@@ -434,7 +611,8 @@
         e.code =
           'INVALID_ROOM';
 
-        e.status = 400;
+        e.status =
+          400;
 
         return Promise.reject(e);
       }
@@ -445,7 +623,8 @@
           '/api/livekit/token'
         ),
         {
-          method: 'POST',
+          method:
+            'POST',
 
           body: {
             roomName:
@@ -483,14 +662,16 @@
         await CHL.apiRequest(
           '/api/health',
           {
-            timeoutMs: 5000
+            timeoutMs:
+              5000
           }
         );
 
         CHL.connState =
           'connected';
 
-        CHL.connError = null;
+        CHL.connError =
+          null;
 
       } catch (e) {
         CHL.connState =
@@ -609,9 +790,14 @@
     ).querySelector(sel);
   }
 
-  CHL.el = el;
-  CHL.esc = esc;
-  CHL.qs = qs;
+  CHL.el =
+    el;
+
+  CHL.esc =
+    esc;
+
+  CHL.qs =
+    qs;
 
   /* ============================================================
      UTILITIES
@@ -622,6 +808,7 @@
       if (
         typeof crypto !==
           'undefined' &&
+        crypto &&
         typeof crypto.randomUUID ===
           'function'
       ) {
@@ -758,8 +945,10 @@
           el(
             'div',
             {
-              id: 'toast',
-              class: 'toast'
+              id:
+                'toast',
+              class:
+                'toast'
             }
           );
 
@@ -796,24 +985,34 @@
      CURRENT USER / PROFILE
      ============================================================ */
 
-  CHL.user = null;
-  CHL.profile = null;
+  CHL.user =
+    null;
+
+  CHL.profile =
+    null;
 
   CHL.refreshAuth =
     async function () {
       if (!sb) {
-        CHL.user = null;
-        CHL.profile = null;
+        CHL.user =
+          null;
+
+        CHL.profile =
+          null;
+
         return null;
       }
 
       var u =
         await CHL.getCurrentUser();
 
-      CHL.user = u;
+      CHL.user =
+        u;
 
       if (!u) {
-        CHL.profile = null;
+        CHL.profile =
+          null;
+
         return null;
       }
 
@@ -829,12 +1028,14 @@
             .maybeSingle();
 
         CHL.profile =
-          p && p.data
+          p &&
+          p.data
             ? p.data
             : null;
 
       } catch (_) {
-        CHL.profile = null;
+        CHL.profile =
+          null;
       }
 
       return u;
@@ -944,7 +1145,8 @@
         e.code =
           'AUTH_REQUIRED';
 
-        e.status = 401;
+        e.status =
+          401;
 
         throw e;
       }
@@ -978,6 +1180,7 @@
             opts.fallback != null
               ? opts.fallback
               : null,
+
           error:
             e
         };
@@ -1067,7 +1270,8 @@
 
   var routes = {};
 
-  CHL.duplicateRoutes = [];
+  CHL.duplicateRoutes =
+    [];
 
   CHL.route =
     function (
@@ -1148,8 +1352,11 @@
           Boolean
         );
 
-    var base = '/';
-    var params = [];
+    var base =
+      '/';
+
+    var params =
+      [];
 
     for (
       var n =
@@ -1185,7 +1392,9 @@
           cand;
 
         params =
-          parts.slice(n);
+          parts.slice(
+            n
+          );
 
         break;
       }
@@ -1201,7 +1410,8 @@
           '/'
         )
     ) {
-      base = null;
+      base =
+        null;
     }
 
     return {
@@ -1296,7 +1506,8 @@
               el(
                 'div',
                 {
-                  id: 'outlet'
+                  id:
+                    'outlet'
                 }
               );
 
@@ -1312,7 +1523,8 @@
 
         CHL.lastError = {
           route:
-            base || null,
+            base ||
+            null,
 
           message:
             (
@@ -1669,7 +1881,8 @@
         if (
           outlet &&
           outlet.children
-            .length === 0
+            .length ===
+            0
         ) {
           CHL.renderRecoverableError(
             outlet,
@@ -1883,10 +2096,6 @@
         try {
           CHL.onAuthStateChange(
             function () {
-              /*
-               * Refresh the real Supabase session
-               * before rerendering the application.
-               */
               CHL.refreshAuth()
                 .then(
                   function () {
@@ -1912,11 +2121,6 @@
           );
       }
 
-      /*
-       * Prevent duplicate hashchange
-       * listeners if CHL.start() is ever
-       * called more than once.
-       */
       if (
         !CHL._hashChangeInstalled
       ) {
