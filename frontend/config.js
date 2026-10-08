@@ -4,7 +4,7 @@
   'use strict';
   
   // ✔️ FIXED: Pointed directly to your active live Render backend API instance
-  var configuredBase = 'https://creator-hub-live-02c1.onrender.com';
+  var configuredBase = 'wss://creator-hub-live-9susyfri.livekit.cloud';
   
   var CreatorHubConfig = {
     app: {
