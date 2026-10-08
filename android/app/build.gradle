@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.creatorhub.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.creatorhub.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    def releaseStoreFile = providers.gradleProperty("RELEASE_STORE_FILE")
+            .orElse(providers.environmentVariable("RELEASE_STORE_FILE")).orNull
+    def releaseStorePassword = providers.gradleProperty("RELEASE_STORE_PASSWORD")
+            .orElse(providers.environmentVariable("RELEASE_STORE_PASSWORD")).orNull
+    def releaseKeyAlias = providers.gradleProperty("RELEASE_KEY_ALIAS")
+            .orElse(providers.environmentVariable("RELEASE_KEY_ALIAS")).orNull
+    def releaseKeyPassword = providers.gradleProperty("RELEASE_KEY_PASSWORD")
+            .orElse(providers.environmentVariable("RELEASE_KEY_PASSWORD")).orNull
+
+    signingConfigs {
+        release {
+            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            // Debug builds use Android's normal debug signing. Never reuse the release key.
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.webkit:webkit:1.11.0'
+}
