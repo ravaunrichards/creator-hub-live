@@ -43,8 +43,17 @@ create table if not exists public.diamond_ledger (
 );
 create index if not exists diamond_ledger_user_idx on public.diamond_ledger(user_id, created_at desc);
 
+-- Coin packages: admin-configurable (Created BEFORE payments so package_id foreign key resolves correctly).
+create table if not exists public.coin_packages (
+  id uuid primary key default gen_random_uuid(),
+  coins bigint not null,
+  price numeric(18,2) not null,
+  currency text not null default 'USD',
+  active boolean not null default true,
+  sort int not null default 0
+);
+
 -- PayPal orders: track lifecycle; one credit per capture (idempotent).
--- (Fixed: added package_id and metadata to match backend insert expectations)
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -62,16 +71,6 @@ create table if not exists public.payments (
   raw jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
-);
-
--- Coin packages: admin-configurable.
-create table if not exists public.coin_packages (
-  id uuid primary key default gen_random_uuid(),
-  coins bigint not null,
-  price numeric(18,2) not null,
-  currency text not null default 'USD',
-  active boolean not null default true,
-  sort int not null default 0
 );
 
 -- Gifts catalog (original assets only).
@@ -202,11 +201,8 @@ begin
   if before_balance < p_amount then raise exception 'insufficient coins'; end if;
   after_balance := before_balance-p_amount;
   update public.wallets set coin_balance=after_balance,updated_at=now() where user_id=p_user;
-  
-  -- (Fixed: included before_balance and after_balance to match column definition)
   insert into public.coin_ledger(user_id,amount,balance_before,balance_after,source,reference,reason,idempotency_key)
     values(p_user,-p_amount,before_balance,after_balance,p_source,p_reference,p_reason,p_idempotency_key);
-    
   select * into w from public.wallets where user_id=p_user; return w;
 end; $$;
 
