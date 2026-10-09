@@ -63,7 +63,7 @@
     var roomName =
       options.roomName ||
       options.livekitRoomName ||
-      ';';
+      ''; // Fixed from stray semicolon string
 
     if (!roomName && options.roomId) {
       roomName = options.roomId;
@@ -490,17 +490,6 @@
         }
       }
 
-      /*
-       * Connection and requested media publishing have completed.
-       * The backend must still verify publication before marking LIVE.
-       *
-       * IMPORTANT:
-       * Being connected to LiveKit does NOT automatically mean
-       * Creator Hub should mark the session LIVE.
-       *
-       * Host publication must be completed and verified by the
-       * backend before the LIVE database state is changed.
-       */
       if (options.onConnected) {
         await options.onConnected(
           room,
