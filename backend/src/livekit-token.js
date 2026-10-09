@@ -114,8 +114,10 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     room: roomName, 
     canPublish: !!canPublish,
     canPublishSources: canPublish
-      ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
-      : [],
+  ? [
+      TrackSource.CAMERA,      TrackSource.MICROPHONE,      TrackSource.SCREEN_SHARE,      TrackSource.SCREEN_SHARE_AUDIO
+    ]
+  : [],
     canSubscribe: true, 
     canPublishData: true 
   });
