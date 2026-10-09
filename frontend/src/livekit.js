@@ -65,6 +65,18 @@
       options.livekitRoomName ||
       '';
 
+    /*
+     * roomId is accepted only as a compatibility fallback.
+     *
+     * IMPORTANT:
+     * roomId and roomName are not conceptually the same thing.
+     *
+     * Creator Hub database:
+     *   roomId = database LIVE-session identifier
+     *
+     * LiveKit:
+     *   roomName = LiveKit room name
+     */
     if (!roomName && options.roomId) {
       roomName = options.roomId;
     }
@@ -189,6 +201,17 @@
     return error;
   }
 
+  /*
+   * Connect to an existing LiveKit room.
+   *
+   * The backend remains responsible for:
+   * - authentication
+   * - authorization
+   * - token creation
+   * - deciding whether this participant may publish
+   *
+   * The browser never receives private LiveKit credentials.
+   */
   CHL.connectLiveKit = async function (options) {
     options = options || {};
 
@@ -232,6 +255,16 @@
     var tokenData;
 
     try {
+      /*
+       * IMPORTANT:
+       * The backend endpoint expects roomName.
+       *
+       * We intentionally do NOT send:
+       *     { roomId: roomName }
+       *
+       * We send:
+       *     { roomName, canPublish, ttlSeconds }
+       */
       tokenData =
         await CHL.getLiveKitToken(
           roomName,
@@ -279,6 +312,9 @@
 
     activeRoom = room;
 
+    /*
+     * Remote media
+     */
     bind(
       room,
       'TrackSubscribed',
@@ -337,6 +373,9 @@
       }
     );
 
+    /*
+     * Participants
+     */
     bind(
       room,
       'ParticipantConnected',
@@ -369,6 +408,9 @@
       }
     );
 
+    /*
+     * Speakers
+     */
     bind(
       room,
       'ActiveSpeakersChanged',
@@ -383,6 +425,9 @@
       }
     );
 
+    /*
+     * Connection lifecycle
+     */
     bind(
       room,
       'Reconnecting',
@@ -418,6 +463,11 @@
             );
           }
         } catch (_) {}
+
+        /*
+         * Do not automatically clear activeRoom here.
+         * disconnectLiveKit() owns complete cleanup.
+         */
       }
     );
 
@@ -438,58 +488,47 @@
     );
 
     try {
-      await room.connect(
-        tokenData.serverUrl,
-        tokenData.token,
-        {
-          autoSubscribe: true
-        }
-      );
+      /*
+       * LiveKit connection:
+       *
+       * serverUrl:
+       *     public LiveKit WebSocket URL
+       *
+       * token:
+       *     short-lived participant token
+       *
+       * The API key and API secret never enter this browser call.
+       */
+       } catch (error) {      if (window.console) {        console.error(          '[Creator Hub LIVE] Connection failed:',          error        );
+        console.error(          '[Creator Hub LIVE] Error code:',          error && error.code        );
 
-      if (canPublish) {
-        try {
-          if (
-            !room.localParticipant ||
-            typeof room.localParticipant.enableCameraAndMicrophone !==
-              'function'
-          ) {
-            throw createLiveKitError(
-              'This LiveKit client cannot enable the camera and microphone.',
-              'MEDIA_PUBLISH_UNSUPPORTED'
-            );
-          }
-
-          await room.localParticipant.enableCameraAndMicrophone();
-
-          if (
-            !CHL.hasPublishedCamera() ||
-            !CHL.hasPublishedMicrophone()
-          ) {
-            throw createLiveKitError(
-              'The camera or microphone did not publish successfully.',
-              'MEDIA_PUBLICATION_FAILED'
-            );
-          }
-        } catch (mediaError) {
-          var publishError = createLiveKitError(
-            mediaError && mediaError.message
-              ? mediaError.message
-              : 'Could not start the camera and microphone.',
-            mediaError && mediaError.code
-              ? mediaError.code
-              : 'MEDIA_PUBLISH_FAILED',
-            mediaError
-          );
-
-          publishError.mediaType =
-            mediaError && mediaError.mediaType
-              ? mediaError.mediaType
-              : 'camera-or-microphone';
-
-          throw publishError;
-        }
+        console.error(
+          '[Creator Hub LIVE] Root cause:',
+          error && error.cause
+        );
       }
 
+      CHL.disconnectLiveKit();      var failure = createLiveKitError(
+        error && error.message          ? error.message
+          : 'LiveKit connection failed. Check the browser console for details.',
+        error && error.code          ? error.code          : 'LIVEKIT_CONNECTION_FAILED',
+        error && error.cause
+          ? error.cause
+          : error
+      );
+
+      throw failure;
+    }
+      /*
+       * Only report connection success here.
+       *
+       * IMPORTANT:
+       * Being connected to LiveKit does NOT automatically mean
+       * Creator Hub should mark the session LIVE.
+       *
+       * Host publication must be completed and verified by the
+       * backend before the LIVE database state is changed.
+       */
       if (options.onConnected) {
         await options.onConnected(
           room,
@@ -517,6 +556,9 @@
     }
   };
 
+  /*
+   * Disconnect and completely clean up the local LiveKit session.
+   */
   CHL.disconnectLiveKit = function () {
     var room = activeRoom;
 
@@ -559,6 +601,9 @@
     } catch (_) {}
   };
 
+  /*
+   * Camera
+   */
   CHL.publishCamera = async function () {
     if (!activeRoom) {
       var error = new Error(
@@ -592,6 +637,9 @@
       .setCameraEnabled(false);
   };
 
+  /*
+   * Microphone
+   */
   CHL.publishMicrophone = async function () {
     if (!activeRoom) {
       var error = new Error(
@@ -625,6 +673,9 @@
       .setMicrophoneEnabled(false);
   };
 
+  /*
+   * Camera toggle
+   */
   CHL.toggleCamera = async function () {
     if (!activeRoom) {
       var error = new Error(
@@ -648,6 +699,9 @@
     );
   };
 
+  /*
+   * Microphone toggle
+   */
   CHL.toggleMicrophone = async function () {
     if (!activeRoom) {
       var error = new Error(
@@ -671,6 +725,9 @@
     );
   };
 
+  /*
+   * Screen sharing
+   */
   CHL.startScreenShare = async function () {
     if (!activeRoom) {
       var error = new Error(
@@ -722,6 +779,9 @@
       .setScreenShareEnabled(false);
   };
 
+  /*
+   * Media attachment helpers
+   */
   CHL.attachLocalTrack = function (
     track,
     container
@@ -788,17 +848,28 @@
     }
   };
 
+  /*
+   * Remove an individual media track from the page.
+   */
   CHL.detachTrack = function (
     track
   ) {
     detachTrack(track);
   };
 
+  /*
+   * Return the active LiveKit room.
+   * Useful for pages that need to inspect the real connection.
+   */
   CHL.getActiveLiveKitRoom =
     function () {
       return activeRoom;
     };
 
+  /*
+   * Determine whether the browser currently has
+   * a LiveKit connection.
+   */
   CHL.isLiveKitConnected =
     function () {
       if (!activeRoom) {
@@ -819,6 +890,10 @@
       }
     };
 
+  /*
+   * Determine whether the local participant
+   * has a published camera.
+   */
   CHL.hasPublishedCamera =
     function () {
       if (!activeRoom) return false;
@@ -857,6 +932,10 @@
       }
     };
 
+  /*
+   * Determine whether the local participant
+   * has a published microphone.
+   */
   CHL.hasPublishedMicrophone =
     function () {
       if (!activeRoom) return false;
@@ -895,6 +974,9 @@
       }
     };
 
+  /*
+   * Convenience participant handlers.
+   */
   CHL.handleParticipantConnected =
     function (participant) {
       try {
@@ -941,9 +1023,15 @@
       return state;
     };
 
+  /*
+   * Backward-compatible cleanup alias.
+   */
   CHL.cleanup =
     CHL.disconnectLiveKit;
 
+  /*
+   * Browser shutdown cleanup.
+   */
   window.addEventListener(
     'beforeunload',
     function () {
@@ -955,6 +1043,10 @@
     }
   );
 
+  /*
+   * If the page is restored from browser cache,
+   * don't leave an old disconnected LiveKit object behind.
+   */
   window.addEventListener(
     'pageshow',
     function () {
