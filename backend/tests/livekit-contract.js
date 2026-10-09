@@ -35,7 +35,10 @@ const verifyIndex = SERVER.indexOf('await verifyHostPublishing(');
 const updateIndex = SERVER.indexOf(".update({\n              status: 'live'", verifyIndex);
 assert(verifyIndex >= 0 && updateIndex > verifyIndex, 'LIVE status update appears before host publication verification.');
 assert(SERVER.includes("const LIVEKIT_URL = String(\n  process.env.LIVEKIT_URL || ''"), 'Server still has a silent hard-coded LIVEKIT_URL fallback.');
-assert(TOKEN.includes("canPublishSources: canPublish ? ['camera', 'microphone'] : []"), 'Host token is not restricted to camera/microphone publishing sources.');
+assert(TOKEN.includes('canPublishSources'), 'Host token is missing publish-source restrictions.');
+assert(TOKEN.includes('TrackSource.CAMERA'), 'Host token does not allow camera publishing.');
+assert(TOKEN.includes('TrackSource.MICROPHONE'), 'Host token does not allow microphone publishing.');
+assert(TOKEN.includes('TrackSource.SCREEN_SHARE') && TOKEN.includes('TrackSource.SCREEN_SHARE_AUDIO'), 'Host token does not allow screen-sharing video and audio.');
 assert(ROOM_PAGE.includes('joinResult && joinResult.roomName') && ROOM_PAGE.includes('room.room_name'), 'Frontend does not use the backend-authoritative LiveKit room name.');
 assert(!/var roomName = roomId;/.test(ROOM_PAGE), 'Frontend still substitutes the database room UUID as the LiveKit room name.');
 
