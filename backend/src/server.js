@@ -862,91 +862,6 @@ const server = http.createServer(
       }
 
       // ------------------------------------------------------------------
-      // League Standings — server-authoritative, read-only
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/leagues/standings' && method === 'GET') {
-        await requireSupabaseUser(req);
-
-        const client = db();
-
-        const {
-          data: season,
-          error: seasonError
-        } = await client
-          .from('league_seasons')
-          .select('id,name,status')
-          .eq('status', 'active')
-          .maybeSingle();
-
-        if (seasonError) {
-          const normalized = normalizeExternalError(seasonError);
-          throw fail(
-            500,
-            'LEAGUE_SEASON_LOOKUP_FAILED',
-            normalized.message,
-            {
-              code: normalized.code,
-              details: normalized.details
-            }
-          );
-        }
-
-        if (!season) {
-          return ok(res, { standings: [] });
-        }
-
-        const {
-          data: rows,
-          error: standingsError
-        } = await client
-          .from('league_standings')
-          .select(`
-            season_id,
-            division_code,
-            played,
-            wins,
-            draws,
-            losses,
-            goals_for,
-            goals_against,
-            points,
-            position,
-            teams(name)
-          `)
-          .eq('season_id', season.id)
-          .order('division_code', { ascending: true })
-          .order('position', { ascending: true, nullsFirst: false });
-
-        if (standingsError) {
-          const normalized = normalizeExternalError(standingsError);
-          throw fail(
-            500,
-            'LEAGUE_STANDINGS_QUERY_FAILED',
-            normalized.message,
-            {
-              code: normalized.code,
-              details: normalized.details
-            }
-          );
-        }
-
-        return ok(res, {
-          season: {
-            id: season.id,
-            name: season.name,
-            status: season.status
-          },
-          standings: (rows || []).map((row) => ({
-            ...row,
-            teams: Array.isArray(row.teams)
-              ? row.teams[0] || {}
-              : row.teams || {}
-          }))
-        });
-      }
-
-      // ------------------------------------------------------------------
       // Public Configuration
       // ------------------------------------------------------------------
 
@@ -1094,7 +1009,7 @@ const server = http.createServer(
       }
 
       // ------------------------------------------------------------------
-      // LIVE Room Actions
+      // LIVE Room Actions (:id, :id/join, :id/start, :id/end, :id/leave)
       // ------------------------------------------------------------------
 
       const liveParts = liveRoomParts(pathname);
@@ -1139,6 +1054,9 @@ const server = http.createServer(
             throw fail(409, 'LIVE_ENDED', 'This LIVE session has already ended.');
           }
 
+          // Never promote the database state to LIVE until LiveKit confirms
+          // this exact authenticated host is connected to this exact room and
+          // has both camera and microphone publications.
           await verifyHostPublishing(
             validateLiveRoomName(room.room_name),
             user.id
@@ -1327,101 +1245,281 @@ const server = http.createServer(
         const payment = await paymentByOrder(client, orderId);
 
         if (String(payment.user_id) !== String(user.id)) {
-          throw fail(403, 'FORBIDDEN', 'You are not authorized to capture this payment.');
+          throw fail(403, 'FORBIDDEN', 'You do not own this payment order.');
         }
 
-        if (payment.status === 'completed') {
+        if (payment.status === 'completed' || payment.credited) {
           return ok(res, {
             captured: true,
-            status: 'completed',
-            coins: payment.package_coins
+            coins: payment.package_coins,
+            status: 'completed'
           });
         }
 
         const captureResponse = await paypal(
-          `/v2/checkout/orders/${orderId}/capture`,
+          `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
           {
-            method: 'POST'
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(payment.idempotency_key ? { 'PayPal-Request-Id': payment.idempotency_key } : {})
+            }
           }
         );
 
-        const captureUnits = captureResponse?.purchase_units?.[0]?.payments?.captures;
-        const capture = Array.isArray(captureUnits) ? captureUnits[0] : null;
-        const captureId = capture?.id;
+        const captureUnits =
+          captureResponse?.purchase_units?.[0]?.payments?.captures || [];
 
-        if (!captureId || capture?.status !== 'COMPLETED') {
+        const successfulCapture = captureUnits.find(
+          (c) => c.status === 'COMPLETED'
+        );
+
+        const captureId = successfulCapture?.id || captureResponse?.id;
+
+        if (
+          captureResponse.status === 'COMPLETED' ||
+          successfulCapture
+        ) {
+          await creditCapture(client, payment, captureId);
+
+          return ok(res, {
+            captured: true,
+            coins: payment.package_coins,
+            status: 'completed'
+          });
+        }
+
+        throw fail(
+          502,
+          'PAYMENT_CAPTURE_FAILED',
+          `PayPal capture status: ${captureResponse.status}`
+        );
+      }
+
+      // ------------------------------------------------------------------
+      // PayPal Payout Info Management
+      // ------------------------------------------------------------------
+
+      if (pathname === '/api/payments/paypal/info' && method === 'GET') {
+        const user = await requireSupabaseUser(req);
+        const client = db();
+
+        const { data, error } = await client
+          .from('paypal_payout_info')
+          .select('paypal_email,is_verified,created_at,updated_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) {
+          const normalized = normalizeExternalError(error);
+          throw fail(500, 'PAYPAL_INFO_LOOKUP_FAILED', normalized.message);
+        }
+
+        return ok(res, {
+          paypalEmail: data?.paypal_email || null,
+          isVerified: data?.is_verified || false,
+          updatedAt: data?.updated_at || null
+        });
+      }
+
+      if (pathname === '/api/payments/paypal/info' && method === 'PUT') {
+        const user = await requireSupabaseUser(req);
+        const body = await readJson(req);
+        const paypalEmail = String(body.paypalEmail || body.email || '').trim().toLowerCase();
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!paypalEmail || !emailRegex.test(paypalEmail)) {
+          throw fail(400, 'INVALID_INPUT', 'A valid PayPal email address is required.');
+        }
+
+        const client = db();
+
+        const { data, error } = await client
+          .from('paypal_payout_info')
+          .upsert(
+            {
+              user_id: user.id,
+              paypal_email: paypalEmail,
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: 'user_id' }
+          )
+          .select('paypal_email,is_verified,updated_at')
+          .single();
+
+        if (error) {
+          const normalized = normalizeExternalError(error);
+          throw fail(500, 'PAYPAL_INFO_SAVE_FAILED', normalized.message);
+        }
+
+        return ok(res, {
+          saved: true,
+          paypalEmail: data.paypal_email,
+          isVerified: data.is_verified,
+          updatedAt: data.updated_at
+        });
+      }
+
+      // ------------------------------------------------------------------
+      // PayPal Webhook - signature verification + idempotent credit
+      // ------------------------------------------------------------------
+
+      if (pathname === '/api/payments/webhook' && method === 'POST') {
+        const rawBody = await readRawBody(req);
+        let event;
+        try {
+          event = await verifyPaypalWebhookSignature({
+            rawBody,
+            headers: req.headers
+          });
+        } catch (error) {
+          if (error?.code === 'PAYPAL_WEBHOOK_INVALID') throw error;
           throw fail(
-            502,
-            'PAYMENT_CAPTURE_FAILED',
-            'PayPal order capture was not completed successfully.'
+            error?.status || 400,
+            error?.code || 'PAYPAL_WEBHOOK_INVALID',
+            error?.message || 'PayPal webhook could not be verified.'
           );
         }
 
-        await creditCapture(client, payment, captureId);
+        if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+          const captureId = String(event.resource?.id || '').trim();
+          const orderId = String(
+            event.resource?.supplementary_data?.related_ids?.order_id ||
+            event.resource?.custom_id ||
+            ''
+          ).trim();
 
-        return ok(res, {
-          captured: true,
-          status: 'completed',
-          coins: payment.package_coins
-        });
-      }
+          if (!captureId || !orderId) {
+            throw fail(400, 'PAYPAL_WEBHOOK_INVALID', 'PayPal capture webhook is missing order/capture identifiers.');
+          }
 
-      // ------------------------------------------------------------------
-      // PayPal Payments - Webhook Handler
-      // ------------------------------------------------------------------
+          const client = db();
+          const payment = await paymentByOrder(client, orderId);
 
-      if (pathname === '/api/payments/paypal/webhook' && method === 'POST') {
-        const rawBody = await readRawBody(req);
-        const event = await verifyPaypalWebhookSignature({
-          rawBody,
-          headers: req.headers
-        });
-
-        const client = db();
-        const eventType = event.event_type;
-
-        if (eventType === 'CHECKOUT.ORDER.APPROVED') {
-          // Handled via explicit client-side capture
-        } else if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-          const resource = event.resource;
-          const captureId = resource?.id;
-          const orderId = resource?.supplementary_data?.related_ids?.order_id || resource?.invoice_id;
-
-          if (orderId && captureId) {
-            try {
-              const payment = await paymentByOrder(client, orderId);
-              if (payment.status !== 'completed') {
-                await creditCapture(client, payment, captureId);
-              }
-            } catch (err) {
-              console.error('[PayPal Webhook] Failed to credit capture:', err);
-            }
+          if (!payment.credited) {
+            await creditCapture(client, payment, captureId);
           }
         }
 
-        return ok(res, { received: true });
+        return ok(res, { received: true, eventType: event.event_type || null });
       }
 
       // ------------------------------------------------------------------
-      // Not Found
+      // LIVE room chat — persisted real messages only
+      // ------------------------------------------------------------------
+
+      const chatParts = liveRoomParts(pathname);
+
+      if (chatParts && chatParts.id && chatParts.action === 'chat' && method === 'POST') {
+        const user = await requireSupabaseUser(req);
+        const room = await liveRoomById(db(), chatParts.id);
+        if (room.status === 'ended') {
+          throw fail(409, 'LIVE_ENDED', 'This LIVE session has ended.');
+        }
+        const body = await readJson(req);
+        const message = String(body.body || '').trim().slice(0, 1000);
+        if (!message) throw fail(400, 'INVALID_MESSAGE', 'A message is required.');
+        const client = db();
+        const { data, error } = await client
+          .from('live_chat_messages')
+          .insert({ live_id: room.id, sender_id: user.id, body: message })
+          .select('id,live_id,sender_id,body,created_at')
+          .single();
+        if (error) throw error;
+        return ok(res, data);
+      }
+
+      if (chatParts && chatParts.id && chatParts.action === 'chat' && method === 'GET') {
+        await requireSupabaseUser(req);
+        const room = await liveRoomById(db(), chatParts.id);
+        const client = db();
+        const { data, error } = await client
+          .from('live_chat_messages')
+          .select('id,live_id,sender_id,body,created_at')
+          .eq('live_id', room.id)
+          .order('created_at', { ascending: true })
+          .limit(100);
+        if (error) throw error;
+        return ok(res, { messages: data || [] });
+      }
+
+      // ------------------------------------------------------------------
+      // Wallet transactions and gifts — server-authoritative only
+      // ------------------------------------------------------------------
+
+      if (pathname === '/api/wallet/transactions' && method === 'GET') {
+        const user = await requireSupabaseUser(req);
+        const client = db();
+        const limit = clampLimit(new URL(req.url, `http://${req.headers.host || 'localhost'}`).searchParams.get('limit'), 20, 100);
+        const { data, error } = await client
+          .from('coin_ledger')
+          .select('id,amount,balance_before,balance_after,source,provider,reference,reason,created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        if (error) throw error;
+        return ok(res, { transactions: data || [] });
+      }
+
+      if (pathname === '/api/wallet/gift' && method === 'POST') {
+        const user = await requireSupabaseUser(req);
+        const idem = String(req.headers['idempotency-key'] || '').trim();
+        if (!idem || idem.length < 16 || idem.length > 200) {
+          throw fail(400, 'GIFT_IDEMPOTENCY_REQUIRED', 'A unique Idempotency-Key is required.');
+        }
+        const body = await readJson(req);
+        const recipientId = String(body.recipientId || '').trim();
+        const giftName = String(body.gift || '').trim();
+        const liveId = body.liveId ? String(body.liveId).trim() : null;
+        if (!recipientId || !giftName) throw fail(400, 'INVALID_GIFT', 'Gift recipient and gift are required.');
+        if (recipientId === String(user.id)) throw fail(400, 'INVALID_GIFT', 'You cannot gift yourself.');
+        const client = db();
+        const { data: gift, error: giftError } = await client
+          .from('gifts').select('id,name,coin_price,diamond_value').eq('name', giftName).eq('active', true).maybeSingle();
+        if (giftError) throw giftError;
+        if (!gift) throw fail(404, 'GIFT_NOT_FOUND', 'The selected gift is unavailable.');
+        const { data, error } = await client.rpc('send_gift', {
+          p_sender: user.id, p_recipient: recipientId, p_gift: gift.id, p_live: liveId, p_idempotency_key: idem
+        });
+        if (error) throw error;
+        return ok(res, { transaction: data, gift: { name: gift.name, coinPrice: gift.coin_price, diamondValue: gift.diamond_value } });
+      }
+
+      // ------------------------------------------------------------------
+      // Wallet Balance
+      // ------------------------------------------------------------------
+
+      if ((pathname === '/api/wallet' || pathname === '/api/wallet/balance') && method === 'GET') {
+        const user = await requireSupabaseUser(req);
+        const client = db();
+        const wallet = await walletFor(client, user.id);
+
+        return ok(res, {
+          coinBalance: wallet.coin_balance,
+          diamondBalance: wallet.diamond_balance,
+          lifetimeGiftsSent: wallet.lifetime_gifts_sent
+        });
+      }
+
+      // ------------------------------------------------------------------
+      // 404 Fallback
       // ------------------------------------------------------------------
 
       return send(res, 404, {
         ok: false,
         code: 'NOT_FOUND',
-        error: 'Endpoint not found.'
+        error: 'Route not found.'
       });
 
-    } catch (err) {
-      return errorResponse(res, err);
+    } catch (error) {
+      return errorResponse(res, error);
     }
   }
 );
 
-// ============================================================================
-// Server Startup
-// ============================================================================
 
 server.listen(PORT, () => {
-  console.log(`[Creator Hub Backend] Server listening on port ${PORT}`);
+  console.log(
+    `[Creator Hub Backend] Running successfully on port ${PORT}`
+  );
 });
