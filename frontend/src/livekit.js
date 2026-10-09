@@ -1,1427 +1,984 @@
-import 'dotenv/config';
-import http from 'node:http';
-import { URL } from 'node:url';
-import { createClient } from '@supabase/supabase-js';
-import {
-  createLiveKitToken,
-  validateRoomName,
-  livekitHealth,
-  verifyHostPublishing
-} from './livekit-token.js';
+/* Creator Hub Live — LiveKit browser integration.
+ * Browser receives only short-lived participant tokens.
+ * LiveKit private API credentials never enter browser code.
+ */
+(function () {
+  'use strict';
 
-// ============================================================================
-// Crash Handlers for Render Deployment Visibility
-// ============================================================================
-process.on('uncaughtException', (err) => {
-  console.error('[Fatal] Uncaught Exception:', err);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[Fatal] Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
-
-// ============================================================================
-// Creator Hub Creator Network - Backend HTTP API
-// ============================================================================
-
-const PORT = Number(process.env.PORT || 3000);
-
-const FRONTEND_URL = String(
-  process.env.FRONTEND_URL ||
-  process.env.NEXT_PUBLIC_APP_URL ||
-  ''
-).replace(/\/$/, '');
-
-const SUPABASE_URL =
-  process.env.SUPABASE_URL ||
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  '';
-
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.SUPABASE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  '';
-
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  '';
-
-const PAYPAL_ENV = String(
-  process.env.PAYPAL_ENV ||
-  process.env.PAYPAL_MODE ||
-  'sandbox'
-).toLowerCase();
-
-const PAYPAL_CLIENT_ID =
-  process.env.PAYPAL_CLIENT_ID ||
-  '';
-
-const PAYPAL_CLIENT_SECRET =
-  process.env.PAYPAL_CLIENT_SECRET ||
-  '';
-
-const PAYPAL_WEBHOOK_ID =
-  process.env.PAYPAL_WEBHOOK_ID ||
-  '';
-
-const PAYPAL_BASE =
-  PAYPAL_ENV === 'live'
-    ? 'https://api-m.paypal.com'
-    : 'https://api-m.sandbox.paypal.com';
-
-const PAYPAL_RETURN_URL = String(
-  process.env.PAYPAL_RETURN_URL ||
-  (FRONTEND_URL ? FRONTEND_URL.split(',')[0] : '') ||
-  ''
-).replace(/\/$/, '');
-
-const LIVEKIT_URL = String(
-  process.env.LIVEKIT_URL || ''
-).trim();
-
-
-// ============================================================================
-// Generic helpers
-// ============================================================================
-
-function fail(status, code, message, details = undefined) {
-  const error = new Error(String(message || 'Request failed.'));
-  error.status = Number(status) || 500;
-  error.code = String(code || 'INTERNAL_ERROR');
-
-  if (details !== undefined) {
-    error.details = details;
+  var CHL = window.CHL;
+  if (!CHL) {
+    throw new Error('Creator Hub core is required before livekit.js.');
   }
 
-  return error;
-}
+  var activeRoom = null;
+  var handlers = [];
+  var unloading = false;
 
-function secureHeaders(extra = {}) {
-  return {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer',
-    ...extra
-  };
-}
+  function eventName(name, fallback) {
+    var events =
+      window.LivekitClient &&
+      window.LivekitClient.RoomEvent;
 
-function send(res, status, body, extra = {}) {
-  if (res.headersSent) {
-    return;
+    return (events && events[name]) || fallback || name;
   }
 
-  res.writeHead(status, secureHeaders(extra));
-  res.end(JSON.stringify(body));
-}
+  function bind(room, name, fn) {
+    if (!room || typeof room.on !== 'function') return;
 
-function ok(res, body = {}) {
-  return send(res, 200, {
-    ok: true,
-    ...body
-  });
-}
+    var resolved = eventName(name);
 
-
-// ============================================================================
-// Supabase & External Error Normalization (Fixed [object Object])
-// ============================================================================
-
-function normalizeExternalError(error) {
-  if (!error) {
-    return {
-      message: 'Unknown error.',
-      code: undefined,
-      details: undefined,
-      hint: undefined,
-      name: undefined
-    };
+    room.on(resolved, fn);
+    handlers.push([room, resolved, fn]);
   }
 
-  if (typeof error === 'object') {
-    return {
-      message:
-        error.message ||
-        error.error_description ||
-        error.details ||
-        error.hint ||
-        JSON.stringify(error),
-      code: error.code || error.status || 'INTERNAL_ERROR',
-      details: error.details || null,
-      hint: error.hint || null,
-      name: error.name || 'PostgrestError'
-    };
-  }
-
-  if (error instanceof Error) {
-    return {
-      message: error.message || 'Unknown error.',
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      name: error.name
-    };
-  }
-
-  return {
-    message: String(error),
-    code: undefined,
-    details: undefined,
-    hint: undefined,
-    name: undefined
-  };
-}
-
-function errorResponse(res, error) {
-  const normalized = normalizeExternalError(error);
-
-  const status =
-    Number(error?.status) ||
-    Number(error?.statusCode) ||
-    500;
-
-  const code =
-    error?.code ||
-    normalized.code ||
-    'INTERNAL_ERROR';
-
-  console.error('[Creator Hub Backend Error]', {
-    status,
-    code,
-    message: normalized.message,
-    details: normalized.details,
-    hint: normalized.hint,
-    name: normalized.name
-  });
-
-  if (status >= 500) {
-    return send(res, status, {
-      ok: false,
-      code,
-      error: normalized.message || 'Internal server error.',
-      details: normalized.details || undefined
+  function clearHandlers() {
+    handlers.forEach(function (handler) {
+      try {
+        if (handler[0] && typeof handler[0].off === 'function') {
+          handler[0].off(handler[1], handler[2]);
+        }
+      } catch (_) {}
     });
+
+    handlers = [];
   }
 
-  return send(res, status, {
-    ok: false,
-    code,
-    error: normalized.message || 'Request failed.',
-    details: normalized.details || undefined,
-    hint: normalized.hint || undefined
-  });
-}
+  function ensureSdk() {
+    if (
+      !window.LivekitClient ||
+      !window.LivekitClient.Room
+    ) {
+      var error = new Error(
+        'LiveKit browser SDK is unavailable.'
+      );
 
-
-function allowedOrigin(origin) {
-  if (!origin) {
-    return true;
+      error.code = 'LIVEKIT_SDK_UNAVAILABLE';
+      throw error;
+    }
   }
 
-  const list = FRONTEND_URL
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  function normalizeRoomName(options) {
+    options = options || {};
 
-  if (list.length) {
-    return list.includes(origin);
+    var roomName =
+      options.roomName ||
+      options.livekitRoomName ||
+      ';';
+
+    if (!roomName && options.roomId) {
+      roomName = options.roomId;
+    }
+
+    return String(roomName || '').trim();
   }
 
-  return (
-    origin === `http://localhost:${PORT}` ||
-    origin === `http://127.0.0.1:${PORT}`
-  );
-}
+  function getTrackType(track) {
+    if (!track) return '';
 
-function applyCors(req, res) {
-  const origin = req.headers.origin;
+    try {
+      if (
+        window.LivekitClient &&
+        window.LivekitClient.Track &&
+        window.LivekitClient.Track.Source
+      ) {
+        var source = track.source;
 
-  if (origin && allowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
+        if (
+          source === window.LivekitClient.Track.Source.Camera ||
+          source === 'camera'
+        ) {
+          return 'camera';
+        }
 
-  res.setHeader('Vary', 'Origin');
+        if (
+          source === window.LivekitClient.Track.Source.Microphone ||
+          source === 'microphone'
+        ) {
+          return 'microphone';
+        }
 
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    [
-      'Authorization',
-      'Content-Type',
-      'Idempotency-Key',
-      'PayPal-Request-Id',
-      'X-Requested-With'
-    ].join(', ')
-  );
-
-  res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET, POST, PUT, OPTIONS'
-  );
-}
-
-
-async function readRawBody(req) {
-  let raw = '';
-  for await (const chunk of req) raw += chunk;
-  return raw;
-}
-
-async function readJson(req) {
-  const raw = await readRawBody(req);
-
-  if (!raw.trim()) {
-    return {};
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw fail(
-      400,
-      'INVALID_JSON',
-      'Request body must be valid JSON.'
-    );
-  }
-}
-
-
-function requireServerConfig(keys) {
-  const missing = keys.filter(
-    (key) => !process.env[key]
-  );
-
-  if (missing.length) {
-    throw fail(
-      503,
-      'REQUIRES_CONFIGURATION',
-      'Backend configuration is incomplete.',
-      { missing }
-    );
-  }
-}
-
-
-function db() {
-  requireServerConfig([
-    'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY'
-  ]);
-
-  return createClient(
-    SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
+        if (
+          source === window.LivekitClient.Track.Source.ScreenShare ||
+          source === 'screen_share'
+        ) {
+          return 'screen';
+        }
       }
+    } catch (_) {}
+
+    var kind = String(track.kind || '').toLowerCase();
+
+    if (
+      kind === 'video' ||
+      kind === 'videotrack'
+    ) {
+      return 'video';
     }
-  );
-}
 
+    if (
+      kind === 'audio' ||
+      kind === 'audiotrack'
+    ) {
+      return 'audio';
+    }
 
-function clampLimit(value, defaultValue, maximum) {
-  const number = Number(value);
-
-  if (!Number.isFinite(number) || number <= 0) {
-    return defaultValue;
+    return '';
   }
 
-  return Math.min(
-    Math.floor(number),
-    maximum
-  );
-}
-
-
-function requireIdem(req) {
-  const key = String(
-    req.headers['idempotency-key'] || ''
-  ).trim();
-
-  if (
-    !key ||
-    key.length < 16 ||
-    key.length > 200
-  ) {
-    throw fail(
-      400,
-      'PAYMENT_DUPLICATE',
-      'A unique Idempotency-Key with 16-200 characters is required.'
-    );
-  }
-
-  return key;
-}
-
-
-// ============================================================================
-// Authentication & Profiles
-// ============================================================================
-
-async function requireSupabaseUser(req) {
-  requireServerConfig([
-    'SUPABASE_URL',
-    'SUPABASE_ANON_KEY'
-  ]);
-
-  const authorization =
-    req.headers.authorization || '';
-
-  if (!authorization.startsWith('Bearer ')) {
-    throw fail(
-      401,
-      'AUTH_REQUIRED',
-      'Authentication required.'
-    );
-  }
-
-  const token =
-    authorization.slice(7).trim();
-
-  if (!token) {
-    throw fail(
-      401,
-      'AUTH_REQUIRED',
-      'Authentication required.'
-    );
-  }
-
-  const authClient = createClient(
-    SUPABASE_URL,
-    SUPABASE_ANON_KEY,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
+  function safeStopTrack(track) {
+    try {
+      if (track && typeof track.stop === 'function') {
+        track.stop();
       }
+    } catch (_) {}
+  }
+
+  function detachTrack(track) {
+    try {
+      if (
+        track &&
+        typeof track.detach === 'function'
+      ) {
+        var elements = track.detach();
+
+        if (elements && elements.forEach) {
+          elements.forEach(function (element) {
+            try {
+              element.remove();
+            } catch (_) {}
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  function stopLocalTracks(room) {
+    if (!room || !room.localParticipant) return;
+
+    try {
+      var publications =
+        room.localParticipant.trackPublications;
+
+      if (!publications) return;
+
+      publications.forEach(function (publication) {
+        try {
+          if (publication && publication.track) {
+            detachTrack(publication.track);
+            safeStopTrack(publication.track);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function createLiveKitError(message, code, cause) {
+    var error = new Error(
+      message ||
+      'LiveKit connection failed.'
+    );
+
+    error.code =
+      code ||
+      'LIVEKIT_CONNECTION_FAILED';
+
+    if (cause) {
+      error.cause = cause;
     }
-  );
 
-  const {
-    data,
-    error
-  } = await authClient.auth.getUser(token);
-
-  if (error) {
-    const normalized = normalizeExternalError(error);
-    console.warn('[Creator Hub Auth Error]', normalized);
-
-    throw fail(
-      401,
-      'AUTH_REQUIRED',
-      'Invalid or expired Supabase session.'
-    );
+    return error;
   }
 
-  if (!data?.user) {
-    throw fail(
-      401,
-      'AUTH_REQUIRED',
-      'Invalid or expired Supabase session.'
-    );
-  }
+  CHL.connectLiveKit = async function (options) {
+    options = options || {};
 
-  return data.user;
-}
+    ensureSdk();
 
-
-async function profileFor(user) {
-  const client = db();
-
-  const {
-    data,
-    error
-  } = await client
-    .from('profiles')
-    .select('id,username,display_name,is_admin')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (error) {
-    const normalized = normalizeExternalError(error);
-    throw fail(
-      500,
-      'PROFILE_LOOKUP_FAILED',
-      normalized.message,
-      { code: normalized.code, details: normalized.details }
-    );
-  }
-
-  return (
-    data || {
-      id: user.id,
-      is_admin: false
+    if (!CHL.user) {
+      throw createLiveKitError(
+        'Please sign in before connecting to LIVE.',
+        'AUTH_REQUIRED'
+      );
     }
-  );
-}
 
+    var roomName = normalizeRoomName(options);
 
-// ============================================================================
-// LIVE helpers
-// ============================================================================
+    if (!roomName) {
+      throw createLiveKitError(
+        'A valid LIVE room name is required.',
+        'INVALID_ROOM'
+      );
+    }
 
-function liveRoomParts(pathname) {
-  const match = pathname.match(
-    /^\/api\/live\/rooms(?:\/([^/]+))?(?:\/(join|start|end|leave|chat))?\/?$/
-  );
+    if (activeRoom) {
+      CHL.disconnectLiveKit();
+    }
 
-  if (!match) {
-    return null;
-  }
+    var canPublish =
+      options.canPublish === true;
 
-  return {
-    id: match[1] ? decodeURIComponent(match[1]) : null,
-    action: match[2] || null
+    var ttlSeconds =
+      Number(options.ttlSeconds || 3600);
+
+    if (!Number.isFinite(ttlSeconds)) {
+      ttlSeconds = 3600;
+    }
+
+    ttlSeconds = Math.max(
+      60,
+      Math.min(3600, ttlSeconds)
+    );
+
+    var tokenData;
+
+    try {
+      tokenData =
+        await CHL.getLiveKitToken(
+          roomName,
+          canPublish,
+          ttlSeconds
+        );
+    } catch (error) {
+      if (error) {
+        error.code =
+          error.code ||
+          'TOKEN_GENERATION_FAILED';
+      }
+
+      throw error;
+    }
+
+    if (
+      !tokenData ||
+      !tokenData.token ||
+      !tokenData.serverUrl
+    ) {
+      throw createLiveKitError(
+        'The backend returned an incomplete LiveKit connection response.',
+        'TOKEN_GENERATION_FAILED'
+      );
+    }
+
+    var Room =
+      window.LivekitClient.Room;
+
+    var room;
+
+    try {
+      room = new Room({
+        adaptiveStream: true,
+        dynacast: true
+      });
+    } catch (error) {
+      throw createLiveKitError(
+        'Unable to create the LiveKit room connection.',
+        'LIVEKIT_ROOM_CREATION_FAILED',
+        error
+      );
+    }
+
+    activeRoom = room;
+
+    bind(
+      room,
+      'TrackSubscribed',
+      function (
+        track,
+        publication,
+        participant
+      ) {
+        try {
+          if (options.onRemoteTrack) {
+            options.onRemoteTrack(
+              track,
+              participant,
+              publication
+            );
+          }
+        } catch (error) {
+          if (window.console) {
+            console.error(
+              '[Creator Hub] Remote track handler failed.',
+              error
+            );
+          }
+        }
+      }
+    );
+
+    bind(
+      room,
+      'TrackUnsubscribed',
+      function (
+        track,
+        publication,
+        participant
+      ) {
+        try {
+          detachTrack(track);
+
+          if (
+            options.onRemoteTrackRemoved
+          ) {
+            options.onRemoteTrackRemoved(
+              track,
+              participant,
+              publication
+            );
+          }
+        } catch (error) {
+          if (window.console) {
+            console.error(
+              '[Creator Hub] Remote track removal handler failed.',
+              error
+            );
+          }
+        }
+      }
+    );
+
+    bind(
+      room,
+      'ParticipantConnected',
+      function (participant) {
+        try {
+          if (
+            options.onParticipantConnected
+          ) {
+            options.onParticipantConnected(
+              participant
+            );
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'ParticipantDisconnected',
+      function (participant) {
+        try {
+          if (
+            options.onParticipantDisconnected
+          ) {
+            options.onParticipantDisconnected(
+              participant
+            );
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'ActiveSpeakersChanged',
+      function (speakers) {
+        try {
+          if (options.onActiveSpeakers) {
+            options.onActiveSpeakers(
+              speakers || []
+            );
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'Reconnecting',
+      function () {
+        try {
+          if (options.onReconnecting) {
+            options.onReconnecting();
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'Reconnected',
+      function () {
+        try {
+          if (options.onReconnected) {
+            options.onReconnected();
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'Disconnected',
+      function (reason) {
+        try {
+          if (options.onDisconnected) {
+            options.onDisconnected(
+              reason
+            );
+          }
+        } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'ConnectionStateChanged',
+      function (state) {
+        try {
+          if (
+            options.onConnectionState
+          ) {
+            options.onConnectionState(
+              state
+            );
+          }
+        } catch (_) {}
+      }
+    );
+
+    try {
+      await room.connect(
+        tokenData.serverUrl,
+        tokenData.token,
+        {
+          autoSubscribe: true
+        }
+      );
+
+      if (canPublish) {
+        try {
+          if (
+            !room.localParticipant ||
+            typeof room.localParticipant.enableCameraAndMicrophone !==
+              'function'
+          ) {
+            throw createLiveKitError(
+              'This LiveKit client cannot enable the camera and microphone.',
+              'MEDIA_PUBLISH_UNSUPPORTED'
+            );
+          }
+
+          await room.localParticipant.enableCameraAndMicrophone();
+
+          if (
+            !CHL.hasPublishedCamera() ||
+            !CHL.hasPublishedMicrophone()
+          ) {
+            throw createLiveKitError(
+              'The camera or microphone did not publish successfully.',
+              'MEDIA_PUBLICATION_FAILED'
+            );
+          }
+        } catch (mediaError) {
+          var publishError = createLiveKitError(
+            mediaError && mediaError.message
+              ? mediaError.message
+              : 'Could not start the camera and microphone.',
+            mediaError && mediaError.code
+              ? mediaError.code
+              : 'MEDIA_PUBLISH_FAILED',
+            mediaError
+          );
+
+          publishError.mediaType =
+            mediaError && mediaError.mediaType
+              ? mediaError.mediaType
+              : 'camera-or-microphone';
+
+          throw publishError;
+        }
+      }
+
+      /*
+       * Connection and requested media publishing have completed.
+       * The backend must still verify publication before marking LIVE.
+       *
+       * IMPORTANT:
+       * Being connected to LiveKit does NOT automatically mean
+       * Creator Hub should mark the session LIVE.
+       *
+       * Host publication must be completed and verified by the
+       * backend before the LIVE database state is changed.
+       */
+      if (options.onConnected) {
+        await options.onConnected(
+          room,
+          tokenData
+        );
+      }
+
+      return {
+        room: room,
+        roomName: roomName,
+        tokenData: tokenData,
+        canPublish: !!tokenData.canPublish
+      };
+    } catch (error) {
+      CHL.disconnectLiveKit();
+
+      throw createLiveKitError(
+        error &&
+          error.message
+          ? error.message
+          : 'LiveKit connection failed.',
+        'LIVEKIT_CONNECTION_FAILED',
+        error
+      );
+    }
   };
-}
 
+  CHL.disconnectLiveKit = function () {
+    var room = activeRoom;
 
-function validateLiveRoomId(id) {
-  const value = String(id || '').trim();
+    activeRoom = null;
 
-  if (!value) {
-    throw fail(
-      400,
-      'INVALID_ROOM',
-      'A LIVE room ID is required.'
-    );
-  }
+    clearHandlers();
 
-  return value;
-}
-
-
-async function liveRoomById(client, id) {
-  const roomId = validateLiveRoomId(id);
-
-  const {
-    data,
-    error
-  } = await client
-    .from('live_sessions')
-    .select('*')
-    .eq('id', roomId)
-    .maybeSingle();
-
-  if (error) {
-    const normalized = normalizeExternalError(error);
-    throw fail(
-      500,
-      'LIVE_ROOM_LOOKUP_FAILED',
-      normalized.message,
-      { code: normalized.code, details: normalized.details }
-    );
-  }
-
-  if (!data) {
-    throw fail(
-      404,
-      'LIVE_ROOM_NOT_FOUND',
-      'LIVE room not found.'
-    );
-  }
-
-  return data;
-}
-
-
-function validateLiveRoomName(roomName) {
-  const value = String(roomName || '').trim();
-
-  if (!validateRoomName(value)) {
-    throw fail(
-      400,
-      'INVALID_ROOM',
-      'The LIVE room name is invalid.'
-    );
-  }
-
-  return value;
-}
-
-
-// ============================================================================
-// PayPal API
-// ============================================================================
-
-async function paypalToken() {
-  requireServerConfig([
-    'PAYPAL_CLIENT_ID',
-    'PAYPAL_CLIENT_SECRET'
-  ]);
-
-  const auth = Buffer.from(
-    `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
-  ).toString('base64');
-
-  const response = await fetch(
-    `${PAYPAL_BASE}/v1/oauth2/token`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: 'grant_type=client_credentials'
-    }
-  );
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw fail(
-      502,
-      'PAYMENT_PROVIDER_ERROR',
-      `PayPal OAuth failed (${response.status}): ${text}`
-    );
-  }
-
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw fail(
-      502,
-      'PAYMENT_PROVIDER_ERROR',
-      'PayPal OAuth returned an invalid response.'
-    );
-  }
-
-  if (!data.access_token) {
-    throw fail(
-      502,
-      'PAYMENT_PROVIDER_ERROR',
-      'PayPal did not return an access token.'
-    );
-  }
-
-  return data.access_token;
-}
-
-
-async function paypal(path, options = {}) {
-  const token = await paypalToken();
-
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    ...(options.headers || {})
-  };
-
-  const response = await fetch(
-    `${PAYPAL_BASE}${path}`,
-    {
-      ...options,
-      headers
-    }
-  );
-
-  const text = await response.text();
-  let data = {};
-
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = {};
-  }
-
-  if (!response.ok) {
-    throw fail(
-      502,
-      'PAYMENT_PROVIDER_ERROR',
-      data?.message || `PayPal request failed (${response.status}).`,
-      { paypalStatus: response.status, body: data }
-    );
-  }
-
-  return data;
-}
-
-
-async function verifyPaypalWebhookSignature({ rawBody, headers }) {
-  requireServerConfig([
-    'PAYPAL_CLIENT_ID',
-    'PAYPAL_CLIENT_SECRET',
-    'PAYPAL_WEBHOOK_ID'
-  ]);
-
-  const event = JSON.parse(rawBody);
-  const verification = await paypal(
-    '/v1/notifications/verify-webhook-signature',
-    {
-      method: 'POST',
-      body: JSON.stringify({
-        auth_algo: headers['paypal-auth-algo'],
-        cert_url: headers['paypal-cert-url'],
-        transmission_id: headers['paypal-transmission-id'],
-        transmission_sig: headers['paypal-transmission-sig'],
-        transmission_time: headers['paypal-transmission-time'],
-        webhook_id: PAYPAL_WEBHOOK_ID,
-        webhook_event: event
-      })
-    }
-  );
-
-  if (verification.verification_status !== 'SUCCESS') {
-    throw fail(
-      400,
-      'PAYPAL_WEBHOOK_INVALID',
-      'PayPal webhook signature verification failed.'
-    );
-  }
-
-  return event;
-}
-
-async function paymentByOrder(client, orderId) {
-  const {
-    data,
-    error
-  } = await client
-    .from('payments')
-    .select('*')
-    .eq('provider_order_id', orderId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    throw fail(
-      404,
-      'PAYMENT_FAILED',
-      'Payment order was not found.'
-    );
-  }
-
-  return data;
-}
-
-
-async function creditCapture(client, payment, captureId) {
-  if (!captureId) {
-    throw fail(
-      502,
-      'PAYMENT_VERIFICATION_FAILED',
-      'PayPal capture ID was not returned.'
-    );
-  }
-
-  const idempotencyKey = `paypal:capture:${captureId}`;
-
-  const { error } = await client.rpc(
-    'credit_coins',
-    {
-      p_user: payment.user_id,
-      p_amount: payment.package_coins,
-      p_source: 'paypal',
-      p_provider: 'paypal',
-      p_reference: captureId,
-      p_reason: `PayPal coin purchase ${payment.provider_order_id}`,
-      p_idempotency_key: idempotencyKey
-    }
-  );
-
-  if (error) {
-    throw error;
-  }
-
-  const { error: updateError } = await client
-    .from('payments')
-    .update({
-      provider_capture_id: captureId,
-      status: 'completed',
-      credited: true,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', payment.id);
-
-  if (updateError) {
-    throw updateError;
-  }
-
-  return true;
-}
-
-
-async function coinPackage(client, coins) {
-  const {
-    data,
-    error
-  } = await client
-    .from('coin_packages')
-    .select('*')
-    .eq('coins', coins)
-    .eq('active', true)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    throw fail(
-      400,
-      'INVALID_PACKAGE',
-      'The requested coin package is not available.'
-    );
-  }
-
-  return data;
-}
-
-
-// ============================================================================
-// Wallet Helpers
-// ============================================================================
-
-async function ensureWallet(client, userId) {
-  const { error } = await client
-    .from('wallets')
-    .upsert(
-      { user_id: userId },
-      { onConflict: 'user_id', ignoreDuplicates: true }
-    );
-
-  if (error) {
-    throw error;
-  }
-}
-
-
-async function walletFor(client, userId) {
-  await ensureWallet(client, userId);
-
-  const {
-    data,
-    error
-  } = await client
-    .from('wallets')
-    .select('coin_balance,diamond_balance,lifetime_gifts_sent')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  return (
-    data || {
-      coin_balance: 0,
-      diamond_balance: 0,
-      lifetime_gifts_sent: 0
-    }
-  );
-}
-
-
-// ============================================================================
-// HTTP Router
-// ============================================================================
-
-const server = http.createServer(
-  async (req, res) => {
-    applyCors(req, res);
-
-    const url = new URL(
-      req.url,
-      `http://${req.headers.host || 'localhost'}`
-    );
-
-    const pathname = url.pathname.replace(/\/+$/, '') || '/';
-    const method = req.method;
-
-    if (method === 'OPTIONS') {
-      res.writeHead(204, secureHeaders());
-      return res.end();
+    if (!room) {
+      return;
     }
 
     try {
-      // ------------------------------------------------------------------
-      // Infrastructure & Health
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/health' && method === 'GET') {
-        return ok(res, {
-          status: 'operational',
-          livekit: livekitHealth(),
-          time: new Date().toISOString()
-        });
-      }
-
-      if (pathname === '/api/livekit/health' && method === 'GET') {
-        return ok(res, {
-          livekit: livekitHealth()
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // League Standings — server-authoritative, read-only
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/leagues/standings' && method === 'GET') {
-        await requireSupabaseUser(req);
-
-        const client = db();
-
-        const {
-          data: season,
-          error: seasonError
-        } = await client
-          .from('league_seasons')
-          .select('id,name,status')
-          .eq('status', 'active')
-          .maybeSingle();
-
-        if (seasonError) {
-          const normalized = normalizeExternalError(seasonError);
-          throw fail(
-            500,
-            'LEAGUE_SEASON_LOOKUP_FAILED',
-            normalized.message,
-            {
-              code: normalized.code,
-              details: normalized.details
-            }
-          );
-        }
-
-        if (!season) {
-          return ok(res, { standings: [] });
-        }
-
-        const {
-          data: rows,
-          error: standingsError
-        } = await client
-          .from('league_standings')
-          .select(`
-            season_id,
-            division_code,
-            played,
-            wins,
-            draws,
-            losses,
-            goals_for,
-            goals_against,
-            points,
-            position,
-            teams(name)
-          `)
-          .eq('season_id', season.id)
-          .order('division_code', { ascending: true })
-          .order('position', { ascending: true, nullsFirst: false });
-
-        if (standingsError) {
-          const normalized = normalizeExternalError(standingsError);
-          throw fail(
-            500,
-            'LEAGUE_STANDINGS_QUERY_FAILED',
-            normalized.message,
-            {
-              code: normalized.code,
-              details: normalized.details
-            }
-          );
-        }
-
-        return ok(res, {
-          season: {
-            id: season.id,
-            name: season.name,
-            status: season.status
-          },
-          standings: (rows || []).map((row) => ({
-            ...row,
-            teams: Array.isArray(row.teams)
-              ? row.teams[0] || {}
-              : row.teams || {}
-          }))
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // Public Configuration
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/config/public' && method === 'GET') {
-        return ok(res, {
-          frontendUrl: FRONTEND_URL || null,
-          livekitUrl: LIVEKIT_URL || null,
-          paypalEnvironment: PAYPAL_ENV,
-          features: {
-            livekit: livekitHealth().configured,
-            paypal: !!(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET)
-          }
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // LiveKit Token Generation
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/livekit/token' && method === 'POST') {
-        const user = await requireSupabaseUser(req);
-        const body = await readJson(req);
-        const client = db();
-
-        let roomName = null;
-        let canPublish = false;
-
-        const roomId = body.roomId ? String(body.roomId).trim() : null;
-
-        if (roomId) {
-          const room = await liveRoomById(client, roomId);
-          roomName = String(room.room_name).trim();
-          canPublish = String(room.host_id) === String(user.id);
-        } else if (body.roomName && String(body.roomName).trim()) {
-          roomName = String(body.roomName).trim();
-
-          const { data: room, error } = await client
-            .from('live_sessions')
-            .select('id,host_id,room_name,status')
-            .eq('room_name', roomName)
-            .maybeSingle();
-
-          if (error) {
-            throw error;
-          }
-
-          if (!room) {
-            throw fail(404, 'LIVE_ROOM_NOT_FOUND', 'LIVE room not found.');
-          }
-
-          canPublish = String(room.host_id) === String(user.id);
-        } else {
-          throw fail(400, 'INVALID_ROOM', 'A valid LIVE room is required.');
-        }
-
-        const token = await createLiveKitToken({
-          userId: user.id,
-          roomName,
-          canPublish,
-          ttlSeconds: body.ttlSeconds
-        });
-
-        return ok(res, {
-          token,
-          serverUrl: LIVEKIT_URL,
-          canPublish,
-          roomName,
-          identity: user.id
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // LIVE Rooms - List
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/live/rooms' && method === 'GET') {
-        const client = db();
-        const limit = clampLimit(url.searchParams.get('limit'), 30, 100);
-
-        const { data, error } = await client
-          .from('live_sessions')
-          .select('id,host_id,title,category,status,viewer_count,started_at')
-          .eq('status', 'live')
-          .order('started_at', { ascending: false })
-          .limit(limit);
-
-        if (error) {
-          const normalized = normalizeExternalError(error);
-          throw fail(
-            500,
-            'LIVE_ROOMS_QUERY_FAILED',
-            normalized.message,
-            { code: normalized.code, details: normalized.details }
-          );
-        }
-
-        return ok(res, { rooms: data || [] });
-      }
-
-      // ------------------------------------------------------------------
-      // LIVE Room - Create
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/live/rooms' && method === 'POST') {
-        const user = await requireSupabaseUser(req);
-        const body = await readJson(req);
-
-        const title = String(body.title || '').trim().slice(0, 200);
-
-        if (!title) {
-          throw fail(400, 'INVALID_INPUT', 'A stream title is required.');
-        }
-
-        const client = db();
-        const randomId = globalThis.crypto?.randomUUID?.();
-        const roomName = (
-          'chl_' + (randomId || Date.now().toString(36))
-        ).replace(/-/g, '');
-
-        const insertData = {
-          host_id: user.id,
-          room_name: roomName,
-          title,
-          category: body.category ? String(body.category).trim().slice(0, 60) : null,
-          status: 'pending'
-        };
-
-        const { data, error } = await client
-          .from('live_sessions')
-          .insert(insertData)
-          .select('*')
-          .single();
-
-        if (error) {
-          const normalized = normalizeExternalError(error);
-          throw fail(
-            500,
-            'LIVE_ROOM_CREATION_FAILED',
-            normalized.message,
-            { code: normalized.code, details: normalized.details }
-          );
-        }
-
-        return ok(res, data);
-      }
-
-      // ------------------------------------------------------------------
-      // LIVE Room Actions
-      // ------------------------------------------------------------------
-
-      const liveParts = liveRoomParts(pathname);
-
-      if (liveParts && liveParts.id) {
-        const client = db();
-
-        if (!liveParts.action && method === 'GET') {
-          const room = await liveRoomById(client, liveParts.id);
-          return ok(res, room);
-        }
-
-        if (liveParts.action === 'join' && method === 'POST') {
-          const user = await requireSupabaseUser(req);
-          const room = await liveRoomById(client, liveParts.id);
-
-          if (room.status === 'ended') {
-            throw fail(409, 'LIVE_ENDED', 'This LIVE session has ended.');
-          }
-
-          const canPublish = String(room.host_id) === String(user.id);
-
-          return ok(res, {
-            joined: true,
-            roomId: room.id,
-            status: room.status,
-            roomName: room.room_name,
-            isHost: canPublish,
-            canPublish
-          });
-        }
-
-        if (liveParts.action === 'start' && method === 'POST') {
-          const user = await requireSupabaseUser(req);
-          const room = await liveRoomById(client, liveParts.id);
-
-          if (String(room.host_id) !== String(user.id)) {
-            throw fail(403, 'FORBIDDEN', 'Only the host can start this LIVE session.');
-          }
-
-          if (room.status === 'ended') {
-            throw fail(409, 'LIVE_ENDED', 'This LIVE session has already ended.');
-          }
-
-          await verifyHostPublishing(
-            validateLiveRoomName(room.room_name),
-            user.id
-          );
-
-          const { data, error } = await client
-            .from('live_sessions')
-            .update({
-              status: 'live',
-              started_at: room.started_at || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', room.id)
-            .select('*')
-            .single();
-
-          if (error) {
-            const normalized = normalizeExternalError(error);
-            throw fail(
-              500,
-              'LIVE_ROOM_START_FAILED',
-              normalized.message,
-              { code: normalized.code, details: normalized.details }
-            );
-          }
-
-          return ok(res, data);
-        }
-
-        if (liveParts.action === 'end' && method === 'POST') {
-          const user = await requireSupabaseUser(req);
-          const room = await liveRoomById(client, liveParts.id);
-
-          if (String(room.host_id) !== String(user.id)) {
-            throw fail(403, 'FORBIDDEN', 'Only the host can end this LIVE session.');
-          }
-
-          const { data, error } = await client
-            .from('live_sessions')
-            .update({
-              status: 'ended',
-              ended_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', room.id)
-            .select('*')
-            .single();
-
-          if (error) {
-            const normalized = normalizeExternalError(error);
-            throw fail(
-              500,
-              'LIVE_ROOM_END_FAILED',
-              normalized.message,
-              { code: normalized.code, details: normalized.details }
-            );
-          }
-
-          return ok(res, data);
-        }
-
-        if (liveParts.action === 'leave' && method === 'POST') {
-          await requireSupabaseUser(req);
-          const room = await liveRoomById(client, liveParts.id);
-
-          return ok(res, {
-            left: true,
-            roomId: room.id,
-            status: room.status
-          });
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // PayPal Payments - Create Order
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/payments/paypal/create-order' && method === 'POST') {
-        const user = await requireSupabaseUser(req);
-        const idempotencyKey = requireIdem(req);
-        const body = await readJson(req);
-        const coins = Number(body.coins);
-
-        const client = db();
-        const pkg = await coinPackage(client, coins);
-
-        const { data: existingPayment } = await client
-          .from('payments')
-          .select('*')
-          .eq('idempotency_key', idempotencyKey)
-          .maybeSingle();
-
-        if (existingPayment) {
-          return ok(res, {
-            orderId: existingPayment.provider_order_id,
-            status: existingPayment.status,
-            coins: existingPayment.package_coins,
-            amount: Number(existingPayment.amount)
-          });
-        }
-
-        const amountUsd = Number(pkg.price_usd).toFixed(2);
-
-        const payload = {
-          intent: 'CAPTURE',
-          purchase_units: [
-            {
-              reference_id: `pkg_${pkg.coins}`,
-              description: `${pkg.coins} Creator Coins`,
-              amount: {
-                currency_code: 'USD',
-                value: amountUsd
-              }
-            }
-          ],
-          application_context: {
-            user_action: 'PAY_NOW',
-            return_url: PAYPAL_RETURN_URL ? `${PAYPAL_RETURN_URL}/wallet?success=true` : undefined,
-            cancel_url: PAYPAL_RETURN_URL ? `${PAYPAL_RETURN_URL}/wallet?canceled=true` : undefined
-          }
-        };
-
-        const order = await paypal(
-          '/v2/checkout/orders',
-          {
-            method: 'POST',
-            headers: {
-              'PayPal-Request-Id': idempotencyKey
-            },
-            body: JSON.stringify(payload)
-          }
-        );
-
-        const orderId = order.id;
-
-        if (!orderId) {
-          throw fail(
-            502,
-            'PAYMENT_PROVIDER_ERROR',
-            'PayPal did not return an order ID.'
-          );
-        }
-
-        const { error: insertError } = await client
-          .from('payments')
-          .insert({
-            user_id: user.id,
-            provider: 'paypal',
-            provider_order_id: orderId,
-            package_id: pkg.id,
-            package_coins: pkg.coins,
-            amount: amountUsd,
-            currency: 'USD',
-            status: 'pending',
-            idempotency_key: idempotencyKey,
-            metadata: order
-          });
-
-        if (insertError) {
-          const normalized = normalizeExternalError(insertError);
-          throw fail(500, 'PAYMENT_RECORD_FAILED', normalized.message);
-        }
-
-        return ok(res, {
-          orderId,
-          status: 'pending',
-          coins: pkg.coins,
-          amount: Number(amountUsd)
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // PayPal Payments - Capture Order
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/payments/paypal/capture-order' && method === 'POST') {
-        const user = await requireSupabaseUser(req);
-        const body = await readJson(req);
-        const orderId = String(body.orderId || '').trim();
-
-        if (!orderId) {
-          throw fail(400, 'INVALID_INPUT', 'A PayPal order ID is required.');
-        }
-
-        const client = db();
-        const payment = await paymentByOrder(client, orderId);
-
-        if (String(payment.user_id) !== String(user.id)) {
-          throw fail(403, 'FORBIDDEN', 'You are not authorized to capture this payment.');
-        }
-
-        if (payment.status === 'completed') {
-          return ok(res, {
-            captured: true,
-            status: 'completed',
-            coins: payment.package_coins
-          });
-        }
-
-        const captureResponse = await paypal(
-          `/v2/checkout/orders/${orderId}/capture`,
-          {
-            method: 'POST'
-          }
-        );
-
-        const captureUnits = captureResponse?.purchase_units?.[0]?.payments?.captures;
-        const capture = Array.isArray(captureUnits) ? captureUnits[0] : null;
-        const captureId = capture?.id;
-
-        if (!captureId || capture?.status !== 'COMPLETED') {
-          throw fail(
-            502,
-            'PAYMENT_CAPTURE_FAILED',
-            'PayPal order capture was not completed successfully.'
-          );
-        }
-
-        await creditCapture(client, payment, captureId);
-
-        return ok(res, {
-          captured: true,
-          status: 'completed',
-          coins: payment.package_coins
-        });
-      }
-
-      // ------------------------------------------------------------------
-      // PayPal Payments - Webhook Handler
-      // ------------------------------------------------------------------
-
-      if (pathname === '/api/payments/paypal/webhook' && method === 'POST') {
-        const rawBody = await readRawBody(req);
-        const event = await verifyPaypalWebhookSignature({
-          rawBody,
-          headers: req.headers
-        });
-
-        const client = db();
-        const eventType = event.event_type;
-
-        if (eventType === 'CHECKOUT.ORDER.APPROVED') {
-          // Handled via client-side capture flow
-        } else if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
-          const resource = event.resource;
-          const captureId = resource?.id;
-          const orderId = resource?.supplementary_data?.related_ids?.order_id || resource?.invoice_id;
-
-          if (orderId && captureId) {
+      stopLocalTracks(room);
+    } catch (_) {}
+
+    try {
+      if (
+        room.localParticipant &&
+        room.localParticipant.trackPublications
+      ) {
+        room.localParticipant.trackPublications.forEach(
+          function (publication) {
             try {
-              const payment = await paymentByOrder(client, orderId);
-              if (payment.status !== 'completed') {
-                await creditCapture(client, payment, captureId);
+              if (
+                publication &&
+                publication.track
+              ) {
+                detachTrack(
+                  publication.track
+                );
               }
-            } catch (err) {
-              console.error('[PayPal Webhook] Failed to credit capture:', err);
-            }
+            } catch (_) {}
           }
-        }
+        );
+      }
+    } catch (_) {}
 
-        return ok(res, { received: true });
+    try {
+      room.disconnect();
+    } catch (_) {}
+  };
+
+  CHL.publishCamera = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    try {
+      return await activeRoom.localParticipant
+        .setCameraEnabled(true);
+    } catch (error) {
+      error.code =
+        error.code ||
+        'MEDIA_PERMISSION_DENIED';
+
+      error.mediaType = 'camera';
+
+      throw error;
+    }
+  };
+
+  CHL.unpublishCamera = async function () {
+    if (!activeRoom) return false;
+
+    return activeRoom.localParticipant
+      .setCameraEnabled(false);
+  };
+
+  CHL.publishMicrophone = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    try {
+      return await activeRoom.localParticipant
+        .setMicrophoneEnabled(true);
+    } catch (error) {
+      error.code =
+        error.code ||
+        'MEDIA_PERMISSION_DENIED';
+
+      error.mediaType = 'microphone';
+
+      throw error;
+    }
+  };
+
+  CHL.unpublishMicrophone = async function () {
+    if (!activeRoom) return false;
+
+    return activeRoom.localParticipant
+      .setMicrophoneEnabled(false);
+  };
+
+  CHL.toggleCamera = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    var participant =
+      activeRoom.localParticipant;
+
+    var enabled =
+      !!participant.isCameraEnabled;
+
+    return participant.setCameraEnabled(
+      !enabled
+    );
+  };
+
+  CHL.toggleMicrophone = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    var participant =
+      activeRoom.localParticipant;
+
+    var enabled =
+      !!participant.isMicrophoneEnabled;
+
+    return participant.setMicrophoneEnabled(
+      !enabled
+    );
+  };
+
+  CHL.startScreenShare = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getDisplayMedia !==
+        'function'
+    ) {
+      var unsupported = new Error(
+        'Screen sharing is not supported by this browser.'
+      );
+
+      unsupported.code =
+        'SCREEN_SHARE_UNSUPPORTED';
+
+      throw unsupported;
+    }
+
+    try {
+      return await activeRoom.localParticipant
+        .setScreenShareEnabled(
+          true,
+          {
+            audio: true
+          }
+        );
+    } catch (error) {
+      error.code =
+        error.code ||
+        'SCREEN_SHARE_FAILED';
+
+      throw error;
+    }
+  };
+
+  CHL.stopScreenShare = async function () {
+    if (!activeRoom) return false;
+
+    return activeRoom.localParticipant
+      .setScreenShareEnabled(false);
+  };
+
+  CHL.attachLocalTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
+      return null;
+    }
+
+    try {
+      var element = track.attach();
+
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
       }
 
-      // ------------------------------------------------------------------
-      // Not Found
-      // ------------------------------------------------------------------
+      return element;
+    } catch (error) {
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach local track.',
+          error
+        );
+      }
 
-      return send(res, 404, {
-        ok: false,
-        code: 'NOT_FOUND',
-        error: 'Endpoint not found.'
-      });
-
-    } catch (err) {
-      return errorResponse(res, err);
+      return null;
     }
-  }
-);
+  };
 
-// ============================================================================
-// Server Startup
-// ============================================================================
+  CHL.attachRemoteTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
+      return null;
+    }
 
-server.listen(PORT, () => {
-  console.log(`[Creator Hub Backend] Server listening on port ${PORT}`);
-});
+    try {
+      var element = track.attach();
+
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
+      }
+
+      return element;
+    } catch (error) {
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach remote track.',
+          error
+        );
+      }
+
+      return null;
+    }
+  };
+
+  CHL.detachTrack = function (
+    track
+  ) {
+    detachTrack(track);
+  };
+
+  CHL.getActiveLiveKitRoom =
+    function () {
+      return activeRoom;
+    };
+
+  CHL.isLiveKitConnected =
+    function () {
+      if (!activeRoom) {
+        return false;
+      }
+
+      try {
+        var state =
+          activeRoom.state;
+
+        return (
+          String(state || '')
+            .toLowerCase() ===
+          'connected'
+        );
+      } catch (_) {
+        return false;
+      }
+    };
+
+  CHL.hasPublishedCamera =
+    function () {
+      if (!activeRoom) return false;
+
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
+
+        var found = false;
+
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
+
+              if (
+                type === 'camera' ||
+                type === 'video'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
+
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  CHL.hasPublishedMicrophone =
+    function () {
+      if (!activeRoom) return false;
+
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
+
+        var found = false;
+
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
+
+              if (
+                type === 'microphone' ||
+                type === 'audio'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
+
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  CHL.handleParticipantConnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant joined: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleParticipantDisconnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant left: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleActiveSpeaker =
+    function (speakers) {
+      return speakers || [];
+    };
+
+  CHL.handleConnectionState =
+    function (state) {
+      return state;
+    };
+
+  CHL.cleanup =
+    CHL.disconnectLiveKit;
+
+  window.addEventListener(
+    'beforeunload',
+    function () {
+      unloading = true;
+
+      try {
+        CHL.disconnectLiveKit();
+      } catch (_) {}
+    }
+  );
+
+  window.addEventListener(
+    'pageshow',
+    function () {
+      if (
+        unloading &&
+        activeRoom
+      ) {
+        try {
+          CHL.disconnectLiveKit();
+        } catch (_) {}
+      }
+
+      unloading = false;
+    }
+  );
+})();
