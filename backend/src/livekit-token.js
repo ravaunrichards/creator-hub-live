@@ -1,4 +1,4 @@
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import {  AccessToken,  RoomServiceClient,  TrackSource} from 'livekit-server-sdk';
 import { classifyPublishedTracks } from './livekit-verification.js';
 
 // Derive the LiveKit HTTP API base (https) from the realtime (wss) URL.
@@ -110,7 +110,9 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     roomJoin: true, 
     room: roomName, 
     canPublish: !!canPublish,
-    canPublishSources: canPublish ? ['camera', 'microphone'] : [],
+    canPublishSources: canPublish
+  ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
+  : [],
     canSubscribe: true, 
     canPublishData: true 
   });
