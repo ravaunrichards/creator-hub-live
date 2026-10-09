@@ -508,7 +508,57 @@
       );
 
       /*
-       * Only report connection success here.
+       * Publish the host's real camera and microphone.
+       * Only do this when the caller requests publishing.
+       */
+      if (canPublish) {
+        try {
+          if (
+            !room.localParticipant ||
+            typeof room.localParticipant.enableCameraAndMicrophone !==
+              'function'
+          ) {
+            throw createLiveKitError(
+              'This LiveKit client cannot enable the camera and microphone.',
+              'MEDIA_PUBLISH_UNSUPPORTED'
+            );
+          }
+
+          await room.localParticipant.enableCameraAndMicrophone();
+          /*
+           * Confirm that both local tracks were published.           */
+          if (
+            !CHL.hasPublishedCamera() ||            !CHL.hasPublishedMicrophone()          ) {
+            throw createLiveKitError(
+              'The camera or microphone did not publish successfully.',
+              'MEDIA_PUBLICATION_FAILED'
+            );
+          }
+        } catch (mediaError) {
+          var publishError = createLiveKitError(
+            mediaError && mediaError.message
+              ? mediaError.message
+              : 'Could not start the camera and microphone.',
+            mediaError && mediaError.code
+              ? mediaError.code
+              : 'MEDIA_PUBLISH_FAILED',
+            mediaError
+          );
+
+          publishError.mediaType =
+            mediaError && mediaError.mediaType
+              ? mediaError.mediaType
+              : 'camera-or-microphone';
+
+          throw publishError;
+        }
+      }
+
+      /*
+       * Connection and requested media publishing have completed.
+       * The backend must still verify publication before marking LIVE.
+       */
+
        *
        * IMPORTANT:
        * Being connected to LiveKit does NOT automatically mean
