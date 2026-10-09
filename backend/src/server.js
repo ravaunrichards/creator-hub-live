@@ -862,7 +862,94 @@ const server = http.createServer(
       }
 
       // ------------------------------------------------------------------
-      // Public Configuration
+        // ------------------------------------------------------------------
+      // League Standings — server-authoritative, read-only
+      // ------------------------------------------------------------------
+
+      if (pathname === '/api/leagues/standings' && method === 'GET') {
+        await requireSupabaseUser(req);
+
+        const client = db();
+
+        // Only display standings for the active season.
+        const {
+          data: season,
+          error: seasonError
+        } = await client
+          .from('league_seasons')
+          .select('id,name,status')
+          .eq('status', 'active')
+          .maybeSingle();
+
+        if (seasonError) {
+          const normalized = normalizeExternalError(seasonError);
+          throw fail(
+            500,
+            'LEAGUE_SEASON_LOOKUP_FAILED',
+            normalized.message,
+            {
+              code: normalized.code,
+              details: normalized.details
+            }
+          );
+        }
+
+        // No active season is a valid empty state, not fabricated data.
+        if (!season) {
+          return ok(res, { standings: [] });
+        }
+
+        const {
+          data: rows,
+          error: standingsError
+        } = await client
+          .from('league_standings')
+          .select(`
+            season_id,
+            division_code,
+            played,
+            wins,
+            draws,
+            losses,
+            goals_for,
+            goals_against,
+            points,
+            position,
+            teams(name)
+          `)
+          .eq('season_id', season.id)
+          .order('division_code', { ascending: true })
+          .order('position', { ascending: true, nullsFirst: false });
+
+        if (standingsError) {
+          const normalized = normalizeExternalError(standingsError);
+          throw fail(
+            500,
+            'LEAGUE_STANDINGS_QUERY_FAILED',
+            normalized.message,
+            {
+              code: normalized.code,
+              details: normalized.details
+            }
+          );
+        }
+
+        return ok(res, {
+          season: {
+            id: season.id,
+            name: season.name,
+            status: season.status
+          },
+          standings: (rows || []).map((row) => ({
+            ...row,
+            teams: Array.isArray(row.teams)
+              ? row.teams[0] || {}
+              : row.teams || {}
+          }))
+        });
+      }
+
+// Public Configuration
       // ------------------------------------------------------------------
 
       if (pathname === '/api/config/public' && method === 'GET') {
@@ -1491,7 +1578,8 @@ const server = http.createServer(
 
       if ((pathname === '/api/wallet' || pathname === '/api/wallet/balance') && method === 'GET') {
         const user = await requireSupabaseUser(req);
-        const client = db();
+        const client = db()c
+;
         const wallet = await walletFor(client, user.id);
 
         return ok(res, {
