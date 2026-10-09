@@ -7,9 +7,10 @@ function livekitHttpBase() {
   return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 }
 
-// Server-authoritative LIVE gate: confirm the authenticated host is present in
-// the exact LiveKit room and has both required media sources actually published.
-// The LiveKit protocol's TrackSource values are CAMERA=1 and MICROPHONE=2.
+/**
+ * Server-authoritative LIVE gate: confirm the authenticated host is present in
+ * the exact LiveKit room and has both required media sources actually published.
+ */
 export async function verifyHostPublishing(roomName, identity) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -44,21 +45,23 @@ export async function verifyHostPublishing(roomName, identity) {
     );
   }
 
-  const tracks = Array.isArray(host.tracks)
-    ? host.tracks
-    : host.tracks
-      ? Array.from(host.tracks)
-      : [];
+  // FIX: Explicitly guarantee a flat array from the backend ParticipantInfo track representation
+  let tracks = [];
+  if (host.tracks) {
+    tracks = typeof host.tracks.toArray === 'function' 
+      ? host.tracks.toArray() 
+      : Array.from(host.tracks);
+  }
 
   const media = classifyPublishedTracks(tracks);
 
-  if (!media.camera || !media.microphone) {
+  if (!media || !media.camera || !media.microphone) {
     const missing = [];
-    if (!media.camera) missing.push('camera');
-    if (!media.microphone) missing.push('microphone');
+    if (!media || !media.camera) missing.push('camera');
+    if (!media || !media.microphone) missing.push('microphone');
 
     throw Object.assign(
-      new Error(`Host must publish camera and microphone. Missing: ${missing.join(', ')}.`),
+      new Error(`Host must publish camera and microphone. Missing: ${missing.join(', ')} .`),
       {
         code: 'LIVE_PUBLISH_REQUIRED',
         status: 409,
@@ -76,7 +79,7 @@ export async function verifyHostPublishing(roomName, identity) {
 }
 
 export function validateRoomName(roomName) {
-  return /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/.test(String(roomName || ''));
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}\$/.test(String(roomName || ''));
 }
 
 export async function createLiveKitToken({ userId, roomName, canPublish = false, ttlSeconds = 3600 }) {
@@ -97,7 +100,6 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     });
   }
 
-  // LiveKit accepts a plain number of seconds for options.ttl
   const boundedTtlSeconds = Math.max(60, Math.min(3600, Number(ttlSeconds) || 3600));
 
   const token = new AccessToken(apiKey, apiSecret, { 
@@ -110,12 +112,14 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     roomJoin: true, 
     room: roomName, 
     canPublish: !!canPublish,
-    canPublishSources: canPublish ? ['camera', 'microphone'] : [],
+    // FIX: Include screen sharing capabilities so the frontend CHL.startScreenShare() doesn't get rejected by the SFU
+    canPublishSources: canPublish ? ['camera', 'microphone', 'screen_share', 'screen_share_audio'] : [],
     canSubscribe: true, 
     canPublishData: true 
   });
 
-  return await token.toJwt();
+  // FIX: Removed unnecessary `await` since toJwt() returns a plain string natively
+  return token.toJwt();
 }
 
 export function livekitHealth() {
