@@ -1,15 +1,18 @@
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk';
 import { classifyPublishedTracks } from './livekit-verification.js';
 
-// Derive the LiveKit HTTP API base (https) from the realtime (wss) URL.
+// Derive the LiveKit HTTP API base (https/http) from the realtime (wss/ws) URL,
+// ensuring any trailing slashes are cleanly trimmed.
 function livekitHttpBase() {
   const url = process.env.LIVEKIT_URL || '';
-  return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+  return url
+    .replace(/^wss:/, 'https:')
+    .replace(/^ws:/, 'http:')
+    .replace(/\/+$/, '');
 }
 
 // Server-authoritative LIVE gate: confirm the authenticated host is present in
 // the exact LiveKit room and has both required media sources actually published.
-// The LiveKit protocol's TrackSource values are CAMERA=1 and MICROPHONE=2.
 export async function verifyHostPublishing(roomName, identity) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -97,7 +100,7 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     });
   }
 
-  // LiveKit accepts a plain number of seconds for options.ttl
+  // Bound TTL between 60 seconds and 1 hour
   const boundedTtlSeconds = Math.max(60, Math.min(3600, Number(ttlSeconds) || 3600));
 
   const token = new AccessToken(apiKey, apiSecret, { 
@@ -110,7 +113,9 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     roomJoin: true, 
     room: roomName, 
     canPublish: !!canPublish,
-    canPublishSources: canPublish ? ['camera', 'microphone'] : [],
+    canPublishSources: canPublish
+      ? [TrackSource.CAMERA, TrackSource.MICROPHONE]
+      : [],
     canSubscribe: true, 
     canPublishData: true 
   });
