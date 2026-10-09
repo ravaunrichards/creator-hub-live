@@ -5,9 +5,10 @@
 
 -- Wallets: one coin wallet + one diamond wallet per user.
 create table if not exists public.wallets (
-  user_id uuid key references public.profiles(id) on delete cascade,
-  coin_balance   bigint not null default 0 check (coin_balance >= 0),
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  coin_balance bigint not null default 0 check (coin_balance >= 0),
   diamond_balance bigint not null default 0 check (diamond_balance >= 0),
+  lifetime_gifts_sent bigint not null default 0,
   updated_at timestamptz not null default now()
 );
 
@@ -15,15 +16,15 @@ create table if not exists public.wallets (
 create table if not exists public.coin_ledger (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  amount bigint not null,             
+  amount bigint not null,              
   balance_before bigint not null,
   balance_after bigint not null,
-  source text not null,              
+  source text not null,               
   status text not null default 'completed',
-  provider text,                     
-  reference text,                    
+  provider text,                       
+  reference text,                      
   reason text,
-  idempotency_key text unique,       
+  idempotency_key text unique,        
   created_at timestamptz not null default now()
 );
 create index if not exists coin_ledger_user_idx on public.coin_ledger(user_id, created_at desc);
@@ -37,7 +38,7 @@ create table if not exists public.diamond_ledger (
   balance_after bigint not null,
   source text not null,              
   reference text,
-  exchange_rate numeric(18,8),       
+  exchange_rate numeric(18,8),        
   idempotency_key text unique,
   created_at timestamptz not null default now()
 );
@@ -52,7 +53,6 @@ create table if not exists public.coin_packages (
   active boolean not null default true,
   sort int not null default 0
 );
--- Index to ensure fast multi-currency lookups by coins + currency
 create index if not exists coin_packages_lookup_idx on public.coin_packages(coins, currency, active);
 
 -- PayPal orders: track lifecycle; one credit per capture (idempotent).
@@ -97,6 +97,7 @@ create table if not exists public.gift_transactions (
   live_id uuid,
   coin_cost bigint not null,
   diamond_value bigint not null,
+  idempotency_key text unique,
   created_at timestamptz not null default now()
 );
 
@@ -188,11 +189,11 @@ create policy diamond_withdrawals_read on public.diamond_withdrawals for select 
 
 create or replace function public.request_diamond_withdrawal(p_user uuid, p_amount bigint, p_reference text)
 returns public.diamond_withdrawals language plpgsql security definer set search_path=public as $$
-declare before_balance bigint; row public.diamond_withdrawals;
+declare before_balance bigint; row_rec public.diamond_withdrawals;
 begin
   if p_amount <= 0 then raise exception 'amount must be positive'; end if;
   if exists(select 1 from public.diamond_withdrawals where reference=p_reference) then
-    select * into row from public.diamond_withdrawals where reference=p_reference; return row;
+    select * into row_rec from public.diamond_withdrawals where reference=p_reference; return row_rec;
   end if;
   insert into public.wallets(user_id) values(p_user) on conflict do nothing;
   select diamond_balance into before_balance from public.wallets where user_id=p_user for update;
@@ -200,8 +201,8 @@ begin
   update public.wallets set diamond_balance=before_balance-p_amount, updated_at=now() where user_id=p_user;
   insert into public.diamond_ledger(user_id,amount,balance_before,balance_after,source,reference)
     values(p_user, -p_amount, before_balance, before_balance-p_amount, 'payout', p_reference);
-  insert into public.diamond_withdrawals(user_id,amount,reference) values(p_user, p_amount, p_reference) returning * into row;
-  return row;
+  insert into public.diamond_withdrawals(user_id,amount,reference) values(p_user, p_amount, p_reference) returning * into row_rec;
+  return row_rec;
 end; $$;
 
 -- Security revokes
