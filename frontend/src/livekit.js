@@ -297,18 +297,21 @@
 
     var room;
 
-    try {
-      room = new Room({
-        adaptiveStream: true,
-        dynacast: true
-      });
-    } catch (error) {
-      throw createLiveKitError(
-        'Unable to create the LiveKit room connection.',
-        'LIVEKIT_ROOM_CREATION_FAILED',
-        error
+      try {
+      /*
+       * Connect using the public LiveKit URL and
+       * short-lived participant token from the backend.
+       */
+      await room.connect(
+        tokenData.serverUrl,
+        tokenData.token,
+        { autoSubscribe: true }
       );
-    }
+
+      /*
+       * Notify the caller after the room connects.
+       * This does not automatically mean the broadcast is LIVE.
+       */
 
     activeRoom = room;
 
