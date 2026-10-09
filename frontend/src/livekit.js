@@ -1,55 +1,59 @@
-/*
- * Creator Hub Creator Network — LiveKit integration.
- *
- * Requires:
- *   - src/core.js loaded first
- *   - LiveKit browser SDK loaded as window.LivekitClient
- *   - CHL.getLiveKitToken(roomName, canPublish, ttlSeconds)
- *
- * Private LiveKit API credentials must remain on the backend.
+/* Creator Hub Live — LiveKit browser integration.
+ * Browser receives only short-lived participant tokens.
+ * LiveKit private API credentials never enter browser code.
  */
 (function () {
   'use strict';
 
   var CHL = window.CHL;
-
   if (!CHL) {
-    throw new Error(
-      'Creator Hub core is required before livekit.js.'
-    );
+    throw new Error('Creator Hub core is required before livekit.js.');
   }
 
   var activeRoom = null;
   var handlers = [];
   var unloading = false;
 
-  function logError(message, error) {
-    if (window.console) {
-      console.error('[Creator Hub LIVE] ' + message, error || '');
-    }
+  function eventName(name, fallback) {
+    var events =
+      window.LivekitClient &&
+      window.LivekitClient.RoomEvent;
+
+    return (events && events[name]) || fallback || name;
   }
 
-  function makeError(message, code, cause) {
-    var error = new Error(message || 'LiveKit operation failed.');
-    error.code = code || 'LIVEKIT_ERROR';
+  function bind(room, name, fn) {
+    if (!room || typeof room.on !== 'function') return;
 
-    if (cause) {
-      error.cause = cause;
-    }
+    var resolved = eventName(name);
 
-    return error;
+    room.on(resolved, fn);
+    handlers.push([room, resolved, fn]);
+  }
+
+  function clearHandlers() {
+    handlers.forEach(function (handler) {
+      try {
+        if (handler[0] && typeof handler[0].off === 'function') {
+          handler[0].off(handler[1], handler[2]);
+        }
+      } catch (_) {}
+    });
+
+    handlers = [];
   }
 
   function ensureSdk() {
     if (
       !window.LivekitClient ||
-      !window.LivekitClient.Room ||
-      !window.LivekitClient.Track
+      !window.LivekitClient.Room
     ) {
-      throw makeError(
-        'LiveKit browser SDK is unavailable. Check the SDK script and load order.',
-        'LIVEKIT_SDK_UNAVAILABLE'
+      var error = new Error(
+        'LiveKit browser SDK is unavailable.'
       );
+
+      error.code = 'LIVEKIT_SDK_UNAVAILABLE';
+      throw error;
     }
   }
 
@@ -62,8 +66,16 @@
       '';
 
     /*
-     * Compatibility fallback only.
-     * A database session ID is not necessarily a LiveKit room name.
+     * roomId is accepted only as a compatibility fallback.
+     *
+     * IMPORTANT:
+     * roomId and roomName are not conceptually the same thing.
+     *
+     * Creator Hub database:
+     *   roomId = database LIVE-session identifier
+     *
+     * LiveKit:
+     *   roomName = LiveKit room name
      */
     if (!roomName && options.roomId) {
       roomName = options.roomId;
@@ -72,208 +84,133 @@
     return String(roomName || '').trim();
   }
 
-  function getRoomEvent(name) {
-    var events =
-      window.LivekitClient &&
-      window.LivekitClient.RoomEvent;
-
-    return (events && events[name]) || name;
-  }
-
-  function bind(room, name, callback) {
-    if (!room || typeof room.on !== 'function') {
-      return;
-    }
-
-    var event = getRoomEvent(name);
-
-    room.on(event, callback);
-    handlers.push([room, event, callback]);
-  }
-
-  function clearHandlers() {
-    handlers.forEach(function (entry) {
-      try {
-        if (entry[0] && typeof entry[0].off === 'function') {
-          entry[0].off(entry[1], entry[2]);
-        }
-      } catch (error) {
-        logError('Unable to remove event handler.', error);
-      }
-    });
-
-    handlers = [];
-  }
-
-  function detachTrack(track) {
-    if (!track || typeof track.detach !== 'function') {
-      return;
-    }
+  function getTrackType(track) {
+    if (!track) return '';
 
     try {
-      var elements = track.detach();
+      if (
+        window.LivekitClient &&
+        window.LivekitClient.Track &&
+        window.LivekitClient.Track.Source
+      ) {
+        var source = track.source;
 
-      if (elements && typeof elements.forEach === 'function') {
-        elements.forEach(function (element) {
-          try {
-            element.remove();
-          } catch (_) {}
-        });
-      }
-    } catch (error) {
-      logError('Unable to detach media track.', error);
-    }
-  }
-
-  function stopLocalTracks(room) {
-    if (!room || !room.localParticipant) {
-      return;
-    }
-
-    var publications =
-      room.localParticipant.trackPublications;
-
-    if (!publications || typeof publications.forEach !== 'function') {
-      return;
-    }
-
-    publications.forEach(function (publication) {
-      if (!publication || !publication.track) {
-        return;
-      }
-
-      try {
-        detachTrack(publication.track);
-
-        if (typeof publication.track.stop === 'function') {
-          publication.track.stop();
+        if (
+          source === window.LivekitClient.Track.Source.Camera ||
+          source === 'camera'
+        ) {
+          return 'camera';
         }
-      } catch (error) {
-        logError('Unable to stop local media track.', error);
-      }
-    });
-  }
 
-  function isRoomConnected(room) {
-    if (!room) {
-      return false;
+        if (
+          source === window.LivekitClient.Track.Source.Microphone ||
+          source === 'microphone'
+        ) {
+          return 'microphone';
+        }
+
+        if (
+          source === window.LivekitClient.Track.Source.ScreenShare ||
+          source === 'screen_share'
+        ) {
+          return 'screen';
+        }
+      }
+    } catch (_) {}
+
+    var kind = String(track.kind || '').toLowerCase();
+
+    if (
+      kind === 'video' ||
+      kind === 'videotrack'
+    ) {
+      return 'video';
     }
 
-    try {
-      var state = String(room.state || '').toLowerCase();
-      return state === 'connected';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function getPublicationSource(publication) {
-    if (!publication) {
-      return '';
-    }
-
-    var source = publication.source;
-    var track = publication.track;
-    var Track = window.LivekitClient &&
-      window.LivekitClient.Track;
-
-    if (Track && Track.Source) {
-      if (source === Track.Source.Camera) {
-        return 'camera';
-      }
-
-      if (source === Track.Source.Microphone) {
-        return 'microphone';
-      }
-
-      if (source === Track.Source.ScreenShare) {
-        return 'screen';
-      }
-    }
-
-    if (source != null) {
-      var normalizedSource = String(source).toLowerCase();
-
-      if (normalizedSource === 'camera') {
-        return 'camera';
-      }
-
-      if (
-        normalizedSource === 'microphone' ||
-        normalizedSource === 'mic'
-      ) {
-        return 'microphone';
-      }
-
-      if (
-        normalizedSource === 'screenshare' ||
-        normalizedSource === 'screen_share' ||
-        normalizedSource === 'screen-share'
-      ) {
-        return 'screen';
-      }
-    }
-
-    /*
-     * Older SDK versions may expose the source on the track.
-     */
-    if (track && track.source != null) {
-      var trackSource = String(track.source).toLowerCase();
-
-      if (trackSource === 'camera') {
-        return 'camera';
-      }
-
-      if (
-        trackSource === 'microphone' ||
-        trackSource === 'mic'
-      ) {
-        return 'microphone';
-      }
-
-      if (
-        trackSource === 'screenshare' ||
-        trackSource === 'screen_share'
-      ) {
-        return 'screen';
-      }
+    if (
+      kind === 'audio' ||
+      kind === 'audiotrack'
+    ) {
+      return 'audio';
     }
 
     return '';
   }
 
-  function hasPublishedSource(room, expectedSource) {
-    if (!room || !room.localParticipant) {
-      return false;
-    }
-
-    var publications =
-      room.localParticipant.trackPublications;
-
-    if (!publications || typeof publications.forEach !== 'function') {
-      return false;
-    }
-
-    var found = false;
-
-    publications.forEach(function (publication) {
-      if (
-        publication &&
-        publication.track &&
-        getPublicationSource(publication) === expectedSource
-      ) {
-        found = true;
+  function safeStopTrack(track) {
+    try {
+      if (track && typeof track.stop === 'function') {
+        track.stop();
       }
-    });
+    } catch (_) {}
+  }
 
-    return found;
+  function detachTrack(track) {
+    try {
+      if (
+        track &&
+        typeof track.detach === 'function'
+      ) {
+        var elements = track.detach();
+
+        if (elements && elements.forEach) {
+          elements.forEach(function (element) {
+            try {
+              element.remove();
+            } catch (_) {}
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  function stopLocalTracks(room) {
+    if (!room || !room.localParticipant) return;
+
+    try {
+      var publications =
+        room.localParticipant.trackPublications;
+
+      if (!publications) return;
+
+      publications.forEach(function (publication) {
+        try {
+          if (publication && publication.track) {
+            detachTrack(publication.track);
+            safeStopTrack(publication.track);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function createLiveKitError(message, code, cause) {
+    var error = new Error(
+      message ||
+      'LiveKit connection failed.'
+    );
+
+    error.code =
+      code ||
+      'LIVEKIT_CONNECTION_FAILED';
+
+    if (cause) {
+      error.cause = cause;
+    }
+
+    return error;
   }
 
   /*
-   * Connect to LiveKit.
+   * Connect to an existing LiveKit room.
    *
-   * The backend creates and authorizes participant tokens.
-   * This function does not create a LIVE session in the database.
+   * The backend remains responsible for:
+   * - authentication
+   * - authorization
+   * - token creation
+   * - deciding whether this participant may publish
+   *
+   * The browser never receives private LiveKit credentials.
    */
   CHL.connectLiveKit = async function (options) {
     options = options || {};
@@ -281,7 +218,7 @@
     ensureSdk();
 
     if (!CHL.user) {
-      throw makeError(
+      throw createLiveKitError(
         'Please sign in before connecting to LIVE.',
         'AUTH_REQUIRED'
       );
@@ -290,8 +227,8 @@
     var roomName = normalizeRoomName(options);
 
     if (!roomName) {
-      throw makeError(
-        'A valid LiveKit room name is required.',
+      throw createLiveKitError(
+        'A valid LIVE room name is required.',
         'INVALID_ROOM'
       );
     }
@@ -300,68 +237,74 @@
       CHL.disconnectLiveKit();
     }
 
-    var canPublish = options.canPublish === true;
+    var canPublish =
+      options.canPublish === true;
 
-    var ttlSeconds = Number(options.ttlSeconds || 3600);
+    var ttlSeconds =
+      Number(options.ttlSeconds || 3600);
 
     if (!Number.isFinite(ttlSeconds)) {
       ttlSeconds = 3600;
     }
 
-    ttlSeconds = Math.max(60, Math.min(3600, ttlSeconds));
-
-    if (typeof CHL.getLiveKitToken !== 'function') {
-      throw makeError(
-        'CHL.getLiveKitToken is missing. Check src/core.js and backend configuration.',
-        'TOKEN_FUNCTION_MISSING'
-      );
-    }
+    ttlSeconds = Math.max(
+      60,
+      Math.min(3600, ttlSeconds)
+    );
 
     var tokenData;
 
     try {
-      tokenData = await CHL.getLiveKitToken(
-        roomName,
-        canPublish,
-        ttlSeconds
-      );
+      /*
+       * IMPORTANT:
+       * The backend endpoint expects roomName.
+       *
+       * We intentionally do NOT send:
+       *     { roomId: roomName }
+       *
+       * We send:
+       *     { roomName, canPublish, ttlSeconds }
+       */
+      tokenData =
+        await CHL.getLiveKitToken(
+          roomName,
+          canPublish,
+          ttlSeconds
+        );
     } catch (error) {
-      logError('Token request failed.', error);
+      if (error) {
+        error.code =
+          error.code ||
+          'TOKEN_GENERATION_FAILED';
+      }
 
-      throw makeError(
-        error && error.message
-          ? error.message
-          : 'Unable to obtain a LiveKit participant token.',
-        error && error.code
-          ? error.code
-          : 'TOKEN_GENERATION_FAILED',
-        error
-      );
+      throw error;
     }
 
     if (
       !tokenData ||
-      typeof tokenData.token !== 'string' ||
       !tokenData.token ||
-      typeof tokenData.serverUrl !== 'string' ||
       !tokenData.serverUrl
     ) {
-      throw makeError(
-        'The backend response must contain token and serverUrl.',
-        'TOKEN_RESPONSE_INVALID'
+      throw createLiveKitError(
+        'The backend returned an incomplete LiveKit connection response.',
+        'TOKEN_GENERATION_FAILED'
       );
     }
+
+    var Room =
+      window.LivekitClient.Room;
 
     var room;
 
     try {
-      room = new window.LivekitClient.Room({
+      room = new Room({
         adaptiveStream: true,
         dynacast: true
       });
     } catch (error) {
-      throw makeError(
-        'Unable to create a LiveKit room object.',
+      throw createLiveKitError(
+        'Unable to create the LiveKit room connection.',
         'LIVEKIT_ROOM_CREATION_FAILED',
         error
       );
@@ -369,149 +312,246 @@
 
     activeRoom = room;
 
-    bind(room, 'TrackSubscribed', function (
-      track,
-      publication,
-      participant
-    ) {
-      try {
-        if (typeof options.onRemoteTrack === 'function') {
-          options.onRemoteTrack(track, participant, publication);
+    /*
+     * Remote media
+     */
+    bind(
+      room,
+      'TrackSubscribed',
+      function (
+        track,
+        publication,
+        participant
+      ) {
+        try {
+          if (options.onRemoteTrack) {
+            options.onRemoteTrack(
+              track,
+              participant,
+              publication
+            );
+          }
+        } catch (error) {
+          if (window.console) {
+            console.error(
+              '[Creator Hub] Remote track handler failed.',
+              error
+            );
+          }
         }
-      } catch (error) {
-        logError('Remote track callback failed.', error);
       }
-    });
+    );
 
-    bind(room, 'TrackUnsubscribed', function (
-      track,
-      publication,
-      participant
-    ) {
-      detachTrack(track);
+    bind(
+      room,
+      'TrackUnsubscribed',
+      function (
+        track,
+        publication,
+        participant
+      ) {
+        try {
+          detachTrack(track);
 
-      try {
-        if (typeof options.onRemoteTrackRemoved === 'function') {
-          options.onRemoteTrackRemoved(
-            track,
-            participant,
-            publication
-          );
+          if (
+            options.onRemoteTrackRemoved
+          ) {
+            options.onRemoteTrackRemoved(
+              track,
+              participant,
+              publication
+            );
+          }
+        } catch (error) {
+          if (window.console) {
+            console.error(
+              '[Creator Hub] Remote track removal handler failed.',
+              error
+            );
+          }
         }
-      } catch (error) {
-        logError('Remote track removal callback failed.', error);
       }
-    });
+    );
 
-    bind(room, 'ParticipantConnected', function (participant) {
-      try {
-        if (typeof options.onParticipantConnected === 'function') {
-          options.onParticipantConnected(participant);
-        }
-      } catch (error) {
-        logError('Participant-connected callback failed.', error);
+    /*
+     * Participants
+     */
+    bind(
+      room,
+      'ParticipantConnected',
+      function (participant) {
+        try {
+          if (
+            options.onParticipantConnected
+          ) {
+            options.onParticipantConnected(
+              participant
+            );
+          }
+        } catch (_) {}
       }
-    });
+    );
 
-    bind(room, 'ParticipantDisconnected', function (participant) {
-      try {
-        if (typeof options.onParticipantDisconnected === 'function') {
-          options.onParticipantDisconnected(participant);
-        }
-      } catch (error) {
-        logError('Participant-disconnected callback failed.', error);
+    bind(
+      room,
+      'ParticipantDisconnected',
+      function (participant) {
+        try {
+          if (
+            options.onParticipantDisconnected
+          ) {
+            options.onParticipantDisconnected(
+              participant
+            );
+          }
+        } catch (_) {}
       }
-    });
+    );
 
-    bind(room, 'ActiveSpeakersChanged', function (speakers) {
-      try {
-        if (typeof options.onActiveSpeakers === 'function') {
-          options.onActiveSpeakers(speakers || []);
-        }
-      } catch (error) {
-        logError('Active-speakers callback failed.', error);
+    /*
+     * Speakers
+     */
+    bind(
+      room,
+      'ActiveSpeakersChanged',
+      function (speakers) {
+        try {
+          if (options.onActiveSpeakers) {
+            options.onActiveSpeakers(
+              speakers || []
+            );
+          }
+        } catch (_) {}
       }
-    });
+    );
 
-    bind(room, 'Reconnecting', function () {
-      try {
-        if (typeof options.onReconnecting === 'function') {
-          options.onReconnecting();
-        }
-      } catch (_) {}
-    });
+    /*
+     * Connection lifecycle
+     */
+    bind(
+      room,
+      'Reconnecting',
+      function () {
+        try {
+          if (options.onReconnecting) {
+            options.onReconnecting();
+          }
+        } catch (_) {}
+      }
+    );
 
-    bind(room, 'Reconnected', function () {
-      try {
-        if (typeof options.onReconnected === 'function') {
-          options.onReconnected();
-        }
-      } catch (_) {}
-    });
+    bind(
+      room,
+      'Reconnected',
+      function () {
+        try {
+          if (options.onReconnected) {
+            options.onReconnected();
+          }
+        } catch (_) {}
+      }
+    );
 
-    bind(room, 'Disconnected', function (reason) {
-      try {
-        if (typeof options.onDisconnected === 'function') {
-          options.onDisconnected(reason);
-        }
-      } catch (_) {}
-    });
+    bind(
+      room,
+      'Disconnected',
+      function (reason) {
+        try {
+          if (options.onDisconnected) {
+            options.onDisconnected(
+              reason
+            );
+          }
+        } catch (_) {}
 
-    bind(room, 'ConnectionStateChanged', function (state) {
-      try {
-        if (typeof options.onConnectionState === 'function') {
-          options.onConnectionState(state);
-        }
-      } catch (_) {}
-    });
+        /*
+         * Do not automatically clear activeRoom here.
+         * disconnectLiveKit() owns complete cleanup.
+         */
+      }
+    );
+
+    bind(
+      room,
+      'ConnectionStateChanged',
+      function (state) {
+        try {
+          if (
+            options.onConnectionState
+          ) {
+            options.onConnectionState(
+              state
+            );
+          }
+        } catch (_) {}
+      }
+    );
 
     try {
+      /*
+       * LiveKit connection:
+       *
+       * serverUrl:
+       *     public LiveKit WebSocket URL
+       *
+       * token:
+       *     short-lived participant token
+       *
+       * The API key and API secret never enter this browser call.
+       */
       await room.connect(
         tokenData.serverUrl,
         tokenData.token,
-        { autoSubscribe: true }
+        {
+          autoSubscribe: true
+        }
       );
 
-      if (!isRoomConnected(room)) {
-        throw makeError(
-          'LiveKit did not report a connected room.',
-          'LIVEKIT_CONNECTION_NOT_CONFIRMED'
+      /*
+       * Only report connection success here.
+       *
+       * IMPORTANT:
+       * Being connected to LiveKit does NOT automatically mean
+       * Creator Hub should mark the session LIVE.
+       *
+       * Host publication must be completed and verified by the
+       * backend before the LIVE database state is changed.
+       */
+      if (options.onConnected) {
+        await options.onConnected(
+          room,
+          tokenData
         );
-      }
-
-      if (typeof options.onConnected === 'function') {
-        await options.onConnected(room, tokenData);
       }
 
       return {
         room: room,
         roomName: roomName,
         tokenData: tokenData,
-        canPublish: canPublish
+        canPublish: !!tokenData.canPublish
       };
     } catch (error) {
-      logError('Room connection failed.', error);
       CHL.disconnectLiveKit();
 
-      throw makeError(
-        error && error.message
+      throw createLiveKitError(
+        error &&
+          error.message
           ? error.message
-          : 'LiveKit room connection failed.',
-        error && error.code
-          ? error.code
-          : 'LIVEKIT_CONNECTION_FAILED',
+          : 'LiveKit connection failed.',
+        'LIVEKIT_CONNECTION_FAILED',
         error
       );
     }
   };
 
   /*
-   * Disconnect and clean up local media.
+   * Disconnect and completely clean up the local LiveKit session.
    */
   CHL.disconnectLiveKit = function () {
     var room = activeRoom;
 
     activeRoom = null;
+
     clearHandlers();
 
     if (!room) {
@@ -520,323 +560,494 @@
 
     try {
       stopLocalTracks(room);
-    } catch (error) {
-      logError('Local media cleanup failed.', error);
-    }
+    } catch (_) {}
 
     try {
-      if (typeof room.disconnect === 'function') {
-        room.disconnect();
+      if (
+        room.localParticipant &&
+        room.localParticipant.trackPublications
+      ) {
+        room.localParticipant.trackPublications.forEach(
+          function (publication) {
+            try {
+              if (
+                publication &&
+                publication.track
+              ) {
+                detachTrack(
+                  publication.track
+                );
+              }
+            } catch (_) {}
+          }
+        );
       }
-    } catch (error) {
-      logError('Room disconnect failed.', error);
-    }
+    } catch (_) {}
+
+    try {
+      room.disconnect();
+    } catch (_) {}
   };
 
   /*
-   * Camera publishing.
+   * Camera
    */
   CHL.publishCamera = async function () {
-    var room = activeRoom;
-
-    if (!isRoomConnected(room)) {
-      throw makeError(
-        'LiveKit is not connected. Connect to a valid room first.',
-        'LIVEKIT_NOT_CONNECTED'
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
       );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
     }
 
     try {
-      await room.localParticipant.setCameraEnabled(true);
-
-      if (!hasPublishedSource(room, 'camera')) {
-        throw makeError(
-          'Camera enable completed, but a published camera track was not found.',
-          'CAMERA_TRACK_NOT_FOUND'
-        );
-      }
-
-      return true;
+      return await activeRoom.localParticipant
+        .setCameraEnabled(true);
     } catch (error) {
-      logError('Camera publishing failed.', error);
-
-      if (!error.code) {
-        error.code = 'CAMERA_PUBLISH_FAILED';
-      }
+      error.code =
+        error.code ||
+        'MEDIA_PERMISSION_DENIED';
 
       error.mediaType = 'camera';
+
       throw error;
     }
   };
 
   CHL.unpublishCamera = async function () {
-    if (!activeRoom) {
-      return false;
-    }
+    if (!activeRoom) return false;
 
-    await activeRoom.localParticipant.setCameraEnabled(false);
-    return true;
-  };
-
-  CHL.toggleCamera = async function () {
-    var room = activeRoom;
-
-    if (!isRoomConnected(room)) {
-      throw makeError(
-        'LiveKit is not connected.',
-        'LIVEKIT_NOT_CONNECTED'
-      );
-    }
-
-    var participant = room.localParticipant;
-    var enabled = !!participant.isCameraEnabled;
-
-    await participant.setCameraEnabled(!enabled);
-    return !enabled;
+    return activeRoom.localParticipant
+      .setCameraEnabled(false);
   };
 
   /*
-   * Microphone publishing.
+   * Microphone
    */
   CHL.publishMicrophone = async function () {
-    var room = activeRoom;
-
-    if (!isRoomConnected(room)) {
-      throw makeError(
-        'LiveKit is not connected. Connect to a valid room first.',
-        'LIVEKIT_NOT_CONNECTED'
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
       );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
     }
 
     try {
-      await room.localParticipant.setMicrophoneEnabled(true);
-
-      if (!hasPublishedSource(room, 'microphone')) {
-        throw makeError(
-          'Microphone enable completed, but a published microphone track was not found.',
-          'MICROPHONE_TRACK_NOT_FOUND'
-        );
-      }
-
-      return true;
+      return await activeRoom.localParticipant
+        .setMicrophoneEnabled(true);
     } catch (error) {
-      logError('Microphone publishing failed.', error);
-
-      if (!error.code) {
-        error.code = 'MICROPHONE_PUBLISH_FAILED';
-      }
+      error.code =
+        error.code ||
+        'MEDIA_PERMISSION_DENIED';
 
       error.mediaType = 'microphone';
+
       throw error;
     }
   };
 
   CHL.unpublishMicrophone = async function () {
-    if (!activeRoom) {
-      return false;
-    }
+    if (!activeRoom) return false;
 
-    await activeRoom.localParticipant.setMicrophoneEnabled(false);
-    return true;
-  };
-
-  CHL.toggleMicrophone = async function () {
-    var room = activeRoom;
-
-    if (!isRoomConnected(room)) {
-      throw makeError(
-        'LiveKit is not connected.',
-        'LIVEKIT_NOT_CONNECTED'
-      );
-    }
-
-    var participant = room.localParticipant;
-    var enabled = !!participant.isMicrophoneEnabled;
-
-    await participant.setMicrophoneEnabled(!enabled);
-    return !enabled;
+    return activeRoom.localParticipant
+      .setMicrophoneEnabled(false);
   };
 
   /*
-   * Screen sharing.
-   *
-   * Browser support varies. Android app screen sharing may require
-   * native MediaProjection integration.
+   * Camera toggle
+   */
+  CHL.toggleCamera = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    var participant =
+      activeRoom.localParticipant;
+
+    var enabled =
+      !!participant.isCameraEnabled;
+
+    return participant.setCameraEnabled(
+      !enabled
+    );
+  };
+
+  /*
+   * Microphone toggle
+   */
+  CHL.toggleMicrophone = async function () {
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    var participant =
+      activeRoom.localParticipant;
+
+    var enabled =
+      !!participant.isMicrophoneEnabled;
+
+    return participant.setMicrophoneEnabled(
+      !enabled
+    );
+  };
+
+  /*
+   * Screen sharing
    */
   CHL.startScreenShare = async function () {
-    var room = activeRoom;
-
-    if (!isRoomConnected(room)) {
-      throw makeError(
-        'LiveKit is not connected.',
-        'LIVEKIT_NOT_CONNECTED'
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
       );
+
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
     }
 
     if (
       !navigator.mediaDevices ||
-      typeof navigator.mediaDevices.getDisplayMedia !== 'function'
+      typeof navigator.mediaDevices.getDisplayMedia !==
+        'function'
     ) {
-      throw makeError(
-        'Screen sharing is not supported in this browser context.',
-        'SCREEN_SHARE_UNSUPPORTED'
+      var unsupported = new Error(
+        'Screen sharing is not supported by this browser.'
       );
+
+      unsupported.code =
+        'SCREEN_SHARE_UNSUPPORTED';
+
+      throw unsupported;
     }
 
     try {
-      await room.localParticipant.setScreenShareEnabled(true, {
-        audio: true
-      });
-
-      return true;
+      return await activeRoom.localParticipant
+        .setScreenShareEnabled(
+          true,
+          {
+            audio: true
+          }
+        );
     } catch (error) {
-      logError('Screen sharing failed.', error);
-
-      if (!error.code) {
-        error.code = 'SCREEN_SHARE_FAILED';
-      }
+      error.code =
+        error.code ||
+        'SCREEN_SHARE_FAILED';
 
       throw error;
     }
   };
 
   CHL.stopScreenShare = async function () {
-    if (!activeRoom) {
-      return false;
-    }
+    if (!activeRoom) return false;
 
-    await activeRoom.localParticipant.setScreenShareEnabled(false);
-    return true;
+    return activeRoom.localParticipant
+      .setScreenShareEnabled(false);
   };
 
   /*
-   * Attach a local or remote LiveKit track to a DOM container.
+   * Media attachment helpers
    */
-  function attachTrack(track, container) {
-    if (!track || !container || typeof track.attach !== 'function') {
+  CHL.attachLocalTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
       return null;
     }
 
     try {
       var element = track.attach();
 
-      if (!element) {
-        return null;
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
       }
 
-      element.autoplay = true;
-      element.playsInline = true;
-
-      if (element.tagName === 'VIDEO') {
-        element.muted = true;
-      }
-
-      container.appendChild(element);
       return element;
     } catch (error) {
-      logError('Unable to attach media track.', error);
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach local track.',
+          error
+        );
+      }
+
       return null;
     }
-  }
+  };
 
-  CHL.attachLocalTrack = attachTrack;
-  CHL.attachRemoteTrack = attachTrack;
+  CHL.attachRemoteTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
+      return null;
+    }
 
-  CHL.detachTrack = function (track) {
+    try {
+      var element = track.attach();
+
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
+      }
+
+      return element;
+    } catch (error) {
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach remote track.',
+          error
+        );
+      }
+
+      return null;
+    }
+  };
+
+  /*
+   * Remove an individual media track from the page.
+   */
+  CHL.detachTrack = function (
+    track
+  ) {
     detachTrack(track);
   };
 
   /*
-   * Room access and connection status.
+   * Return the active LiveKit room.
+   * Useful for pages that need to inspect the real connection.
    */
-  CHL.getActiveLiveKitRoom = function () {
-    return activeRoom;
-  };
-
-  CHL.isLiveKitConnected = function () {
-    return isRoomConnected(activeRoom);
-  };
+  CHL.getActiveLiveKitRoom =
+    function () {
+      return activeRoom;
+    };
 
   /*
-   * Published-track checks use the publication's source, not just
-   * the generic audio/video kind. This avoids mistaking screen video
-   * for a camera track.
+   * Determine whether the browser currently has
+   * a LiveKit connection.
    */
-  CHL.hasPublishedCamera = function () {
-    return hasPublishedSource(activeRoom, 'camera');
-  };
+  CHL.isLiveKitConnected =
+    function () {
+      if (!activeRoom) {
+        return false;
+      }
 
-  CHL.hasPublishedMicrophone = function () {
-    return hasPublishedSource(activeRoom, 'microphone');
-  };
+      try {
+        var state =
+          activeRoom.state;
 
-  CHL.hasPublishedScreenShare = function () {
-    return hasPublishedSource(activeRoom, 'screen');
-  };
+        return (
+          String(state || '')
+            .toLowerCase() ===
+          'connected'
+        );
+      } catch (_) {
+        return false;
+      }
+    };
 
   /*
-   * Convenience participant callbacks.
+   * Determine whether the local participant
+   * has a published camera.
    */
-  CHL.handleParticipantConnected = function (participant) {
-    var identity =
-      participant && participant.identity
-        ? participant.identity
-        : 'viewer';
+  CHL.hasPublishedCamera =
+    function () {
+      if (!activeRoom) return false;
 
-    if (typeof CHL.toast === 'function') {
-      CHL.toast('Participant joined: ' + identity);
-    }
-  };
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
 
-  CHL.handleParticipantDisconnected = function (participant) {
-    var identity =
-      participant && participant.identity
-        ? participant.identity
-        : 'viewer';
+        var found = false;
 
-    if (typeof CHL.toast === 'function') {
-      CHL.toast('Participant left: ' + identity);
-    }
-  };
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
 
-  CHL.handleActiveSpeaker = function (speakers) {
-    return speakers || [];
-  };
+              if (
+                type === 'camera' ||
+                type === 'video'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
 
-  CHL.handleConnectionState = function (state) {
-    return state;
-  };
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  /*
+   * Determine whether the local participant
+   * has a published microphone.
+   */
+  CHL.hasPublishedMicrophone =
+    function () {
+      if (!activeRoom) return false;
+
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
+
+        var found = false;
+
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
+
+              if (
+                type === 'microphone' ||
+                type === 'audio'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
+
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  /*
+   * Convenience participant handlers.
+   */
+  CHL.handleParticipantConnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant joined: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleParticipantDisconnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant left: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleActiveSpeaker =
+    function (speakers) {
+      return speakers || [];
+    };
+
+  CHL.handleConnectionState =
+    function (state) {
+      return state;
+    };
 
   /*
    * Backward-compatible cleanup alias.
    */
-  CHL.cleanup = CHL.disconnectLiveKit;
+  CHL.cleanup =
+    CHL.disconnectLiveKit;
 
   /*
-   * Clean up when leaving the page.
+   * Browser shutdown cleanup.
    */
-  window.addEventListener('beforeunload', function () {
-    unloading = true;
+  window.addEventListener(
+    'beforeunload',
+    function () {
+      unloading = true;
 
-    try {
-      CHL.disconnectLiveKit();
-    } catch (error) {
-      logError('Shutdown cleanup failed.', error);
-    }
-  });
-
-  /*
-   * Handle pages restored from the browser back-forward cache.
-   */
-  window.addEventListener('pageshow', function () {
-    if (unloading && activeRoom) {
       try {
         CHL.disconnectLiveKit();
-      } catch (error) {
-        logError('Restored-page cleanup failed.', error);
-      }
+      } catch (_) {}
     }
+  );
 
-    unloading = false;
-  });
+  /*
+   * If the page is restored from browser cache,
+   * don't leave an old disconnected LiveKit object behind.
+   */
+  window.addEventListener(
+    'pageshow',
+    function () {
+      if (
+        unloading &&
+        activeRoom
+      ) {
+        try {
+          CHL.disconnectLiveKit();
+        } catch (_) {}
+      }
+
+      unloading = false;
+    }
+  );
 })();
