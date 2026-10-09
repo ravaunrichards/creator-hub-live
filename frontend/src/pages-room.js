@@ -1,721 +1,168 @@
-/* Creator Hub Live — real LiveKit room, server-authoritative LIVE state and gifts. */
-(function () {
-  'use strict';
-
-  var CHL = window.CHL;
-  var el = CHL.el;
-  var ui = CHL.ui;
-
-  var GIFTS = [
-    { k: 'Spark', em: '✨' },
-    { k: 'Heart', em: '❤️' },
-    { k: 'Rocket', em: '🚀' },
-    { k: 'Crown', em: '👑' },
-    { k: 'Galaxy', em: '🌌' },
-    { k: 'Team Flag', em: '🚩' },
-    { k: 'Match Fire', em: '🔥' },
-    { k: 'Season Star', em: '⭐' }
-  ];
-
-  var roomHostId = null;
-  var currentRoomId = null;
-  var isHost = false;
-  var liveStarted = false;
-
-  CHL.route('/live', async function (outlet, r) {
-    if (!CHL.user) {
-      CHL.navigate('#/login');
-      return;
-    }
-
-    var roomId = String((r && r.id) || '').trim();
-
-    if (!roomId) {
-      outlet.appendChild(
-        ui.empty(
-          '📹',
-          'Invalid LIVE room',
-          'A room ID is required.'
-        )
-      );
-      return;
-    }
-
-    currentRoomId = roomId;
-    roomHostId = null;
-    isHost = false;
-    liveStarted = false;
-
-    outlet.appendChild(
-      el(
-        'div',
-        { class: 'row between' },
-        [
-          el(
-            'div',
-            {},
-            [
-              el('div', {
-                class: 'h1',
-                text: 'LIVE'
-              }),
-              el('p', {
-                class: 'sub',
-                text: 'Secure LiveKit video session'
-              })
-            ]
-          )
-        ]
-      )
-    );
-
-    var layout = el(
-      'div',
-      {
-        class: 'grid',
-        style:
-          'grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:16px'
-      }
-    );
-
-    var video = el(
-      'div',
-      {
-        class: 'card',
-        style:
-          'min-height:360px;background:#05050a;position:relative;display:flex;align-items:center;justify-content:center'
-      }
-    );
-
-    var stage = el(
-      'div',
-      {
-        class: 'live-stage',
-        style:
-          'width:100%;height:100%;min-height:340px;position:relative'
-      }
-    );
-
-    var status = el(
-      'div',
-      {
-        class: 'live-status',
-        style:
-          'position:absolute;z-index:4;top:12px;left:12px;background:rgba(0,0,0,.7);padding:7px 10px;border-radius:8px;color:#fff',
-        text: 'CONNECTING'
-      }
-    );
-
-    stage.appendChild(status);
-    video.appendChild(stage);
-
-    var side = el('div', {});
-
-    layout.appendChild(video);
-    layout.appendChild(side);
-    outlet.appendChild(layout);
-
-    var controls = el(
-      'div',
-      {
-        class: 'row wrap',
-        style: 'gap:8px;margin-top:10px'
-      }
-    );
-
-    var micButton = el(
-      'button',
-      {
-        class: 'btn',
-        onclick: function () {
-          CHL.toggleMicrophone().catch(function (e) {
-            CHL.toast(
-              e.message || 'Microphone failed.'
-            );
-          });
-        }
-      },
-      'Mic'
-    );
-
-    var cameraButton = el(
-      'button',
-      {
-        class: 'btn',
-        onclick: function () {
-          CHL.toggleCamera().catch(function (e) {
-            CHL.toast(
-              e.message || 'Camera failed.'
-            );
-          });
-        }
-      },
-      'Camera'
-    );
-
-    var shareButton = el(
-      'button',
-      {
-        class: 'btn',
-        onclick: function () {
-          CHL.startScreenShare().catch(function (e) {
-            CHL.toast(
-              e.message || 'Screen share failed.'
-            );
-          });
-        }
-      },
-      'Share screen'
-    );
-
-    var endButton = el(
-      'button',
-      {
-        class: 'btn danger',
-        onclick: function () {
-          endLive(roomId);
-        }
-      },
-      'End LIVE'
-    );
-
-    controls.appendChild(micButton);
-    controls.appendChild(cameraButton);
-    controls.appendChild(shareButton);
-
-    /*
-     * Only the host should receive the End LIVE control.
-     * We initially hide it until the server identifies the user
-     * as the room host.
-     */
-    endButton.style.display = 'none';
-    controls.appendChild(endButton);
-
-    video.appendChild(controls);
-
-    /*
-     * LIVE chat
-     */
-    var chat = el('div', {
-      class: 'card'
-    });
-
-    var messages = el('div', {
-      style: 'height:230px;overflow:auto'
-    });
-
-    chat.appendChild(
-      el(
-        'div',
-        {
-          style:
-            'font-weight:800;margin-bottom:8px',
-          text: 'Chat'
-        }
-      )
-    );
-
-    chat.appendChild(messages);
-
-    var chatInput = el('input', {
-      class: 'input',
-      placeholder: 'Say something…'
-    });
-
-    var chatForm = el(
-      'form',
-      {
-        onsubmit: function (e) {
-          e.preventDefault();
-
-          sendChatMessage(
-            roomId,
-            chatInput,
-            messages
-          );
-        }
-      }
-    );
-
-    chatForm.appendChild(chatInput);
-    chat.appendChild(chatForm);
-    side.appendChild(chat);
-
-    /*
-     * Gifts
-     */
-    var giftCard = el(
-      'div',
-      {
-        class: 'card',
-        style: 'margin-top:14px'
-      }
-    );
-
-    giftCard.appendChild(
-      el(
-        'div',
-        {
-          class: 'row between',
-          style: 'margin-bottom:10px'
-        },
-        [
-          el(
-            'div',
-            {
-              style: 'font-weight:700',
-              text: 'Send a gift'
-            }
-          ),
-          el(
-            'a',
-            {
-              href: '#/wallet',
-              class: 'pill'
-            },
-            '💎 Wallet'
-          )
-        ]
-      )
-    );
-
-    var gg = el('div', {
-      class: 'gift-grid'
-    });
-
-    GIFTS.forEach(function (gift) {
-      gg.appendChild(
-        el(
-          'div',
-          {
-            class: 'gift',
-            onclick: function () {
-              sendGift(roomId, gift);
-            }
-          },
-          [
-            el(
-              'div',
-              {
-                style: 'font-size:24px',
-                text: gift.em
-              }
-            ),
-            el(
-              'div',
-              {
-                text: gift.k
-              }
-            )
-          ]
-        )
-      );
-    });
-
-    giftCard.appendChild(gg);
-    side.appendChild(giftCard);
-
-    /*
-     * Load the real room from the backend.
-     */
-    try {
-      var room = await CHL.authenticatedApiRequest(
-        '/api/live/rooms/' +
-          encodeURIComponent(roomId)
-      );
-
-      if (!room || !room.id) {
-        throw new Error(
-          'LIVE room not found.'
-        );
-      }
-
-      roomHostId = room.host_id || null;
-
-      /*
-       * Determine whether the authenticated user
-       * is the actual room host.
-       */
-      isHost =
-        !!CHL.user &&
-        !!roomHostId &&
-        String(CHL.user.id) ===
-          String(roomHostId);
-
-      if (isHost) {
-        endButton.style.display = '';
-      }
-
-      if (room.status === 'live') {
-        status.textContent = 'LIVE';
-        status.style.background =
-          'rgba(180,0,40,.85)';
-      } else {
-        status.textContent =
-          isHost
-            ? 'READY TO GO LIVE'
             : 'WAITING FOR HOST';
       }
 
       /*
-       * Tell backend that this authenticated user
-       * is joining the room.
+       * Establish real-time connection options.
+       * We leverage the CHL layer completed earlier to abstract core events.
        */
-      var joinResult =
-        await CHL.authenticatedApiRequest(
-          '/api/live/rooms/' +
-            encodeURIComponent(roomId) +
-            '/join',
-          {
-            method: 'POST'
+      var connection = await CHL.connectLiveKit({
+        roomName: room.room_name || room.id,
+        canPublish: isHost,
+        
+        // Fired whenever a remote participant publishes a track (Viewers see Host, Host sees Co-Hosts)
+        onRemoteTrack: function (track, participant, publication) {
+          if (track.kind === 'video' || track.kind === 'audio') {
+            CHL.attachRemoteTrack(track, stage);
+            
+            // If the host is streaming, flip the subscriber banner immediately
+            if (String(participant.identity) === String(roomHostId) && track.kind === 'video') {
+              status.textContent = 'LIVE';
+              status.style.background = 'rgba(180, 0, 40, 0.85)';
+            }
           }
-        );
+        },
 
-      /*
-       * The backend remains authoritative.
-       * If it returns a host flag, use it.
-       */
-      if (
-        joinResult &&
-        typeof joinResult.canPublish ===
-          'boolean'
-      ) {
-        isHost = joinResult.canPublish;
+        // Cleanly strips deleted or unsubscribed media tracks away from the DOM tree
+        onRemoteTrackRemoved: function (track, participant, publication) {
+          CHL.detachTrack(track);
+          
+          // Revert state if the host cuts their camera
+          if (String(participant.identity) === String(roomHostId) && track.kind === 'video') {
+            status.textContent = 'HOST DISCONNECTED';
+            status.style.background = 'rgba(0, 0, 0, 0.7)';
+          }
+        },
 
-        if (isHost) {
-          endButton.style.display = '';
-        }
-      }
+        // Triggered after successful handshake with the LiveKit infrastructure
+        onConnected: async function (activeRoom, tokenData) {
+          CHL.toast('Connected to secure media stream server.');
 
-      /*
-       * The database UUID identifies the Creator Hub LIVE-session row.
-       * The backend-generated room_name is the authoritative LiveKit
-       * room name and must never be replaced with the database UUID.
-       */
-      var roomName =
-        (joinResult && joinResult.roomName) ||
-        room.room_name;
-
-      if (!roomName) {
-        throw new Error(
-          'The backend did not provide an authoritative LiveKit room name.'
-        );
-      }
-
-      await CHL.connectLiveKit({
-        roomName: roomName,
-        roomId: roomId,
-        canPublish: !!isHost,
-
-        onConnected: async function (
-          lkRoom,
-          tokenData
-        ) {
-          status.textContent =
-            isHost
-              ? 'CONNECTED — STARTING MEDIA'
-              : 'CONNECTED';
-
-          status.style.background =
-            'rgba(0,0,0,.75)';
-
-          /*
-           * Only the host publishes camera/microphone.
-           */
           if (isHost) {
+            status.textContent = 'STARTING BROADCAST…';
+            
             try {
+              // 1. Force enable local hardware capturing modules immediately
               await CHL.publishCamera();
               await CHL.publishMicrophone();
-            } catch (e) {
-              status.textContent =
-                'MEDIA PERMISSION FAILED';
-
-              CHL.toast(
-                e.message ||
-                  'Camera/microphone permission denied.'
-              );
-
-              /*
-               * CRITICAL:
-               * Do NOT call /start if publication failed.
-               */
-              throw e;
-            }
-
-            /*
-             * Media has been requested locally.
-             * The backend now verifies the actual
-             * LiveKit participant publication.
-             */
-            var startResult =
-              await CHL.authenticatedApiRequest(
-                '/api/live/rooms/' +
-                  encodeURIComponent(roomId) +
-                  '/start',
-                {
-                  method: 'POST'
+              
+              // 2. Proactively mount the host's local track locally for validation feedback
+              activeRoom.localParticipant.trackPublications.forEach(function (pub) {
+                if (pub.track && (pub.track.kind === 'video' || pub.track.kind === 'camera')) {
+                  CHL.attachLocalTrack(pub.track, stage);
                 }
-              );
+              });
 
-            if (
-              !startResult ||
-              (
-                startResult.status &&
-                startResult.status !== 'live'
-              )
-            ) {
-              throw new Error(
-                'The server did not confirm that LIVE started.'
-              );
-            }
+              // 3. Inform the server authoritative verification gate to finalize DB status state updates
+              var verification = await CHL.authenticatedApiRequest('/api/livekit/verify-live', {
+                method: 'POST',
+                body: JSON.stringify({ roomName: room.room_name || room.id })
+              });
 
-            liveStarted = true;
-
-            status.textContent = 'LIVE';
-
-            status.style.background =
-              'rgba(180,0,40,.85)';
-          }
-
-          /*
-           * Attach local tracks that actually exist.
-           */
-          if (
-            lkRoom &&
-            lkRoom.localParticipant &&
-            lkRoom.localParticipant
-              .trackPublications
-          ) {
-            lkRoom.localParticipant.trackPublications.forEach(
-              function (publication) {
-                if (publication.track) {
-                  CHL.attachLocalTrack(
-                    publication.track,
-                    stage
-                  );
-                }
+              if (verification && verification.verified) {
+                liveStarted = true;
+                status.textContent = 'LIVE';
+                status.style.background = 'rgba(180, 0, 40, 0.85)';
+                CHL.toast('Your broadcast is live to the network!');
               }
-            );
+            } catch (mediaError) {
+              console.error('[LIVEKIT UI ERROR]', mediaError);
+              CHL.toast('Broadcast initialization failed: ' + (mediaError.message || 'Media rejected.'));
+              status.textContent = 'HARDWARE ERROR';
+            }
           }
         },
 
-        onRemoteTrack: function (track) {
-          CHL.attachRemoteTrack(
-            track,
-            stage
-          );
-        },
-
-        onDisconnected: function () {
-          status.textContent =
-            'DISCONNECTED';
-
-          status.style.background =
-            'rgba(0,0,0,.8)';
-
-          liveStarted = false;
-        },
-
-        onReconnecting: function () {
-          status.textContent =
-            'RECONNECTING';
-
-          status.style.background =
-            'rgba(0,0,0,.8)';
-        },
-
-        onReconnected: function () {
-          /*
-           * Do not automatically claim LIVE.
-           * The server must remain authoritative.
-           */
-          status.textContent =
-            isHost && liveStarted
-              ? 'RECONNECTED'
-              : 'CONNECTED';
-        },
-
-        onParticipantConnected:
-          CHL.handleParticipantConnected,
-
-        onParticipantDisconnected:
-          CHL.handleParticipantDisconnected
+        onDisconnected: function (reason) {
+          status.textContent = 'OFFLINE';
+          status.style.background = 'rgba(100, 100, 100, 0.7)';
+          CHL.toast('Disconnected from session: ' + reason);
+        }
       });
 
-    } catch (e) {
-      status.textContent =
-        (e && e.code) ||
-        'CONNECTION FAILED';
-
-      status.style.background =
-        'rgba(0,0,0,.8)';
-
-      CHL.toast(
-        e.message ||
-          'LiveKit connection failed.'
+    } catch (apiError) {
+      console.error('[LIVE ROUTE CRASH]', apiError);
+      outlet.innerHTML = ''; // Clean outlet footprint
+      outlet.appendChild(
+        ui.empty(
+          '❌',
+          'Connection Failed',
+          apiError.message || 'Unable to register room connection pipelines.'
+        )
       );
     }
   });
 
-  async function endLive(roomId) {
-    if (!CHL.user) {
-      CHL.navigate('#/login');
-      return;
-    }
+  // ============================================================================
+  // Chat & Functional Action Helpers
+  // ============================================================================
+
+  async function sendChatMessage(roomId, inputElement, messageContainer) {
+    var text = String(inputElement.value || '').trim();
+    if (!text) return;
 
     try {
-      CHL.disconnectLiveKit();
+      // Use LiveKit's DataPacket pipeline or falling back to custom platform HTTP proxies
+      var activeRoom = CHL.getActiveLiveKitRoom();
+      if (activeRoom && CHL.isLiveKitConnected()) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify({ type: 'chat', text: text, user: CHL.user.name }));
+        
+        // Broadcast chat text payload reliably to all interconnected peers
+        await activeRoom.localParticipant.publishData(data, { reliable: true });
+      }
 
-      await CHL.authenticatedApiRequest(
-        '/api/live/rooms/' +
-          encodeURIComponent(roomId) +
-          '/end',
-        {
-          method: 'POST'
-        }
-      );
+      // Render locally inside the viewport layout context safely
+      var msgEl = el('div', { style: 'margin-bottom:4px; font-size:13px;' }, [
+        el('strong', { text: (CHL.user.name || 'You') + ': ' }),
+        el('span', { text: text })
+      ]);
+      
+      messageContainer.appendChild(msgEl);
+      messageContainer.scrollTop = messageContainer.scrollHeight;
+      inputElement.value = '';
     } catch (e) {
-      CHL.toast(
-        e.message ||
-          'Unable to end LIVE session.'
-      );
-    } finally {
-      liveStarted = false;
-      CHL.navigate('#/');
+      CHL.toast('Message delivery failed.');
     }
   }
 
-  async function sendChatMessage(
-    roomId,
-    input,
-    messages
-  ) {
-    var value = String(
-      input.value || ''
-    ).trim();
-
-    if (!value) {
-      return;
-    }
-
-    input.value = '';
-
+  async function sendGift(roomId, gift) {
     try {
-      var result =
-        await CHL.authenticatedApiRequest(
-          '/api/live/rooms/' +
-            encodeURIComponent(roomId) +
-            '/chat',
-          {
-            method: 'POST',
-            body: {
-              body: value
-            }
-          }
-        );
+      var activeRoom = CHL.getActiveLiveKitRoom();
+      if (!activeRoom || !CHL.isLiveKitConnected()) {
+        throw new Error('Must be connected to stream to transmit tipping rewards.');
+      }
 
-      var displayName =
-        CHL.profile &&
-        (
-          CHL.profile.username ||
-          CHL.profile.display_name
-        );
-
-      messages.appendChild(
-        el(
-          'div',
-          {
-            class: 'note',
-            text:
-              (displayName ||
-                'You') +
-              ': ' +
-              (
-                result &&
-                result.body
-                  ? result.body
-                  : value
-              )
-          }
-        )
-      );
-
-      messages.scrollTop =
-        messages.scrollHeight;
-
-    } catch (e) {
-      /*
-       * Do not display the message as sent
-       * when the backend rejected it.
-       */
-      CHL.toast(
-        e.message ||
-          'Message could not be sent.'
-      );
-    }
-  }
-
-  function sendGift(
-    roomId,
-    gift
-  ) {
-    if (!CHL.user) {
-      CHL.navigate('#/login');
-      return;
-    }
-
-    var recipientId =
-      roomHostId;
-
-    if (!recipientId) {
-      CHL.toast(
-        'Gift recipient is unavailable.'
-      );
-      return;
-    }
-
-    CHL.authenticatedApiRequest(
-      '/api/wallet/gift',
-      {
+      // Process direct ledger balance mutations via backend gateway prior to visual animations
+      var transaction = await CHL.authenticatedApiRequest('/api/wallet/gift', {
         method: 'POST',
-        headers: {
-          'Idempotency-Key':
-            CHL.uuid()
-        },
-        body: {
-          liveId: roomId,
-          recipientId: recipientId,
-          gift: gift.k
-        }
-      }
-    )
-      .then(function () {
-        ui.flyGift(gift.em);
-
-        CHL.toast(
-          'Gift sent.'
-        );
-
-        ui.refreshCoins();
-      })
-      .catch(function (e) {
-        CHL.toast(
-          e.message ||
-            'Gift failed.'
-        );
+        body: JSON.stringify({ roomId: roomId, giftKey: gift.k })
       });
+
+      if (transaction && transaction.success) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify({ type: 'gift', gift: gift, user: CHL.user.name }));
+        await activeRoom.localParticipant.publishData(data, { reliable: true });
+        
+        CHL.toast('Sent ' + gift.k + ' ' + gift.em + ' successfully!');
+      }
+    } catch (err) {
+      CHL.toast(err.message || 'Insufficient coin wallet funds.');
+    }
   }
 
-  window.addEventListener(
-    'hashchange',
-    function () {
-      if (
-        CHL.current &&
-        CHL.current.base !== '/live'
-      ) {
-        CHL.disconnectLiveKit();
-        liveStarted = false;
-      }
+  async function endLive(roomId) {
+    if (!confirm('Are you sure you want to terminate this broadcast session permanently?')) return;
+    
+    try {
+      await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/terminate', {
+        method: 'POST'
+      });
+      
+      CHL.disconnectLiveKit();
+      CHL.navigate('#/dashboard');
+    } catch (e) {
+      CHL.toast('Unable to cleanly terminate session.');
     }
-  );
+  }
+
 })();
