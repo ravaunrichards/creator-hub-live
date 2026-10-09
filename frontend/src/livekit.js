@@ -590,13 +590,65 @@
   };
 
   /*
-   * Camera
+   * Camera publishing with diagnostics.
    */
   CHL.publishCamera = async function () {
-    if (!activeRoom) {
-      var error = new Error(
-        'Not connected to LIVE.'
+    var room = activeRoom;
+
+    if (!room || !CHL.isLiveKitConnected()) {
+      var connectionError = new Error(
+        'LiveKit is not connected. Check the room name and token first.'
       );
+      connectionError.code = 'LIVEKIT_NOT_CONNECTED';
+      throw connectionError;
+    }
+
+    if (!room.localParticipant) {
+      throw new Error('LiveKit local participant is unavailable.');
+    }
+
+    try {
+      await room.localParticipant.setCameraEnabled(true);
+
+      var publications =
+        room.localParticipant.videoTrackPublications;
+
+      var cameraFound = false;
+
+      if (publications && publications.forEach) {
+        publications.forEach(function (publication) {
+          if (
+            publication &&
+            publication.source ===
+              window.LivekitClient.Track.Source.Camera &&
+            publication.track
+          ) {
+            cameraFound = true;
+          }
+        });
+      }
+
+      if (!cameraFound) {
+        throw new Error(
+          'Camera enable completed, but no published camera track was found.'
+        );
+      }
+
+      if (window.console) {
+        console.log('[Creator Hub LIVE] Camera track published.');
+      }
+
+      return true;
+    } catch (error) {
+      if (window.console) {
+        console.error('[Creator Hub LIVE] Camera failed:', error);
+      }
+
+      error.mediaType = 'camera';
+      error.code = error.code || 'CAMERA_PUBLISH_FAILED';
+      throw error;
+    }
+  };
 
       error.code =
         'LIVEKIT_NOT_CONNECTED';
