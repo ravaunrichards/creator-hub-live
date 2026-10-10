@@ -1,5 +1,5 @@
 /* Creator Hub Creator Network — real LiveKit room,
-   server-authoritative LIVE state, synchronized chat and gifts. */
+   server-authoritative LIVE state, synchronized chat and database-priced gifts. */
 (function () {
   'use strict';
 
@@ -8,14 +8,14 @@
   var ui = CHL.ui;
 
   var GIFTS = [
-    { k: 'Spark', em: '✨' },
-    { k: 'Heart', em: '❤️' },
-    { k: 'Rocket', em: '🚀' },
-    { k: 'Crown', em: '👑' },
-    { k: 'Galaxy', em: '🌌' },
-    { k: 'Team Flag', em: '🚩' },
-    { k: 'Match Fire', em: '🔥' },
-    { k: 'Season Star', em: '⭐' }
+    { k: 'Spark', em: '✨', coinPrice: null },
+    { k: 'Heart', em: '❤️', coinPrice: null },
+    { k: 'Rocket', em: '🚀', coinPrice: null },
+    { k: 'Crown', em: '👑', coinPrice: null },
+    { k: 'Galaxy', em: '🌌', coinPrice: null },
+    { k: 'Team Flag', em: '🚩', coinPrice: null },
+    { k: 'Match Fire', em: '🔥', coinPrice: null },
+    { k: 'Season Star', em: '⭐', coinPrice: null }
   ];
 
   var roomHostId = null;
@@ -24,6 +24,7 @@
   var liveStarted = false;
   var chatPollTimer = null;
   var chatRequestsInFlight = Object.create(null);
+  var giftRequestsInFlight = Object.create(null);
 
   CHL.route('/live', async function (outlet, r) {
     if (!CHL.user) {
@@ -31,7 +32,6 @@
       return;
     }
 
-    // Stop polling any previously opened room before opening this one.
     stopChatPolling();
 
     var roomId = String((r && r.id) || '').trim();
@@ -60,10 +60,9 @@
       ])
     );
 
-    /* Main LIVE layout. Responsive sizing is controlled by app.css. */
     var layout = el('div', {
       class: 'grid live-room-layout',
-      style: 'gap:16px'
+      style: 'gap:16px;align-items:start;min-width:0'
     });
 
     var video = el('div', {
@@ -75,7 +74,8 @@
         'flex-direction:column;' +
         'gap:10px;' +
         'min-width:0;' +
-        'overflow:hidden'
+        'overflow:hidden;' +
+        'align-self:start'
     });
 
     var stage = el('div', {
@@ -107,7 +107,7 @@
 
     var side = el('div', {
       class: 'live-room-side',
-      style: 'min-width:0'
+      style: 'min-width:0;align-self:start'
     });
 
     layout.appendChild(video);
@@ -167,9 +167,33 @@
     controls.appendChild(endButton);
     video.appendChild(controls);
 
-    /* LIVE chat. Messages are read from the backend for every participant. */
-    var chat = el('div', { class: 'card live-chat-card' });
-    var messages = el('div', { class: 'live-chat-messages' });
+    /* Chat panel. Its messages scroll independently of the video/page. */
+    var chat = el('div', {
+      class: 'card live-chat-card',
+      style:
+        'min-width:0;' +
+        'display:flex;' +
+        'flex-direction:column;' +
+        'overflow:hidden'
+    });
+
+    var messages = el('div', {
+      class: 'live-chat-messages',
+      role: 'log',
+      'aria-live': 'polite',
+      'aria-relevant': 'additions text',
+      style:
+        'height:260px;' +
+        'max-height:40vh;' +
+        'min-height:100px;' +
+        'overflow-y:auto;' +
+        'overflow-x:hidden;' +
+        'overscroll-behavior:contain;' +
+        'overflow-anchor:auto;' +
+        'flex:0 1 auto;' +
+        'min-width:0;' +
+        'scrollbar-gutter:stable'
+    });
 
     chat.appendChild(el('div', {
       style: 'font-weight:800;margin-bottom:8px',
@@ -187,7 +211,12 @@
 
     var chatForm = el('form', {
       class: 'row live-chat-form',
-      style: 'display:flex;gap:8px;align-items:center;margin-top:8px',
+      style:
+        'display:flex;' +
+        'gap:8px;' +
+        'align-items:center;' +
+        'margin-top:8px;' +
+        'min-width:0',
       onsubmit: function (e) {
         e.preventDefault();
         sendChatMessage(roomId, chatInput, messages);
@@ -209,10 +238,10 @@
     chat.appendChild(chatForm);
     side.appendChild(chat);
 
-    /* Gifts panel: create it once, outside chat-loading code. */
+    /* Gifts panel. Prices are loaded from the backend's active gift records. */
     var giftCard = el('div', {
       class: 'card live-gift-card',
-      style: 'margin-top:14px'
+      style: 'margin-top:14px;min-width:0'
     });
 
     giftCard.appendChild(el('div', {
@@ -229,44 +258,40 @@
       }, '💎 Wallet')
     ]));
 
-    var giftGrid = el('div', { class: 'gift-grid' });
-
-    GIFTS.forEach(function (gift) {
-      giftGrid.appendChild(el('div', {
-        class: 'gift',
-        role: 'button',
-        tabindex: '0',
-        onclick: function () {
-          sendGift(roomId, gift);
-        },
-        onkeydown: function (e) {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            sendGift(roomId, gift);
-          }
-        }
-      }, [
-        el('div', { style: 'font-size:24px', text: gift.em }),
-        el('div', { text: gift.k })
-      ]));
+    var giftStatus = el('div', {
+      class: 'sub',
+      style: 'margin-bottom:8px',
+      text: 'Loading gift prices…'
     });
 
+    var giftGrid = el('div', {
+      class: 'gift-grid',
+      style: 'min-width:0'
+    });
+
+    giftCard.appendChild(giftStatus);
     giftCard.appendChild(giftGrid);
     side.appendChild(giftCard);
 
+    renderGifts(giftGrid, giftStatus, roomId);
+    loadGiftCatalog(giftGrid, giftStatus, roomId);
+
     // Load chat now and refresh it while this room remains open.
     loadChatMessages(roomId, messages);
+
     chatPollTimer = window.setInterval(function () {
       if (currentRoomId === roomId) {
         loadChatMessages(roomId, messages);
       }
     }, 2000);
 
-    /* Load the authoritative room details from the backend. */
+    /* Load authoritative room details from the backend. */
     try {
       var room = await CHL.authenticatedApiRequest(
         '/api/live/rooms/' + encodeURIComponent(roomId)
       );
+
+      if (currentRoomId !== roomId) return;
 
       if (!room || !room.id) {
         throw new Error('LIVE room not found.');
@@ -291,6 +316,8 @@
         { method: 'POST' }
       );
 
+      if (currentRoomId !== roomId) return;
+
       /* Server publication permission is authoritative. */
       if (joinResult && typeof joinResult.canPublish === 'boolean') {
         isHost = joinResult.canPublish;
@@ -300,6 +327,7 @@
 
       /* Use the backend-generated LiveKit room name. */
       var roomName = (joinResult && joinResult.roomName) || room.room_name;
+
       if (!roomName) {
         throw new Error(
           'The backend did not provide an authoritative LiveKit room name.'
@@ -312,6 +340,8 @@
         canPublish: !!isHost,
 
         onConnected: async function (lkRoom) {
+          if (currentRoomId !== roomId) return;
+
           status.textContent = isHost
             ? 'CONNECTED — STARTING MEDIA'
             : 'CONNECTED';
@@ -357,21 +387,29 @@
         },
 
         onRemoteTrack: function (track) {
-          CHL.attachRemoteTrack(track, stage);
+          if (currentRoomId === roomId) {
+            CHL.attachRemoteTrack(track, stage);
+          }
         },
 
         onDisconnected: function () {
+          if (currentRoomId !== roomId) return;
+
           status.textContent = 'DISCONNECTED';
           status.style.background = 'rgba(0,0,0,.8)';
           liveStarted = false;
         },
 
         onReconnecting: function () {
+          if (currentRoomId !== roomId) return;
+
           status.textContent = 'RECONNECTING';
           status.style.background = 'rgba(0,0,0,.8)';
         },
 
         onReconnected: function () {
+          if (currentRoomId !== roomId) return;
+
           status.textContent = isHost && liveStarted
             ? 'RECONNECTED'
             : 'CONNECTED';
@@ -381,11 +419,138 @@
         onParticipantDisconnected: CHL.handleParticipantDisconnected
       });
     } catch (e) {
+      if (currentRoomId !== roomId) return;
+
       status.textContent = (e && e.code) || 'CONNECTION FAILED';
       status.style.background = 'rgba(0,0,0,.8)';
       CHL.toast(e.message || 'LiveKit connection failed.');
     }
   });
+
+  /* Render gift cards with real prices when available. */
+  function renderGifts(giftGrid, giftStatus, roomId) {
+    giftGrid.textContent = '';
+
+    var availableGifts = GIFTS.filter(function (gift) {
+      return gift.active !== false;
+    });
+
+    if (!availableGifts.length) {
+      giftStatus.textContent = 'No gifts are currently available.';
+      return;
+    }
+
+    availableGifts.forEach(function (gift) {
+      var priceLabel = Number.isFinite(Number(gift.coinPrice)) &&
+        gift.coinPrice !== null
+        ? Number(gift.coinPrice).toLocaleString() + ' coins'
+        : 'Price unavailable';
+
+      var giftTile = el('div', {
+        class: 'gift',
+        role: 'button',
+        tabindex: '0',
+        'aria-label': gift.k + ', ' + priceLabel,
+        onclick: function () {
+          if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+            CHL.toast('This gift price is not available yet.');
+            return;
+          }
+          sendGift(roomId, gift);
+        },
+        onkeydown: function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+
+            if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+              CHL.toast('This gift price is not available yet.');
+              return;
+            }
+
+            sendGift(roomId, gift);
+          }
+        }
+      }, [
+        el('div', { style: 'font-size:24px', text: gift.em }),
+        el('div', { text: gift.k }),
+        el('div', {
+          class: 'sub',
+          style: 'font-size:12px;margin-top:4px',
+          text: priceLabel
+        })
+      ]);
+
+      giftGrid.appendChild(giftTile);
+    });
+  }
+
+  /* Fetch active gift names/prices from the database-backed API. */
+  async function loadGiftCatalog(giftGrid, giftStatus, roomId) {
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/gifts', {
+        method: 'GET'
+      });
+
+      if (currentRoomId !== roomId) return;
+
+      var rows = result && Array.isArray(result.gifts)
+        ? result.gifts
+        : [];
+
+      if (!rows.length) {
+        giftGrid.textContent = '';
+        giftStatus.textContent = 'No active gifts are available in the database.';
+        return;
+      }
+
+      var emojiByName = Object.create(null);
+      GIFTS.forEach(function (gift) {
+        emojiByName[String(gift.k).toLowerCase()] = gift.em;
+      });
+
+      var databaseGifts = rows
+        .filter(function (gift) {
+          return gift && gift.name;
+        })
+        .map(function (gift) {
+          var name = String(gift.name);
+          var price = Number(gift.coinPrice);
+
+          return {
+            k: name,
+            em: emojiByName[name.toLowerCase()] || '🎁',
+            coinPrice: Number.isFinite(price) && price >= 0 ? price : null,
+            active: gift.active !== false
+          };
+        })
+        .filter(function (gift) {
+          return gift.active;
+        });
+
+      if (!databaseGifts.length) {
+        giftGrid.textContent = '';
+        giftStatus.textContent = 'No active gifts are available in the database.';
+        return;
+      }
+
+      GIFTS = databaseGifts;
+      giftStatus.textContent = 'Gift prices from the database.';
+      renderGifts(giftGrid, giftStatus, roomId);
+    } catch (e) {
+      // Do not invent prices if the API is unavailable.
+      GIFTS.forEach(function (gift) {
+        gift.coinPrice = null;
+      });
+
+      renderGifts(giftGrid, giftStatus, roomId);
+      giftStatus.textContent =
+        'Gift prices could not be loaded. Check the backend /api/gifts endpoint.';
+      console.warn(
+        '[Creator Hub LIVE gifts] Catalog load failed:',
+        e.message || e
+      );
+    }
+  }
 
   /* Stop the chat polling timer without affecting other LIVE controls. */
   function stopChatPolling() {
@@ -393,6 +558,26 @@
       window.clearInterval(chatPollTimer);
       chatPollTimer = null;
     }
+  }
+
+  /* Resolve a sender's real profile name from the backend chat response. */
+  function getMessageSenderName(message, ownMessage) {
+    var sender = message && message.sender ? message.sender : {};
+    var senderDisplayName = String(sender.display_name || '').trim();
+    var senderUsername = String(sender.username || '').trim();
+
+    if (ownMessage) {
+      var ownProfile = CHL.profile || {};
+      return String(
+        ownProfile.display_name ||
+        ownProfile.username ||
+        senderDisplayName ||
+        senderUsername ||
+        'You'
+      ).trim();
+    }
+
+    return senderDisplayName || senderUsername || 'Creator';
   }
 
   /* Load persisted messages so host and viewers see the same chat history. */
@@ -414,21 +599,30 @@
       var rows = result && Array.isArray(result.messages)
         ? result.messages
         : [];
+
       var wasNearBottom =
         messages.scrollHeight - messages.scrollTop - messages.clientHeight < 60;
       var oldScrollTop = messages.scrollTop;
 
-      // Build text nodes through CHL.el; never inject message HTML.
+      // Avoid rebuilding the DOM when the server returned the same messages.
+      var newSignature = rows.map(function (message) {
+        return String(message.id || '') + ':' +
+          String(message.body || '') + ':' +
+          String(message.sender_id || '');
+      }).join('|');
+
+      if (messages.getAttribute('data-chat-signature') === newSignature) {
+        return;
+      }
+
+      // Preserve the user's current scroll position unless they were near bottom.
       messages.textContent = '';
+
       rows.forEach(function (message) {
         var senderId = String(message.sender_id || '');
         var ownMessage = !!CHL.user &&
           senderId === String(CHL.user.id);
-        var profileName = CHL.profile &&
-          (CHL.profile.username || CHL.profile.display_name);
-        var senderName = ownMessage
-          ? (profileName || 'You')
-          : ('Participant ' + (senderId ? senderId.slice(0, 8) : 'unknown'));
+        var senderName = getMessageSenderName(message, ownMessage);
 
         var body = String(message.body || '');
         var timestamp = message.created_at
@@ -443,16 +637,24 @@
 
         messages.appendChild(el('div', {
           class: 'note',
+          style: 'overflow-wrap:anywhere;word-break:break-word',
           text: senderName + timeLabel + ': ' + body
         }));
       });
 
-      messages.scrollTop = wasNearBottom
-        ? messages.scrollHeight
-        : oldScrollTop;
+      messages.setAttribute('data-chat-signature', newSignature);
+
+      if (wasNearBottom) {
+        messages.scrollTop = messages.scrollHeight;
+      } else {
+        messages.scrollTop = oldScrollTop;
+      }
     } catch (e) {
       // A failed refresh must not break video or prevent later polling.
-      console.warn('[Creator Hub LIVE chat] Refresh failed:', e.message || e);
+      console.warn(
+        '[Creator Hub LIVE chat] Refresh failed:',
+        e.message || e
+      );
     } finally {
       delete chatRequestsInFlight[roomId];
     }
@@ -462,6 +664,8 @@
   async function sendChatMessage(roomId, input, messages) {
     var value = String(input.value || '').trim();
     if (!value) return;
+
+    if (currentRoomId !== roomId) return;
 
     input.disabled = true;
 
@@ -477,13 +681,11 @@
       input.value = '';
       await loadChatMessages(roomId, messages);
 
-      // If a poll was already running when POST completed, the next poll
-      // will fetch the newly saved message within two seconds.
+      // Do not force focus: mobile keyboards can move the page and video.
     } catch (e) {
       CHL.toast(e.message || 'Message could not be sent.');
     } finally {
       input.disabled = false;
-      input.focus();
     }
   }
 
@@ -494,11 +696,29 @@
       return;
     }
 
+    if (giftRequestsInFlight[roomId]) {
+      CHL.toast('Please wait for the current gift request to finish.');
+      return;
+    }
+
+    if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+      CHL.toast('This gift price is not available.');
+      return;
+    }
+
     var recipientId = roomHostId;
+
     if (!recipientId) {
       CHL.toast('Gift recipient is unavailable.');
       return;
     }
+
+    if (String(recipientId) === String(CHL.user.id)) {
+      CHL.toast('You cannot send a gift to yourself.');
+      return;
+    }
+
+    giftRequestsInFlight[roomId] = true;
 
     CHL.authenticatedApiRequest('/api/wallet/gift', {
       method: 'POST',
@@ -509,13 +729,27 @@
         gift: gift.k
       }
     })
-      .then(function () {
+      .then(function (result) {
+        var chargedGift = result && result.gift ? result.gift : null;
+
         ui.flyGift(gift.em);
-        CHL.toast('Gift sent.');
+
+        if (chargedGift && Number.isFinite(Number(chargedGift.coinPrice))) {
+          CHL.toast(
+            'Gift sent: ' + gift.k + ' (' +
+            Number(chargedGift.coinPrice).toLocaleString() + ' coins).'
+          );
+        } else {
+          CHL.toast('Gift sent.');
+        }
+
         ui.refreshCoins();
       })
       .catch(function (e) {
         CHL.toast(e.message || 'Gift failed.');
+      })
+      .finally(function () {
+        delete giftRequestsInFlight[roomId];
       });
   }
 
@@ -549,8 +783,9 @@
     if (CHL.current && CHL.current.base !== '/live') {
       stopChatPolling();
       currentRoomId = null;
-      CHL.disconnectLiveKit();
+      roomHostId = null;
       liveStarted = false;
+      CHL.disconnectLiveKit();
     }
   });
 })();
