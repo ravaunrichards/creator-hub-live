@@ -3,7 +3,7 @@ export async function createLiveKitToken({
   roomName,
   canPublish = false,
   ttlSeconds = 3600
-}) {
+}) 
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
 
