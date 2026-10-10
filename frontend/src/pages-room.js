@@ -132,7 +132,7 @@
      */
     var controls = el('div', {
       class: 'row wrap live-controls',
-      style: 'gap:8px;margin-top:10px'
+      style: 'gap:8px;margin-top:10px;display:none'
     });
 
     var micButton = el(
@@ -236,17 +236,29 @@
       maxlength: 2000
     });
 
-    var chatForm = el('form', {
-      onsubmit: function (e) {
-        e.preventDefault();
+   var chatForm = el('form', {
+  class: 'row live-chat-form',
+  style: 'display:flex;gap:8px;align-items:center;margin-top:8px',
+  onsubmit: function (e) {
+    e.preventDefault();
+    sendChatMessage(roomId, chatInput, messages);
+  }
+});
 
-        sendChatMessage(
-          roomId,
-          chatInput,
-          messages
-        );
-      }
-    });
+chatInput.style.flex = '1';
+chatInput.style.minWidth = '0';
+
+var sendChatButton = el('button', {
+  class: 'btn primary',
+  type: 'submit',
+  style: 'flex:0 0 auto',
+  text: 'Send'
+});
+
+chatForm.appendChild(chatInput);
+chatForm.appendChild(sendChatButton);
+chat.appendChild(chatForm);
+
 
     chatForm.appendChild(chatInput);
     chat.appendChild(chatForm);
@@ -384,7 +396,11 @@
         joinResult &&
         typeof joinResult.canPublish === 'boolean'
       ) {
-        isHost = joinResult.canPublish;
+
+// Only participants authorized to publish media see these controls.
+controls.style.display = isHost ? '' : 'none';
+       
+isHost = joinResult.canPublish;
         endButton.style.display = isHost ? '' : 'none';
       }
 
