@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+android/.gradle/
+android/build/
+android/app/build/
+*.iml
+.idea/
+
+# Sensitive signing material and generated release binaries must not be committed.
+android/app/release.keystore
+android/**/*.jks
+android/**/*.keystore
+releases/*.apk
