@@ -106,14 +106,11 @@ export async function createLiveKitToken({ userId, roomName, canPublish = false,
     ttl: boundedTtlSeconds 
   });
 
-  token.addGrant({ 
-    roomJoin: true, 
-    room: roomName, 
-    canPublish: !!canPublish,
-    canPublishSources: canPublish ? [1, 2] : [],
-    canSubscribe: true, 
-    canPublishData: true 
-  });
+ assert(TOKEN.includes('canPublishSources: 
+canPublish ? [1, 2] : []'),
+ 'Host token is not restricted to 
+camera/microphone publishing 
+sources.');
 
   return await token.toJwt();
 }
