@@ -1,4 +1,5 @@
-/* Creator Hub Live — real LiveKit room, server-authoritative LIVE state and gifts. */
+/* Creator Hub Creator Network — real LiveKit room,
+   server-authoritative LIVE state and gifts. */
 (function () {
   'use strict';
 
@@ -69,64 +70,76 @@
       )
     );
 
-    var layout = el(
-      'div',
-      {
-        class: 'grid',
-        style:
-          'grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:16px'
-      }
-    );
+    /*
+     * Main LIVE layout.
+     * Responsive sizing is controlled by app.css.
+     */
+    var layout = el('div', {
+      class: 'grid live-room-layout',
+      style: 'gap:16px'
+    });
 
-    var video = el(
-      'div',
-      {
-        class: 'card',
-        style:
-          'min-height:360px;background:#05050a;position:relative;display:flex;align-items:center;justify-content:center'
-      }
-    );
+    var video = el('div', {
+      class: 'card live-video-card',
+      style:
+        'background:#05050a;' +
+        'position:relative;' +
+        'display:flex;' +
+        'flex-direction:column;' +
+        'gap:10px;' +
+        'min-width:0;' +
+        'overflow:hidden'
+    });
 
-    var stage = el(
-      'div',
-      {
-        class: 'live-stage',
-        style:
-          'width:100%;height:100%;min-height:340px;position:relative'
-      }
-    );
+    var stage = el('div', {
+      class: 'live-stage',
+      style:
+        'width:100%;' +
+        'min-width:0;' +
+        'min-height:0;' +
+        'position:relative;' +
+        'overflow:hidden'
+    });
 
-    var status = el(
-      'div',
-      {
-        class: 'live-status',
-        style:
-          'position:absolute;z-index:4;top:12px;left:12px;background:rgba(0,0,0,.7);padding:7px 10px;border-radius:8px;color:#fff',
-        text: 'CONNECTING'
-      }
-    );
+    var status = el('div', {
+      class: 'live-status',
+      style:
+        'position:absolute;' +
+        'z-index:4;' +
+        'top:12px;' +
+        'left:12px;' +
+        'background:rgba(0,0,0,.7);' +
+        'padding:7px 10px;' +
+        'border-radius:8px;' +
+        'color:#fff',
+      text: 'CONNECTING'
+    });
 
     stage.appendChild(status);
     video.appendChild(stage);
 
-    var side = el('div', {});
+    var side = el('div', {
+      class: 'live-room-side',
+      style: 'min-width:0'
+    });
 
     layout.appendChild(video);
     layout.appendChild(side);
     outlet.appendChild(layout);
 
-    var controls = el(
-      'div',
-      {
-        class: 'row wrap',
-        style: 'gap:8px;margin-top:10px'
-      }
-    );
+    /*
+     * LIVE controls.
+     */
+    var controls = el('div', {
+      class: 'row wrap live-controls',
+      style: 'gap:8px;margin-top:10px'
+    });
 
     var micButton = el(
       'button',
       {
         class: 'btn',
+        type: 'button',
         onclick: function () {
           CHL.toggleMicrophone().catch(function (e) {
             CHL.toast(
@@ -142,6 +155,7 @@
       'button',
       {
         class: 'btn',
+        type: 'button',
         onclick: function () {
           CHL.toggleCamera().catch(function (e) {
             CHL.toast(
@@ -157,6 +171,7 @@
       'button',
       {
         class: 'btn',
+        type: 'button',
         onclick: function () {
           CHL.startScreenShare().catch(function (e) {
             CHL.toast(
@@ -172,6 +187,7 @@
       'button',
       {
         class: 'btn danger',
+        type: 'button',
         onclick: function () {
           endLive(roomId);
         }
@@ -184,9 +200,8 @@
     controls.appendChild(shareButton);
 
     /*
-     * Only the host should receive the End LIVE control.
-     * We initially hide it until the server identifies the user
-     * as the room host.
+     * Only the room host may see the End LIVE button.
+     * The server response determines host permissions.
      */
     endButton.style.display = 'none';
     controls.appendChild(endButton);
@@ -194,63 +209,58 @@
     video.appendChild(controls);
 
     /*
-     * LIVE chat
+     * LIVE chat.
      */
     var chat = el('div', {
-      class: 'card'
+      class: 'card live-chat-card'
     });
 
     var messages = el('div', {
-      style: 'height:230px;overflow:auto'
+      class: 'live-chat-messages'
     });
 
     chat.appendChild(
-      el(
-        'div',
-        {
-          style:
-            'font-weight:800;margin-bottom:8px',
-          text: 'Chat'
-        }
-      )
+      el('div', {
+        style: 'font-weight:800;margin-bottom:8px',
+        text: 'Chat'
+      })
     );
 
     chat.appendChild(messages);
 
     var chatInput = el('input', {
       class: 'input',
-      placeholder: 'Say something…'
+      type: 'text',
+      placeholder: 'Say something…',
+      autocomplete: 'off',
+      maxlength: 2000
     });
 
-    var chatForm = el(
-      'form',
-      {
-        onsubmit: function (e) {
-          e.preventDefault();
+    var chatForm = el('form', {
+      onsubmit: function (e) {
+        e.preventDefault();
 
-          sendChatMessage(
-            roomId,
-            chatInput,
-            messages
-          );
-        }
+        sendChatMessage(
+          roomId,
+          chatInput,
+          messages
+        );
       }
-    );
+    });
 
     chatForm.appendChild(chatInput);
     chat.appendChild(chatForm);
     side.appendChild(chat);
 
     /*
-     * Gifts
+     * LIVE gifts.
+     * The backend remains responsible for validating
+     * the gift, balance, recipient and transaction.
      */
-    var giftCard = el(
-      'div',
-      {
-        class: 'card',
-        style: 'margin-top:14px'
-      }
-    );
+    var giftCard = el('div', {
+      class: 'card live-gift-card',
+      style: 'margin-top:14px'
+    });
 
     giftCard.appendChild(
       el(
@@ -260,13 +270,10 @@
           style: 'margin-bottom:10px'
         },
         [
-          el(
-            'div',
-            {
-              style: 'font-weight:700',
-              text: 'Send a gift'
-            }
-          ),
+          el('div', {
+            style: 'font-weight:700',
+            text: 'Send a gift'
+          }),
           el(
             'a',
             {
@@ -289,24 +296,29 @@
           'div',
           {
             class: 'gift',
+            role: 'button',
+            tabindex: '0',
             onclick: function () {
               sendGift(roomId, gift);
+            },
+            onkeydown: function (e) {
+              if (
+                e.key === 'Enter' ||
+                e.key === ' '
+              ) {
+                e.preventDefault();
+                sendGift(roomId, gift);
+              }
             }
           },
           [
-            el(
-              'div',
-              {
-                style: 'font-size:24px',
-                text: gift.em
-              }
-            ),
-            el(
-              'div',
-              {
-                text: gift.k
-              }
-            )
+            el('div', {
+              style: 'font-size:24px',
+              text: gift.em
+            }),
+            el('div', {
+              text: gift.k
+            })
           ]
         )
       );
@@ -316,7 +328,7 @@
     side.appendChild(giftCard);
 
     /*
-     * Load the real room from the backend.
+     * Load the actual room from the backend.
      */
     try {
       var room = await CHL.authenticatedApiRequest(
@@ -325,22 +337,19 @@
       );
 
       if (!room || !room.id) {
-        throw new Error(
-          'LIVE room not found.'
-        );
+        throw new Error('LIVE room not found.');
       }
 
       roomHostId = room.host_id || null;
 
       /*
-       * Determine whether the authenticated user
-       * is the actual room host.
+       * Initially determine whether the authenticated
+       * user matches the room's host ID.
        */
       isHost =
         !!CHL.user &&
         !!roomHostId &&
-        String(CHL.user.id) ===
-          String(roomHostId);
+        String(CHL.user.id) === String(roomHostId);
 
       if (isHost) {
         endButton.style.display = '';
@@ -348,18 +357,15 @@
 
       if (room.status === 'live') {
         status.textContent = 'LIVE';
-        status.style.background =
-          'rgba(180,0,40,.85)';
+        status.style.background = 'rgba(180,0,40,.85)';
       } else {
-        status.textContent =
-          isHost
-            ? 'READY TO GO LIVE'
-            : 'WAITING FOR HOST';
+        status.textContent = isHost
+          ? 'READY TO GO LIVE'
+          : 'WAITING FOR HOST';
       }
 
       /*
-       * Tell backend that this authenticated user
-       * is joining the room.
+       * Join through the authenticated backend.
        */
       var joinResult =
         await CHL.authenticatedApiRequest(
@@ -372,25 +378,19 @@
         );
 
       /*
-       * The backend remains authoritative.
-       * If it returns a host flag, use it.
+       * Respect the backend's publication permission.
        */
       if (
         joinResult &&
-        typeof joinResult.canPublish ===
-          'boolean'
+        typeof joinResult.canPublish === 'boolean'
       ) {
         isHost = joinResult.canPublish;
-
-        if (isHost) {
-          endButton.style.display = '';
-        }
+        endButton.style.display = isHost ? '' : 'none';
       }
 
       /*
-       * The database UUID identifies the Creator Hub LIVE-session row.
-       * The backend-generated room_name is the authoritative LiveKit
-       * room name and must never be replaced with the database UUID.
+       * Use the backend-generated LiveKit room name.
+       * Do not substitute the database session UUID.
        */
       var roomName =
         (joinResult && joinResult.roomName) ||
@@ -407,28 +407,23 @@
         roomId: roomId,
         canPublish: !!isHost,
 
-        onConnected: async function (
-          lkRoom,
-          tokenData
-        ) {
-          status.textContent =
-            isHost
-              ? 'CONNECTED — STARTING MEDIA'
-              : 'CONNECTED';
+        onConnected: async function (lkRoom) {
+          status.textContent = isHost
+            ? 'CONNECTED — STARTING MEDIA'
+            : 'CONNECTED';
 
-          status.style.background =
-            'rgba(0,0,0,.75)';
+          status.style.background = 'rgba(0,0,0,.75)';
 
           /*
-           * Only the host publishes camera/microphone.
+           * Only an authorized host publishes camera
+           * and microphone media.
            */
           if (isHost) {
             try {
               await CHL.publishCamera();
               await CHL.publishMicrophone();
             } catch (e) {
-              status.textContent =
-                'MEDIA PERMISSION FAILED';
+              status.textContent = 'MEDIA PERMISSION FAILED';
 
               CHL.toast(
                 e.message ||
@@ -436,16 +431,15 @@
               );
 
               /*
-               * CRITICAL:
-               * Do NOT call /start if publication failed.
+               * Never request server LIVE activation
+               * after local media publication fails.
                */
               throw e;
             }
 
             /*
-             * Media has been requested locally.
-             * The backend now verifies the actual
-             * LiveKit participant publication.
+             * The backend verifies the actual LiveKit
+             * publication before confirming LIVE status.
              */
             var startResult =
               await CHL.authenticatedApiRequest(
@@ -472,19 +466,16 @@
             liveStarted = true;
 
             status.textContent = 'LIVE';
-
-            status.style.background =
-              'rgba(180,0,40,.85)';
+            status.style.background = 'rgba(180,0,40,.85)';
           }
 
           /*
-           * Attach local tracks that actually exist.
+           * Attach tracks published by the local participant.
            */
           if (
             lkRoom &&
             lkRoom.localParticipant &&
-            lkRoom.localParticipant
-              .trackPublications
+            lkRoom.localParticipant.trackPublications
           ) {
             lkRoom.localParticipant.trackPublications.forEach(
               function (publication) {
@@ -500,34 +491,24 @@
         },
 
         onRemoteTrack: function (track) {
-          CHL.attachRemoteTrack(
-            track,
-            stage
-          );
+          CHL.attachRemoteTrack(track, stage);
         },
 
         onDisconnected: function () {
-          status.textContent =
-            'DISCONNECTED';
-
-          status.style.background =
-            'rgba(0,0,0,.8)';
-
+          status.textContent = 'DISCONNECTED';
+          status.style.background = 'rgba(0,0,0,.8)';
           liveStarted = false;
         },
 
         onReconnecting: function () {
-          status.textContent =
-            'RECONNECTING';
-
-          status.style.background =
-            'rgba(0,0,0,.8)';
+          status.textContent = 'RECONNECTING';
+          status.style.background = 'rgba(0,0,0,.8)';
         },
 
         onReconnected: function () {
           /*
-           * Do not automatically claim LIVE.
-           * The server must remain authoritative.
+           * Do not automatically claim that the server
+           * has confirmed a new LIVE session.
            */
           status.textContent =
             isHost && liveStarted
@@ -544,19 +525,19 @@
 
     } catch (e) {
       status.textContent =
-        (e && e.code) ||
-        'CONNECTION FAILED';
+        (e && e.code) || 'CONNECTION FAILED';
 
-      status.style.background =
-        'rgba(0,0,0,.8)';
+      status.style.background = 'rgba(0,0,0,.8)';
 
       CHL.toast(
-        e.message ||
-          'LiveKit connection failed.'
+        e.message || 'LiveKit connection failed.'
       );
     }
   });
 
+  /*
+   * End the LIVE session through the backend.
+   */
   async function endLive(roomId) {
     if (!CHL.user) {
       CHL.navigate('#/login');
@@ -564,8 +545,6 @@
     }
 
     try {
-      CHL.disconnectLiveKit();
-
       await CHL.authenticatedApiRequest(
         '/api/live/rooms/' +
           encodeURIComponent(roomId) +
@@ -574,31 +553,36 @@
           method: 'POST'
         }
       );
+
+      CHL.disconnectLiveKit();
+
     } catch (e) {
       CHL.toast(
-        e.message ||
-          'Unable to end LIVE session.'
+        e.message || 'Unable to end LIVE session.'
       );
-    } finally {
-      liveStarted = false;
-      CHL.navigate('#/');
+
+      return;
     }
+
+    liveStarted = false;
+    CHL.navigate('#/');
   }
 
+  /*
+   * Send chat messages through the backend.
+   */
   async function sendChatMessage(
     roomId,
     input,
     messages
   ) {
-    var value = String(
-      input.value || ''
-    ).trim();
+    var value = String(input.value || '').trim();
 
     if (!value) {
       return;
     }
 
-    input.value = '';
+    input.disabled = true;
 
     try {
       var result =
@@ -622,55 +606,49 @@
         );
 
       messages.appendChild(
-        el(
-          'div',
-          {
-            class: 'note',
-            text:
-              (displayName ||
-                'You') +
-              ': ' +
-              (
-                result &&
-                result.body
-                  ? result.body
-                  : value
-              )
-          }
-        )
+        el('div', {
+          class: 'note',
+          text:
+            (displayName || 'You') +
+            ': ' +
+            (
+              result && result.body
+                ? result.body
+                : value
+            )
+        })
       );
 
-      messages.scrollTop =
-        messages.scrollHeight;
+      messages.scrollTop = messages.scrollHeight;
+      input.value = '';
 
     } catch (e) {
       /*
-       * Do not display the message as sent
-       * when the backend rejected it.
+       * Do not show a rejected message as sent.
        */
       CHL.toast(
-        e.message ||
-          'Message could not be sent.'
+        e.message || 'Message could not be sent.'
       );
+
+    } finally {
+      input.disabled = false;
+      input.focus();
     }
   }
 
-  function sendGift(
-    roomId,
-    gift
-  ) {
+  /*
+   * Send a gift through the authenticated wallet API.
+   */
+  function sendGift(roomId, gift) {
     if (!CHL.user) {
       CHL.navigate('#/login');
       return;
     }
 
-    var recipientId =
-      roomHostId;
+    var recipientId = roomHostId;
 
     if (!recipientId) {
-      CHL.toast(
-        'Gift recipient is unavailable.'
-      );
+      CHL.toast('Gift recipient is unavailable.');
       return;
     }
 
@@ -679,8 +657,7 @@
       {
         method: 'POST',
         headers: {
-          'Idempotency-Key':
-            CHL.uuid()
+          'Idempotency-Key': CHL.uuid()
         },
         body: {
           liveId: roomId,
@@ -692,30 +669,27 @@
       .then(function () {
         ui.flyGift(gift.em);
 
-        CHL.toast(
-          'Gift sent.'
-        );
+        CHL.toast('Gift sent.');
 
         ui.refreshCoins();
       })
       .catch(function (e) {
         CHL.toast(
-          e.message ||
-            'Gift failed.'
+          e.message || 'Gift failed.'
         );
       });
   }
 
-  window.addEventListener(
-    'hashchange',
-    function () {
-      if (
-        CHL.current &&
-        CHL.current.base !== '/live'
-      ) {
-        CHL.disconnectLiveKit();
-        liveStarted = false;
-      }
+  /*
+   * Disconnect when navigating away from the LIVE route.
+   */
+  window.addEventListener('hashchange', function () {
+    if (
+      CHL.current &&
+      CHL.current.base !== '/live'
+    ) {
+      CHL.disconnectLiveKit();
+      liveStarted = false;
     }
-  );
+  });
 })();
