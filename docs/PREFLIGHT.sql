@@ -11,7 +11,8 @@ from information_schema.columns
 where table_schema = 'public'
   and table_name in ('teams', 'team_members')
   and column_name in (
-    'id','name','owner_id','level','points','division_code',
+    'id','name','owner_id','description','parish','logo_url','badge_url',
+    'level','points','division_code','max_members','recruiting','created_at','updated_at',
     'team_id','user_id','role','joined_at'
   )
 order by table_name, ordinal_position;
@@ -20,3 +21,8 @@ select code, tier, rank
 from public.leagues
 where code in ('A','A1','A2','A3','B1','B2','B3','B4','B5','C1','C2','C3','C4','C5','D1','D2','D3','D4','D5')
 order by rank;
+
+-- Confirm the division catalog is complete before installing the Teams RPC migration.
+select code, tier, rank
+from public.leagues
+order by rank, code;
