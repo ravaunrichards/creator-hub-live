@@ -1,0 +1,181 @@
+/*
+ * Creator Hub Creator Network — responsive LIVE screen fix
+ * Supplemental override only. Append this file's contents to the END of
+ * frontend/styles/app.css. Do not replace app.css with this file.
+ */
+
+/* Avoid grid/flex children forcing the whole page wider than the viewport. */
+html,
+body {
+  max-width: 100%;
+  min-width: 0;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+.main,
+.main :where(*),
+.live-room-layout,
+.live-room-layout :where(*) {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.live-room-layout img,
+.live-room-layout video,
+.live-room-layout canvas,
+.live-room-layout iframe {
+  max-width: 100%;
+}
+
+/* Desktop/tablet landscape: keep the room and chat side by side without
+   letting either column force the other off-screen. */
+.live-room-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  align-items: start;
+  gap: clamp(12px, 2vw, 24px);
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.live-room-layout > *,
+.live-room-layout .live-stage,
+.live-room-layout .live-video,
+.live-room-layout .video-stage,
+.live-room-layout .live-chat,
+.live-room-layout .chat-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.live-room-layout video,
+.live-room-layout .live-video,
+.live-room-layout .video-stage,
+.live-room-layout .live-stage {
+  height: auto;
+}
+
+.live-room-layout video {
+  display: block;
+  width: 100%;
+  max-height: min(68svh, 720px);
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+}
+
+.live-room-layout :where(button, .button, input, select, textarea) {
+  max-width: 100%;
+}
+
+.live-room-layout :where(button, .button) {
+  min-height: 40px;
+  touch-action: manipulation;
+}
+
+.live-room-layout :where(.live-controls, .room-controls, .gift-controls, .action-buttons) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.live-room-layout :where(.live-chat, .chat-panel, .chat-messages) {
+  overflow-wrap: anywhere;
+}
+
+/* Phones and narrow portrait tablets: one column and natural document height.
+   In particular, undo fixed viewport-height/hidden-overflow rules that can
+   clip the LIVE room or make it occupy nearly the entire screen. */
+@media (max-width: 860px) {
+  .main:has(.live-room-layout) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  .live-room-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    align-items: stretch;
+  }
+
+  .live-room-layout > * {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .live-room-layout video {
+    width: 100%;
+    max-height: min(52svh, 460px);
+    aspect-ratio: 16 / 9;
+    object-fit: contain;
+  }
+
+  .live-room-layout :where(.live-chat, .chat-panel, .chat-messages) {
+    max-height: 38svh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .live-room-layout :where(.live-controls, .room-controls, .gift-controls, .action-buttons) {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .live-room-layout :where(button, .button) {
+    min-height: 42px;
+  }
+
+  /* Prevent iOS Safari from zooming into text fields on focus. */
+  .live-room-layout :where(input, select, textarea) {
+    font-size: 16px;
+  }
+}
+
+/* Very narrow phones. Keep controls wrapping rather than overflowing. */
+@media (max-width: 380px) {
+  .live-room-layout {
+    gap: 10px;
+  }
+
+  .live-room-layout :where(.live-controls, .room-controls, .gift-controls, .action-buttons) {
+    gap: 6px;
+  }
+
+  .live-room-layout :where(button, .button) {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+/* Landscape phones: limit video height while keeping the page scrollable. */
+@media (max-width: 860px) and (orientation: landscape) {
+  .live-room-layout video {
+    max-height: 58svh;
+  }
+
+  .live-room-layout :where(.live-chat, .chat-panel, .chat-messages) {
+    max-height: 32svh;
+  }
+}
+
+/* Respect iPhone safe areas when the website is installed on the Home Screen. */
+@supports (padding: max(0px)) {
+  .main:has(.live-room-layout) {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+}
