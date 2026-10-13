@@ -1,0 +1,57 @@
+name: Creator Hub Android APK
+on:
+  workflow_dispatch:
+    inputs:
+      website_url:
+        description: HTTPS URL of the deployed Creator Hub frontend
+        required: true
+        default: https://creator-hub-live-frontend.onrender.com
+      release_build:
+        description: Build a release APK (requires persistent signing-key secrets)
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Validate HTTPS website URL
+        shell: bash
+        run: |
+          [[ "${{ inputs.website_url }}" =~ ^https:// ]] || { echo 'website_url must use HTTPS'; exit 1; }
+      - name: Build and verify Android APK
+        working-directory: android-wrapper
+        env:
+          CHCN_WEBSITE_URL: ${{ inputs.website_url }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASE_BUILD: ${{ inputs.release_build }}
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          if [[ "$RELEASE_BUILD" == "true" ]]; then
+            [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_KEYSTORE_PASSWORD" && -n "$ANDROID_KEY_ALIAS" && -n "$ANDROID_KEY_PASSWORD" ]] || { echo 'Release signing secrets are missing'; exit 1; }
+            gradle :app:assembleRelease
+            APK="app/build/outputs/apk/release/app-release.apk"
+          else
+            gradle :app:assembleDebug
+            APK="app/build/outputs/apk/debug/app-debug.apk"
+          fi
+          test -s "$APK"
+          apksigner verify --verbose "$APK"
+          mkdir -p ../android-artifacts
+          cp "$APK" ../android-artifacts/creator-hub-creator-network.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: creator-hub-creator-network-apk
+          path: android-artifacts/creator-hub-creator-network.apk
+          if-no-files-found: error
