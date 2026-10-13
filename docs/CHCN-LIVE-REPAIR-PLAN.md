@@ -24,7 +24,7 @@ Apply each file manually only after reading the whole migration, taking a backup
 4. `database/migrations/0021_social_academy_conversations.sql` — creates `user_settings` and secure conversation/account-owned progress support. User settings is a prerequisite for later preference/account migrations.
 5. `database/migrations/0023_settings_schedules_analytics.sql` — creates the settings-save function, LIVE schedules and metric/ranking functions.
 6. `database/migrations/0024_creator_community_account_controls.sql` — adds lifecycle controls, community missions/battles, verification tables and gift rankings; requires user_settings and the metrics/schedule notification helpers above.
-7. `database/migrations/0025_appearance_preferences.sql` — adds validated account-synced appearance choices to user_settings.
+7. `database/migrations/0026_appearance_preferences.sql` — adds validated account-synced appearance choices to user_settings.
 
 `0016` catalog appears present enough to satisfy D5 preflight (18 division rows and D5 observed). `0017` convergence work is substantially covered by `0018`, but review both source files if preflight finds additional shape differences. Migration `0020` is not part of the default sequence because read-only checks found its wallet financial-integrity conditions clean and the core RPCs already restricted to `service_role`; review and run it only if security/catalog checks now show missing requirements. Do not replay 0001–0014 just because they have lower numbers; the base objects already exist and migration history is absent.
 

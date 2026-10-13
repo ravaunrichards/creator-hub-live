@@ -31,7 +31,7 @@ process.on("unhandledRejection", (reason, promise) => {
 // Creator Hub Creator Network - Backend HTTP API
 // ============================================================================
 
-const BACKEND_RELEASE = "4.0.0";
+const BACKEND_RELEASE = "4.0.2";
 const PORT = Number(process.env.PORT || 3000);
 
 const FRONTEND_URL = String(

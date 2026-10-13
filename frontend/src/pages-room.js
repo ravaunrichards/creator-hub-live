@@ -349,7 +349,7 @@
       endButton.classList.toggle('ch-hidden', !state.isHost);
       micButton.classList.toggle('ch-hidden', !state.canPublish); cameraButton.classList.toggle('ch-hidden', !state.canPublish); shareButton.classList.toggle('ch-hidden', !state.canPublish);
       if (room.status === 'live') setStatus('LIVE'); else setStatus(state.isHost ? 'READY TO GO LIVE' : 'WAITING FOR HOST');
-      var roomName = joinResult.roomName || room.room_name;
+      var roomName = (joinResult && joinResult.roomName) || room.room_name;
       if (!roomName) throw new Error('Backend did not provide the LiveKit room name.');
       await CHL.connectLiveKit({
         roomName: roomName, roomId: roomId, canPublish: state.canPublish,

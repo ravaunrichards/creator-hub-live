@@ -9,7 +9,7 @@ const migration21=read('database/migrations/0021_social_academy_conversations.sq
 const migration22=read('database/migrations/0022_creator_media_storage.sql');
 const migration23=read('database/migrations/0023_settings_schedules_analytics.sql');
 const migration24=read('database/migrations/0024_creator_community_account_controls.sql');
-const migration25=read('database/migrations/0025_appearance_preferences.sql');
+const migration25=read('database/migrations/0026_appearance_preferences.sql');
 const teams=read('frontend/src/pages-teams.js'), index=read('frontend/index.html'), social=read('frontend/src/pages-extra.js');
 const creator=read('frontend/src/pages-creator.js'), config=read('frontend/config.js'), settings=read('frontend/src/pages-settings.js');
 assert.match(sw,/chcn-web-v4-0-2/,'website service-worker cache must be v4.0.2');
