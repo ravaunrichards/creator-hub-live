@@ -1,0 +1,31 @@
+CREATOR HUB CREATOR NETWORK — RELEASE 4.0.0 LOCAL TEST RESULTS
+Generated for the exact source included in this release package.
+
+ROOT COMMAND:
+  npm run check
+
+RESULT: PASS
+  - 237 website/source integrity assertions passed; zero failures.
+  - 94 source/config files scanned for matching private-credential patterns; no matches.
+  - Browser config execution guard passed with optional social settings absent.
+  - 24 historical/new migration files passed a static structure scan. This is not a live PostgreSQL parse or migration test.
+  - Community/account contracts passed, including profile-column privileges, private/blocked-profile visibility, signup identity, and active-account checks for deleted/deactivated profiles.
+  - Website routes: 71 declared, 69 concrete routes checked by backend route checker; no duplicate literal route registrations/unresolved internal hash links in the website integrity checks.
+  - Backend syntax: 8/8 modules passed.
+  - LIVE/LiveKit, Teams, team-league seasons/standings, creator league, PayPal environment, payout, and repair-contract tests passed.
+
+REPAIR CONTRACT COMMAND:
+  npm run repair:contracts
+
+RESULT: PASS
+  - LIVE start/token/state/chat/RLS/wallet contract tests passed.
+  - Account/privacy/sign-up/export/community-feature contracts passed.
+
+LOCAL STATIC HTTP SMOKE:
+  A local static server returned HTTP 200 for 20/20 unique local references found in frontend/index.html (scripts, styles, icon, manifest) plus the service worker. This smoke test checks static HTTP delivery only.
+
+BROWSER TEST LIMITATION:
+  A headless Chromium attempt was blocked by the container policy (ERR_BLOCKED_BY_ADMINISTRATOR) for both localhost and file URLs. No visual-rendering pass is claimed from this environment.
+
+NOT RUN AGAINST PRODUCTION:
+  No SQL migration was applied; no production Supabase, Render, PayPal transaction/webhook, LiveKit session, real-user account lifecycle, or physical-device acceptance test was run by this package build. Complete docs/VALIDATION-4.0.0.md and docs/PRODUCTION-ACCEPTANCE-CHECKLIST.md after backup and manual installation. Static/local tests do not prove production credentials or schema readiness.
