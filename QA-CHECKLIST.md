@@ -1,0 +1,12 @@
+# LIVE Room Phase 1 QA
+- [ ] Patch script succeeds against current checkout and backup is created.
+- [ ] Diff contains only intended pages-room.js changes.
+- [ ] LIVE route still joins via authenticated backend and server-issued LiveKit room name.
+- [ ] Chat shows real display names; username fallback before generic Creator.
+- [ ] All four layouts select and persist after refresh.
+- [ ] Phone layout has no horizontal overflow; tablet and desktop stage/side panel work.
+- [ ] Existing mic/camera/share/chat/gift/end controls still work.
+- [ ] Gift prices remain database-sourced.
+- [ ] Existing project tests/build pass.
+- [ ] Host and viewer permissions verified.
+- [ ] Production deployment verified separately.
