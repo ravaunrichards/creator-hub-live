@@ -1,0 +1,20 @@
+{
+  "name": "creator-hub-creator-network",
+  "version": "4.4.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "description": "Full website, backend and database source for the existing Creator Hub Creator Network project.",
+  "scripts": {
+    "check": "node tests/integration-check.js && node tests/security-audit.js && node tests/deployment-payment-check.mjs && node tests/community-account-contract.mjs && node tests/migration-static-check.mjs && node tests/teams-contract-check.mjs && node tests/league-structure-check.mjs && node tests/appearance-verification-update-check.mjs && node tests/complete-upgrade-contract.mjs && cd backend && npm test",
+    "backend:check": "cd backend && npm run check",
+    "backend:test": "cd backend && npm test",
+    "repair:contracts": "node tests/repair-contract.js && node tests/community-account-contract.mjs",
+    "teams:check": "node tests/teams-contract-check.mjs",
+    "backend:smoke": "cd backend && npm run smoke",
+    "league:check": "node tests/league-structure-check.mjs",
+    "deployment:payment:check": "node tests/deployment-payment-check.mjs"
+  }
+}
