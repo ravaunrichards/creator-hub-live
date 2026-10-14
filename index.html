@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#08090d"><meta name="description" content="Creator Hub — a new home for short video, live creators, and community.">
+  <title>Creator Hub — Watch. Create. Connect.</title><link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail" aria-label="Primary navigation">
+      <a class="brand" href="#/feed" aria-label="Creator Hub home"><span class="brand-mark">C<span>+</span></span><span class="brand-name">CREATOR HUB</span></a>
+      <nav class="nav-list">
+        <a href="#/feed" data-route="feed" class="nav-link active"><span class="nav-icon">⌂</span><span>For You</span></a>
+        <a href="#/discover" data-route="discover" class="nav-link"><span class="nav-icon">⌕</span><span>Discover</span></a>
+        <a href="#/following" data-route="following" class="nav-link"><span class="nav-icon">◎</span><span>Following</span></a>
+        <a href="#/live" data-route="live" class="nav-link"><span class="nav-icon">◉</span><span>LIVE</span></a>
+        <a href="#/inbox" data-route="inbox" class="nav-link"><span class="nav-icon">✉</span><span>Inbox</span></a>
+        <a href="#/profile" data-route="profile" class="nav-link"><span class="nav-icon">♙</span><span>Profile</span></a>
+      </nav>
+      <div class="rail-bottom"><button class="create-button" id="create-open"><span>＋</span> Create</button><p class="rail-note">A new stage for every creator.</p><small>CREATOR HUB · PREVIEW</small></div>
+    </aside>
+    <header class="topbar"><button class="mobile-brand" onclick="location.hash='#/feed'">C<span>+</span> <b>CREATOR HUB</b></button><div class="search-wrap"><span>⌕</span><input id="global-search" type="search" placeholder="Search creators, videos, sounds" aria-label="Search creators, videos, sounds"><kbd>/</kbd></div><div class="top-actions"><button class="quiet-button" id="upload-top">＋ <span>Create</span></button><button class="avatar-button" id="account-top" aria-label="Open profile">CH</button></div></header>
+    <main id="main" tabindex="-1"><div class="loading-state"><span class="loader"></span><p>Opening your creator universe…</p></div></main>
+    <nav class="mobile-nav" aria-label="Mobile navigation"><a href="#/feed" data-route="feed" class="active"><b>⌂</b><span>Home</span></a><a href="#/discover" data-route="discover"><b>⌕</b><span>Discover</span></a><a href="#/create" data-route="create" class="mobile-create"><b>＋</b><span>Create</span></a><a href="#/inbox" data-route="inbox"><b>✉</b><span>Inbox</span></a><a href="#/profile" data-route="profile"><b>♙</b><span>Profile</span></a></nav>
+  </div>
+  <dialog id="create-dialog" class="modal"><form method="dialog"><button class="modal-close" aria-label="Close">×</button></form><div class="eyebrow">YOUR NEXT MOVE</div><h2>Create something worth watching.</h2><p>Choose what you want to do. Upload and LIVE actions will only activate when the connected service supports them.</p><div class="create-options"><button data-create-action="upload"><span>↥</span><b>Upload a video</b><small>Share a clip with your community</small></button><button data-create-action="live"><span>◉</span><b>Start a LIVE</b><small>Connect with your audience in real time</small></button><button data-create-action="draft"><span>✎</span><b>Creator studio</b><small>Plan and manage your content</small></button></div><p id="create-feedback" class="inline-feedback" aria-live="polite"></p></dialog>
+  <script src="app.js" defer></script>
+</body></html>
