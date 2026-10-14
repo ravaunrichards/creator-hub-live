@@ -1,0 +1,784 @@
+{
+  "product": "Creator Hub Creator Network",
+  "edition": "Studio Edition",
+  "release": "5.0.0",
+  "kind": "Full project source package for manual review and installation",
+  "source_basis": "Existing full project source package 4.2.0, redesigned without replacing the backend with demo services",
+  "project_repository": "https://github.com/ravaunrichards/creator-hub-live",
+  "frontend_visual_release": "5.0.0",
+  "backend_api_compatibility": "Existing 4.2.x source line; external backend was not deployed or upgraded by packaging",
+  "database_migrations_added": false,
+  "android_web_assets": "frontend/ synced to android/app/src/main/assets/web/",
+  "android_apk_rebuilt": false,
+  "private_signing_keystore_included": false,
+  "validation": {
+    "npm_run_check": "PASS",
+    "integration_source_contracts": "247 passed, 0 failed",
+    "studio_edition_contract": "PASS",
+    "browser_rendered_visual_test": "NOT COMPLETED — browser navigation blocked by packaging environment",
+    "production_provider_and_real_device_tests": "NOT RUN"
+  },
+  "file_count_excluding_this_manifest": 152,
+  "files": [
+    {
+      "path": ".github/workflows/creator-hub-android.yml",
+      "size_bytes": 621,
+      "sha256": "4e55c234fafc47e31464c7d1823eb47ac496a8df74d0e9dbd439185ab754ea26"
+    },
+    {
+      "path": ".gitignore",
+      "size_bytes": 129,
+      "sha256": "8349b014f6d245b7b45b2e6424b5241d5dd624ea445cddb42e5d74783a0781bc"
+    },
+    {
+      "path": "README.txt",
+      "size_bytes": 1031,
+      "sha256": "ba7be10183505a824bae5412ec55e655076278a5a716ceddec18f117c925233d"
+    },
+    {
+      "path": "START-HERE.txt",
+      "size_bytes": 1139,
+      "sha256": "aaf24edaf5889040e2d1550a78f8cd2ea584ec5c6df8e693501d487d135cee37"
+    },
+    {
+      "path": "android/app/build.gradle",
+      "size_bytes": 1888,
+      "sha256": "cbb00e859fe6dbcba90e2375f445ad784847d189c07b22cc6c310a2468c90c65"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "size_bytes": 1512,
+      "sha256": "74b8a0c4abe57a7de502c91415071599e792efa2c7e47443346e489e721852ff"
+    },
+    {
+      "path": "android/app/src/main/assets/web/assets/icon.svg",
+      "size_bytes": 642,
+      "sha256": "aae752a113c14ee79f66b95c52f7d16363bafb07ae66fbc36021b2108c7feedf"
+    },
+    {
+      "path": "android/app/src/main/assets/web/assets/logo.svg",
+      "size_bytes": 1022,
+      "sha256": "0a486a7cfb2e2d1557bd2dd8fde5b7820c891803a06cb466e46b4764f984bf72"
+    },
+    {
+      "path": "android/app/src/main/assets/web/config.example.js",
+      "size_bytes": 481,
+      "sha256": "9ef456271049e5f014899a2a31d296f01222c821c374d614fa9f719738a2f997"
+    },
+    {
+      "path": "android/app/src/main/assets/web/config.js",
+      "size_bytes": 3249,
+      "sha256": "8d3b8f410a7e92d18d75ee0141fa63bbc68d61036e3a12e1f1ed914d57e43e14"
+    },
+    {
+      "path": "android/app/src/main/assets/web/index.html",
+      "size_bytes": 4995,
+      "sha256": "d451a8b020d977059d09e631ce6e5f2ebd7bc86a283fc1aa52d2fa9fe5a5700c"
+    },
+    {
+      "path": "android/app/src/main/assets/web/index.iphone.html",
+      "size_bytes": 2381,
+      "sha256": "f9b256183ea2a8722a7999684812dc76f8437b15ed2f932630c5b09536ff1ac9"
+    },
+    {
+      "path": "android/app/src/main/assets/web/manifest.webmanifest",
+      "size_bytes": 472,
+      "sha256": "20b1f24d6f575521c1ac61e22be06b398db657621b1bbb048c889456a391de26"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/core.js",
+      "size_bytes": 39613,
+      "sha256": "2f55514a3d30dd4fdec605384d68325c80211b88e189fd96f3f2319c554fd3da"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/livekit.js",
+      "size_bytes": 20346,
+      "sha256": "8853da781875388162a89199c7a76585485ba315b72fdc4c773b688301e58be3"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-accessibility.js",
+      "size_bytes": 2782,
+      "sha256": "a9f11ab7355a2244856150de90a842db602b512c794dfcc4e52b72419d0b279c"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-account.js",
+      "size_bytes": 23283,
+      "sha256": "c069823d180e0ac03b52c912898a76510910a22202e460df0f1f8a91d022196e"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-admin.js",
+      "size_bytes": 27300,
+      "sha256": "68bd9b3bba8d20bd0f3ed9f9bd9d1a9b0958f633984c7ff21761222c7a8c3866"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-auth.js",
+      "size_bytes": 5581,
+      "sha256": "6b23b40e550bb5c5bd1c564541c974e9b2480c10cd34883d0842202e8fcc3e95"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-community.js",
+      "size_bytes": 28787,
+      "sha256": "1412acf4755fbc59ca9dd93f87d90415bce78a1305665de98dd736c218d4ec24"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-creator.js",
+      "size_bytes": 44117,
+      "sha256": "a29a9e1f36ff0202c6473b445a7ad786d58c6a35ecbba3485ccfdcf210ce6c05"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-extra.js",
+      "size_bytes": 35745,
+      "sha256": "c240bd395d662d7ee7f5f0e656918202a6c0ff3c4b56ded053ddeb4a51d0a89d"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-room.js",
+      "size_bytes": 28847,
+      "sha256": "a9c0d590372e9a4bfcf6f64547ece3f548f140c93e5deca1f029ba2ca2bfc1ae"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-settings.js",
+      "size_bytes": 25982,
+      "sha256": "39d447592c39782b9e4922589a498f4eb72c813b9fff2d19fec5f00c1ddf1c6a"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-teams.js",
+      "size_bytes": 15907,
+      "sha256": "836b61028bf17c793f227634570e51af345cfc164f53e91f57bd7b55bfe4e444"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-wallet.js",
+      "size_bytes": 9112,
+      "sha256": "efe5331b60f82d1fb43269d9212d7ebd8328e8c352a30da587675480767ce872"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages.js",
+      "size_bytes": 4734,
+      "sha256": "998b8d82817f6d68e17f1a284cf4b724cea50b5bb35762cd9b6097270dbeb4a1"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/studio-edition.js",
+      "size_bytes": 23948,
+      "sha256": "b0968433d90413ab77088aef705b5b4d652d87da6293268fce61903b77c7c9be"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/ui.js",
+      "size_bytes": 9056,
+      "sha256": "31c65ca16bcdb776dc737af8edc6d7224d7a17b560065b45cdbf0783a0233be8"
+    },
+    {
+      "path": "android/app/src/main/assets/web/styles/app.css",
+      "size_bytes": 26154,
+      "sha256": "a88968419b503e07ea004655ff82d0e66824bc25ea84ccfc685211ae826640c0"
+    },
+    {
+      "path": "android/app/src/main/assets/web/styles/studio-edition.css",
+      "size_bytes": 33495,
+      "sha256": "ae066a4eaedb419a9470f4685f8aee48d33fb589cb86ed00d5b094667c936107"
+    },
+    {
+      "path": "android/app/src/main/assets/web/sw.js",
+      "size_bytes": 2572,
+      "sha256": "d26180d08e42bd45566a01388c5bf5cf029c678c7a22b35e8529921a7c780bee"
+    },
+    {
+      "path": "android/app/src/main/java/com/creatorhub/app/MainActivity.java",
+      "size_bytes": 13701,
+      "sha256": "119f308771e505200a144d9a2d7f9ce29c6c7dfc724e932893993101442c771f"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_background.xml",
+      "size_bytes": 306,
+      "sha256": "3311cdb8f2e16c3744572880d5e488ef50aaf0c56284aace8eecb1422597d87a"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "size_bytes": 426,
+      "sha256": "cdbdc0ad2a809c6cb510b1631f13a44116ff8094af9d60c363694b806d32b08f"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "size_bytes": 273,
+      "sha256": "1c832bf194d8eecd439a92bcced0df144c9f566b934b3d7865e983d8ee8dbdeb"
+    },
+    {
+      "path": "android/app/src/main/res/values/strings.xml",
+      "size_bytes": 79,
+      "sha256": "09e7dce0abdd7cb12b367ac60e3122893e34db03e1f7f1f3618d3d1529cd0348"
+    },
+    {
+      "path": "android/app/src/main/res/values/themes.xml",
+      "size_bytes": 244,
+      "sha256": "7a92c07488539dbf8233dae3088da1e4b4c1fc624c5208d2033e7ae6c0f2d1f2"
+    },
+    {
+      "path": "android/build.gradle",
+      "size_bytes": 98,
+      "sha256": "356a1ae76b0efabf38e352f1ff3b64cec0b41945195a463d689157e6a1775c78"
+    },
+    {
+      "path": "android/gradle.properties",
+      "size_bytes": 109,
+      "sha256": "e6b436ff6a08da8b8c05e0e2fc1a7f40f41701bb506cd80fc2ddfd7b6e3b3b2b"
+    },
+    {
+      "path": "android/settings.gradle",
+      "size_bytes": 332,
+      "sha256": "83516013f49e31eb4f504f2f173ce53714a4a0ac1b007b6118373131bb0e9176"
+    },
+    {
+      "path": "backend/.env.example",
+      "size_bytes": 713,
+      "sha256": "104833fd17359a0b7eef8311e405cc468efda5b617ff0b6cd283c8e2ec059ece"
+    },
+    {
+      "path": "backend/package.json",
+      "size_bytes": 856,
+      "sha256": "99d18ca4e236ab249f6adc2a05318dd0b1d374de1da3a30e860f18e8108980cd"
+    },
+    {
+      "path": "backend/src/creator-leagues.js",
+      "size_bytes": 20869,
+      "sha256": "f6c75e477f9135feeed28db97ea1e8a2ca05f16b4099000d922bc4b3a61ff9f2"
+    },
+    {
+      "path": "backend/src/livekit-token.js",
+      "size_bytes": 3716,
+      "sha256": "5b246c51468e581a72947d9169427ac274ce49ac73b60e9232dc4b5fc772678b"
+    },
+    {
+      "path": "backend/src/livekit-verification.js",
+      "size_bytes": 733,
+      "sha256": "5a5bd0a32d799f73f352fed6307734449c12d419fff2533dfc0da5cacf4a3f7f"
+    },
+    {
+      "path": "backend/src/payout-routes.js",
+      "size_bytes": 9785,
+      "sha256": "8bf5364bc46c3607b08b537b1fd2cc12453f58a880c32159af494c85d7f82244"
+    },
+    {
+      "path": "backend/src/paypal-env.js",
+      "size_bytes": 2082,
+      "sha256": "63ae404ce25f13a960c7a17978cfe39195d73f49523d8368eef04b22dfe78560"
+    },
+    {
+      "path": "backend/src/server.js",
+      "size_bytes": 57072,
+      "sha256": "be1c989978b4341758e04f230b55ca0f6de38c15468671f704c68108de7f4c2b"
+    },
+    {
+      "path": "backend/src/team-leagues.js",
+      "size_bytes": 27341,
+      "sha256": "cd37292b5aba5c71a5d2400c8a19e1426ecb4bc4583c57bd368412aa895ee614"
+    },
+    {
+      "path": "backend/src/teams-routes.js",
+      "size_bytes": 13942,
+      "sha256": "8f1358d6fe95300aae6bfe44d9322c1c177bbd7aa8d849334f590ef249a20f30"
+    },
+    {
+      "path": "backend/tests/backend-syntax.js",
+      "size_bytes": 870,
+      "sha256": "19b996a1039d7b396d1653f976da3c8b9a1aa9b25d1e921c33ff747cfd36db1f"
+    },
+    {
+      "path": "backend/tests/creator-league-manual-checks.js",
+      "size_bytes": 763,
+      "sha256": "d50f5da0c67a98b661c82ab126143972e20d8dd409c2e52f1f3649917a3421c3"
+    },
+    {
+      "path": "backend/tests/live-smoke.js",
+      "size_bytes": 1793,
+      "sha256": "ca627c059e2f9be5374ac1e6f4c134d7c97d5abd06a30fdbe40daa2667871da6"
+    },
+    {
+      "path": "backend/tests/livekit-contract.js",
+      "size_bytes": 2958,
+      "sha256": "78b06b2f2f0b0542ba204e4bdb6d3926b01e795b006b32aec9af209e6bf799b4"
+    },
+    {
+      "path": "backend/tests/payout-routes.test.js",
+      "size_bytes": 5102,
+      "sha256": "d7fe18754892eb1587975f381f534f562ba1785d6a1e0fadab56bb4467bf3390"
+    },
+    {
+      "path": "backend/tests/paypal-env.test.js",
+      "size_bytes": 2546,
+      "sha256": "1d4d1c52430c57163da4e8c981988bcce1852f3fb4ee5fc5d99ff859a7aad1c4"
+    },
+    {
+      "path": "backend/tests/route-check.js",
+      "size_bytes": 7161,
+      "sha256": "14801bbc2f78c509ca3a702f3d419a41a9e2620560b0fc226398861ea9c6b71a"
+    },
+    {
+      "path": "backend/tests/team-league-operations.test.js",
+      "size_bytes": 7416,
+      "sha256": "4b54edbf4422bf35ea989b8644b6ee5948526c923ac2f7af9ac7abddf02b99c8"
+    },
+    {
+      "path": "backend/tests/team-leagues.test.js",
+      "size_bytes": 3254,
+      "sha256": "edfa731c0b8c300b8f2fdd5633a746f37a345af288cb35d3699b6cf4c544d71e"
+    },
+    {
+      "path": "backend/tests/team-season-admin.test.js",
+      "size_bytes": 7948,
+      "sha256": "ee658e8e84ef4d0e157f988cb624276ac06bc5af71f22cc92e9f0720b7979513"
+    },
+    {
+      "path": "database/diagnostics/creator_community_preflight.sql",
+      "size_bytes": 4683,
+      "sha256": "fc39cf935d5b5e591cc1704a56eceda9a46e4a68b10a9f58f958a87da0548c10"
+    },
+    {
+      "path": "database/diagnostics/full_supabase_inventory_audit.sql",
+      "size_bytes": 8392,
+      "sha256": "5021c0d5b298984cf342b60457509e30d774b584479d96c9cfbc84c3e5b1d03f"
+    },
+    {
+      "path": "database/diagnostics/league_schema_preflight.sql",
+      "size_bytes": 6894,
+      "sha256": "9ac56dcbee827f9bb951ffbcaa64e9f29894eb01435f63f7fd79e97048339345"
+    },
+    {
+      "path": "database/migrations/0001_identity_social.sql",
+      "size_bytes": 5588,
+      "sha256": "1e15a157928b261f3e0f7aff47e2793a3d6d26ba7889ac0d922a8eb3573a78f8"
+    },
+    {
+      "path": "database/migrations/0002_content_social.sql",
+      "size_bytes": 6521,
+      "sha256": "f108d4df789181423399618e3fcf00d987a34363434fe543abd4b920ca3c0f64"
+    },
+    {
+      "path": "database/migrations/0003_wallet_payments.sql",
+      "size_bytes": 11943,
+      "sha256": "c6852c3bac8f99890258f57b5f2224c24817ac4e758361efc16f7e54e69096d1"
+    },
+    {
+      "path": "database/migrations/0004_live_social_systems.sql",
+      "size_bytes": 7957,
+      "sha256": "e90e7935290580c1415d36169efef40ccde396ce8e11054ea72524ef9f7d0e87"
+    },
+    {
+      "path": "database/migrations/0005_rls_policies.sql",
+      "size_bytes": 7032,
+      "sha256": "b19445b0777dadab5e9f6ba9f3af18444f1304c51621d4450351d5cd1c170e99"
+    },
+    {
+      "path": "database/migrations/0006_seed_config.sql",
+      "size_bytes": 1703,
+      "sha256": "1887d41a2386cedc209211f5bd0cafc998f9729d729a25d783f4a0304b57cfa7"
+    },
+    {
+      "path": "database/migrations/0007_payment_idempotency.sql",
+      "size_bytes": 355,
+      "sha256": "eda34be88daf3c6b2d85590b8a42bf98742caef5d0c6e14ff43cfdba963962fa"
+    },
+    {
+      "path": "database/migrations/0008_server_authoritative_leagues.sql",
+      "size_bytes": 15267,
+      "sha256": "1a6458e014eea00edd4f19e6e25c178ee2c6a54f89383a334fcbbdc4961059af"
+    },
+    {
+      "path": "database/migrations/0009_live_pending_state.sql",
+      "size_bytes": 557,
+      "sha256": "006c0de66052766062b03022d013e2d105ddfa20b8babb1ed78481292a794b7f"
+    },
+    {
+      "path": "database/migrations/0010_rls_hardening.sql",
+      "size_bytes": 4234,
+      "sha256": "1ea81f11e02ebdaf87cdb85a512d2b1e0d7a8fb447b6777be0d5b2ae8b918d8d"
+    },
+    {
+      "path": "database/migrations/0011_user_settings.sql",
+      "size_bytes": 1269,
+      "sha256": "43fac80af08d42ff6aa0d2fe57b1a3455783b94cbe9be596a0043c85b2cd1502"
+    },
+    {
+      "path": "database/migrations/0012_live_chat_messages.sql",
+      "size_bytes": 1021,
+      "sha256": "d5f4f409fd355bc52fa8767a106eda77696a77269c02046acd01a7ed8b9c1c8b"
+    },
+    {
+      "path": "database/migrations/0013_wallet_package_contracts.sql",
+      "size_bytes": 1873,
+      "sha256": "d1049e747c2d029be504a865ff896ae14aaca1f4682810096bf6eece7c63002e"
+    },
+    {
+      "path": "database/migrations/0014_creator_league_server.sql",
+      "size_bytes": 10589,
+      "sha256": "180ec6c4e0e658447e4666050443c6aa681e63c343b1a8969fd154f61e06655d"
+    },
+    {
+      "path": "database/migrations/0015_teams_backend_complete.sql",
+      "size_bytes": 9138,
+      "sha256": "e99e082f198ce3950ce2bed0a6fa424cd545970ebc9c3cc7fd84280f803c0620"
+    },
+    {
+      "path": "database/migrations/0016_official_division_tiers.sql",
+      "size_bytes": 1021,
+      "sha256": "5a68f121b1fd8cf8e367df7be201e43de34e59de76f5b0fcd7c51d952cf10c8e"
+    },
+    {
+      "path": "database/migrations/0017_team_schema_compatibility_repair.sql",
+      "size_bytes": 5717,
+      "sha256": "5da0f06a7380ad84c95a2a442d1b3359a48f36a01b883f973534f4da6638d223"
+    },
+    {
+      "path": "database/migrations/0018_teams_schema_convergence.sql",
+      "size_bytes": 12415,
+      "sha256": "964b887fbe0369b26f3b79ad60c7345a2f42ad39bf4b03a25432e5317174ef52"
+    },
+    {
+      "path": "database/migrations/0019_league_operations_and_payouts.sql",
+      "size_bytes": 25337,
+      "sha256": "6dcda063fee5501699d3e364a8ee8dc3badc934d12b2de8e277539d63e1b2690"
+    },
+    {
+      "path": "database/migrations/0020_wallet_gift_schema_and_security.sql",
+      "size_bytes": 9803,
+      "sha256": "b9a6fb3f3fd17ea0d9b02682023c6b49fb3c339bf90d173be5124c31cefc53c7"
+    },
+    {
+      "path": "database/migrations/0021_social_academy_conversations.sql",
+      "size_bytes": 10931,
+      "sha256": "c51faeb10ba15bcd5a7b37ade5192b483d727ea84edb77609b40162343c6064c"
+    },
+    {
+      "path": "database/migrations/0022_creator_media_storage.sql",
+      "size_bytes": 1939,
+      "sha256": "19eebe4f85e2fbaecba81a8497d0ec490c1f26c4942dbffaf68d867f12f4b946"
+    },
+    {
+      "path": "database/migrations/0023_settings_schedules_analytics.sql",
+      "size_bytes": 20110,
+      "sha256": "67d4d9c5be924d05efa658ec08fae2d35b6afe34de28f30ea44e4e3c0066e359"
+    },
+    {
+      "path": "database/migrations/0024_creator_community_account_controls.sql",
+      "size_bytes": 50908,
+      "sha256": "6332ee8a948e4357975d9701a61470932f35965cef614ac9e4a7e8adb079bb0b"
+    },
+    {
+      "path": "database/migrations/0025_live_guest_request_workflow.sql",
+      "size_bytes": 757,
+      "sha256": "6f2ff6f1318f373f98da1b7a875f7c0c052d5e0f8298daee55a335ea3f99274e"
+    },
+    {
+      "path": "docs/API.md",
+      "size_bytes": 4256,
+      "sha256": "a40f8952a1bc1a3875e5cf60b20d5349d2420c3a2f5780944a870c2632fb8e7b"
+    },
+    {
+      "path": "docs/COORDINATED-REPAIR-REPORT-4.2.0.md",
+      "size_bytes": 1539,
+      "sha256": "9960b010de78276d9c9f79397cb1f27a61cd6f2ee7116597322a769ed5f82b30"
+    },
+    {
+      "path": "docs/DATABASE.md",
+      "size_bytes": 4223,
+      "sha256": "f0c3f1e3def97580773682bb8ae6b51fe605d37a6d2c6799a6515a9feb4585dc"
+    },
+    {
+      "path": "docs/DEPLOYMENT.md",
+      "size_bytes": 2192,
+      "sha256": "a761359a4f1fcd253e87e611e93b491bd56180596936588d09e662d9d15182f7"
+    },
+    {
+      "path": "docs/ERROR-RECOVERY-2026-10-12.md",
+      "size_bytes": 2240,
+      "sha256": "dbea2120df2692702eda884ad9725f53a866f2a6fbd1adce4063331d1dc76a29"
+    },
+    {
+      "path": "docs/INSTALL-4.2.0.md",
+      "size_bytes": 2375,
+      "sha256": "4fc5f13917b06c94e417632327e2acd011790306455d0fd3e45ee5aaabbcba9d"
+    },
+    {
+      "path": "docs/INSTALL.md",
+      "size_bytes": 4656,
+      "sha256": "df9a1e9999fbeb6b416914c11abfb2ab90760f2c667d1da7708bbfc8da2fd93b"
+    },
+    {
+      "path": "docs/KNOWN_LIMITATIONS.md",
+      "size_bytes": 3182,
+      "sha256": "985ff007983b17d38fd84c69b2b5a0e3cd4f7e589b31e5f72a814b02c63fc526"
+    },
+    {
+      "path": "docs/LEAGUE-RANKING-STRUCTURE.md",
+      "size_bytes": 1311,
+      "sha256": "cb30b77badd9e4fb4fc0303dada5003200512d5b6f925aa862bbeeb90ddf4dbf"
+    },
+    {
+      "path": "docs/LIVE-SETUP.md",
+      "size_bytes": 2377,
+      "sha256": "d9d233e218c22c70306966ae8f9a3f6d8298bb50e661401f2aa22d18f9fd5423"
+    },
+    {
+      "path": "docs/LOCAL-TEST-RESULTS-4.0.0.txt",
+      "size_bytes": 2176,
+      "sha256": "b5878b4c4b28781c2d45abe150936bf8cf34bd077d03cec30f0ab472e045af44"
+    },
+    {
+      "path": "docs/PRODUCTION-ACCEPTANCE-CHECKLIST.md",
+      "size_bytes": 3995,
+      "sha256": "a90ce661ea478418e93f9b3c796e2d148b266f82cd1371d5434c0381fdd0561e"
+    },
+    {
+      "path": "docs/README.md",
+      "size_bytes": 1005,
+      "sha256": "01670de7264d9d85cbbcc9734765cce8abb8bab60766f9659dacf7c5c29d2a4a"
+    },
+    {
+      "path": "docs/RECOVERY-FIXES.md",
+      "size_bytes": 954,
+      "sha256": "a99c8ecded08363a29ef7dfb637e880c057c9ae3e388453b07a0bd29859768a9"
+    },
+    {
+      "path": "docs/RELEASE-4.0.0.md",
+      "size_bytes": 4649,
+      "sha256": "9916416e4d90a84a7e18563f954e84917c165527dd9c9ce31474c798b3b28699"
+    },
+    {
+      "path": "docs/RELEASE-4.2.0.md",
+      "size_bytes": 490,
+      "sha256": "7c4a42b0aedfd049c95e4d55df7c430ada2a45399501f13c59182a644202ea45"
+    },
+    {
+      "path": "docs/RELEASES.md",
+      "size_bytes": 1295,
+      "sha256": "a4ca0651841babde88084a07da0c8bb5a8c87a8a24f3d32ee29242c052b3c846"
+    },
+    {
+      "path": "docs/SECURITY.md",
+      "size_bytes": 3092,
+      "sha256": "c7c8f7b0648d1703f46dfbdb548c88ac15ccc141cdd920ce957dae3bed54e9f5"
+    },
+    {
+      "path": "docs/SETUP.md",
+      "size_bytes": 497,
+      "sha256": "f72075295aea076f240654e45183741ad8f32e32a22042aee7b363736e8d967a"
+    },
+    {
+      "path": "docs/STUDIO-EDITION-5.0.0.md",
+      "size_bytes": 3741,
+      "sha256": "72c4ca49034a0ab96cf931368c389d444458dc284fba4b9ec589c45571d5f14b"
+    },
+    {
+      "path": "docs/STUDIO-EDITION-QA-RESULTS.md",
+      "size_bytes": 1469,
+      "sha256": "3a769a62ec195111325d35b7cdf6afd660c4ced62c871b09850cb8a9d4c7b6f0"
+    },
+    {
+      "path": "docs/VALIDATION-4.0.0.md",
+      "size_bytes": 4622,
+      "sha256": "e5fad5cda131b72fbc3ebab59c78be03638813a602a58d664259aeab09b0bd4f"
+    },
+    {
+      "path": "frontend/assets/icon.svg",
+      "size_bytes": 642,
+      "sha256": "aae752a113c14ee79f66b95c52f7d16363bafb07ae66fbc36021b2108c7feedf"
+    },
+    {
+      "path": "frontend/assets/logo.svg",
+      "size_bytes": 1022,
+      "sha256": "0a486a7cfb2e2d1557bd2dd8fde5b7820c891803a06cb466e46b4764f984bf72"
+    },
+    {
+      "path": "frontend/config.example.js",
+      "size_bytes": 481,
+      "sha256": "9ef456271049e5f014899a2a31d296f01222c821c374d614fa9f719738a2f997"
+    },
+    {
+      "path": "frontend/config.js",
+      "size_bytes": 3249,
+      "sha256": "8d3b8f410a7e92d18d75ee0141fa63bbc68d61036e3a12e1f1ed914d57e43e14"
+    },
+    {
+      "path": "frontend/index.html",
+      "size_bytes": 4995,
+      "sha256": "d451a8b020d977059d09e631ce6e5f2ebd7bc86a283fc1aa52d2fa9fe5a5700c"
+    },
+    {
+      "path": "frontend/index.iphone.html",
+      "size_bytes": 2381,
+      "sha256": "f9b256183ea2a8722a7999684812dc76f8437b15ed2f932630c5b09536ff1ac9"
+    },
+    {
+      "path": "frontend/manifest.webmanifest",
+      "size_bytes": 472,
+      "sha256": "20b1f24d6f575521c1ac61e22be06b398db657621b1bbb048c889456a391de26"
+    },
+    {
+      "path": "frontend/src/core.js",
+      "size_bytes": 39613,
+      "sha256": "2f55514a3d30dd4fdec605384d68325c80211b88e189fd96f3f2319c554fd3da"
+    },
+    {
+      "path": "frontend/src/livekit.js",
+      "size_bytes": 20346,
+      "sha256": "8853da781875388162a89199c7a76585485ba315b72fdc4c773b688301e58be3"
+    },
+    {
+      "path": "frontend/src/pages-accessibility.js",
+      "size_bytes": 2782,
+      "sha256": "a9f11ab7355a2244856150de90a842db602b512c794dfcc4e52b72419d0b279c"
+    },
+    {
+      "path": "frontend/src/pages-account.js",
+      "size_bytes": 23283,
+      "sha256": "c069823d180e0ac03b52c912898a76510910a22202e460df0f1f8a91d022196e"
+    },
+    {
+      "path": "frontend/src/pages-admin.js",
+      "size_bytes": 27300,
+      "sha256": "68bd9b3bba8d20bd0f3ed9f9bd9d1a9b0958f633984c7ff21761222c7a8c3866"
+    },
+    {
+      "path": "frontend/src/pages-auth.js",
+      "size_bytes": 5581,
+      "sha256": "6b23b40e550bb5c5bd1c564541c974e9b2480c10cd34883d0842202e8fcc3e95"
+    },
+    {
+      "path": "frontend/src/pages-community.js",
+      "size_bytes": 28787,
+      "sha256": "1412acf4755fbc59ca9dd93f87d90415bce78a1305665de98dd736c218d4ec24"
+    },
+    {
+      "path": "frontend/src/pages-creator.js",
+      "size_bytes": 44117,
+      "sha256": "a29a9e1f36ff0202c6473b445a7ad786d58c6a35ecbba3485ccfdcf210ce6c05"
+    },
+    {
+      "path": "frontend/src/pages-extra.js",
+      "size_bytes": 35745,
+      "sha256": "c240bd395d662d7ee7f5f0e656918202a6c0ff3c4b56ded053ddeb4a51d0a89d"
+    },
+    {
+      "path": "frontend/src/pages-room.js",
+      "size_bytes": 28847,
+      "sha256": "a9c0d590372e9a4bfcf6f64547ece3f548f140c93e5deca1f029ba2ca2bfc1ae"
+    },
+    {
+      "path": "frontend/src/pages-settings.js",
+      "size_bytes": 25982,
+      "sha256": "39d447592c39782b9e4922589a498f4eb72c813b9fff2d19fec5f00c1ddf1c6a"
+    },
+    {
+      "path": "frontend/src/pages-teams.js",
+      "size_bytes": 15907,
+      "sha256": "836b61028bf17c793f227634570e51af345cfc164f53e91f57bd7b55bfe4e444"
+    },
+    {
+      "path": "frontend/src/pages-wallet.js",
+      "size_bytes": 9112,
+      "sha256": "efe5331b60f82d1fb43269d9212d7ebd8328e8c352a30da587675480767ce872"
+    },
+    {
+      "path": "frontend/src/pages.js",
+      "size_bytes": 4734,
+      "sha256": "998b8d82817f6d68e17f1a284cf4b724cea50b5bb35762cd9b6097270dbeb4a1"
+    },
+    {
+      "path": "frontend/src/studio-edition.js",
+      "size_bytes": 23948,
+      "sha256": "b0968433d90413ab77088aef705b5b4d652d87da6293268fce61903b77c7c9be"
+    },
+    {
+      "path": "frontend/src/ui.js",
+      "size_bytes": 9056,
+      "sha256": "31c65ca16bcdb776dc737af8edc6d7224d7a17b560065b45cdbf0783a0233be8"
+    },
+    {
+      "path": "frontend/styles/app.css",
+      "size_bytes": 26154,
+      "sha256": "a88968419b503e07ea004655ff82d0e66824bc25ea84ccfc685211ae826640c0"
+    },
+    {
+      "path": "frontend/styles/studio-edition.css",
+      "size_bytes": 33495,
+      "sha256": "ae066a4eaedb419a9470f4685f8aee48d33fb589cb86ed00d5b094667c936107"
+    },
+    {
+      "path": "frontend/sw.js",
+      "size_bytes": 2572,
+      "sha256": "d26180d08e42bd45566a01388c5bf5cf029c678c7a22b35e8529921a7c780bee"
+    },
+    {
+      "path": "package.json",
+      "size_bytes": 1233,
+      "sha256": "58f4e2f7a71c58ac3083ea5377e99d1ea10843412f0bba6225ddbdfc8fad0b38"
+    },
+    {
+      "path": "releases/creator-hub-live-release-alt.apk",
+      "size_bytes": 45198,
+      "sha256": "b061a97bced2b20d5115fe5bf93b780f30e37d37d8d5bc59a944b9a706e29a0a"
+    },
+    {
+      "path": "releases/creator-hub-live-release.apk",
+      "size_bytes": 45198,
+      "sha256": "b061a97bced2b20d5115fe5bf93b780f30e37d37d8d5bc59a944b9a706e29a0a"
+    },
+    {
+      "path": "releases/historical-4.2.0/RELEASE-MANIFEST-4.2.0.json",
+      "size_bytes": 24987,
+      "sha256": "3058da0d48de9eddad773c069953efc77ee0f319949a4a947a7a45a6018d6e0e"
+    },
+    {
+      "path": "scripts/sync-web-assets.js",
+      "size_bytes": 1163,
+      "sha256": "7e074c6c402b06ef51d1f91f6d6bdea68c738889736c2ec347f07590a0c4e4ae"
+    },
+    {
+      "path": "tests/community-account-contract.mjs",
+      "size_bytes": 8636,
+      "sha256": "82eaf454d620494c80a7e638e5be8b01b8522177987e65e1fda18649aff5ae34"
+    },
+    {
+      "path": "tests/deployment-payment-check.mjs",
+      "size_bytes": 7195,
+      "sha256": "0bcc449b6973c8490918d434f07c423d30d8603f9f3f6504dbe2d7df6a48bd19"
+    },
+    {
+      "path": "tests/integration-check.js",
+      "size_bytes": 10594,
+      "sha256": "7f7c882c2512a35fdfd60fa199020254501d459334fff2c8d8083724d6bd0935"
+    },
+    {
+      "path": "tests/league-structure-check.mjs",
+      "size_bytes": 786,
+      "sha256": "419c04acb36653c0b159f47fdf31449c68a700239ca6e0aafc280cad211944e6"
+    },
+    {
+      "path": "tests/live-gift-mobile-release-contract.mjs",
+      "size_bytes": 1681,
+      "sha256": "aad9651b0b5c73b8ef1bf578f5f0277e508605e46215f6a7b5cf0fd625abb794"
+    },
+    {
+      "path": "tests/migration-static-check.mjs",
+      "size_bytes": 4012,
+      "sha256": "0f1a3fc1d8fc329e9623f0dabad9e95e9ef1ed4c01eecdec93f0edddbe98b9c5"
+    },
+    {
+      "path": "tests/repair-contract.js",
+      "size_bytes": 2935,
+      "sha256": "473e1dd13957a3694e715819798aed2514d89a5e08d0cd385c3366a7d0419a83"
+    },
+    {
+      "path": "tests/security-audit.js",
+      "size_bytes": 1752,
+      "sha256": "7a58e061ab952ad6ce9744315123d1d2e976a0178df4a61373125c3cb03acb7c"
+    },
+    {
+      "path": "tests/studio-edition-contract.mjs",
+      "size_bytes": 4215,
+      "sha256": "3501a6a33698188ad26c161f9df50cb98ccc434029affdabe0b26f412c81bdc1"
+    },
+    {
+      "path": "tests/teams-contract-check.mjs",
+      "size_bytes": 4244,
+      "sha256": "ee82242d55f369df881027f01924fe2205b3785a5c8092e7310279b108d25ba9"
+    }
+  ]
+}
