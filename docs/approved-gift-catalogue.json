@@ -1,0 +1,722 @@
+[
+  {
+    "sortOrder": 1,
+    "category": "EVERYDAY GIFTS",
+    "name": "Single Rose",
+    "coinPrice": 1,
+    "emoji": "🌹",
+    "assetKey": "single-rose"
+  },
+  {
+    "sortOrder": 2,
+    "category": "EVERYDAY GIFTS",
+    "name": "Heart",
+    "coinPrice": 1,
+    "emoji": "❤️",
+    "assetKey": "heart"
+  },
+  {
+    "sortOrder": 3,
+    "category": "EVERYDAY GIFTS",
+    "name": "Shining Star",
+    "coinPrice": 1,
+    "emoji": "⭐",
+    "assetKey": "shining-star"
+  },
+  {
+    "sortOrder": 4,
+    "category": "EVERYDAY GIFTS",
+    "name": "Applause",
+    "coinPrice": 1,
+    "emoji": "👏",
+    "assetKey": "applause"
+  },
+  {
+    "sortOrder": 5,
+    "category": "EVERYDAY GIFTS",
+    "name": "Ice Cream",
+    "coinPrice": 1,
+    "emoji": "🍦",
+    "assetKey": "ice-cream"
+  },
+  {
+    "sortOrder": 6,
+    "category": "EVERYDAY GIFTS",
+    "name": "Finger Heart",
+    "coinPrice": 5,
+    "emoji": "🫰",
+    "assetKey": "finger-heart"
+  },
+  {
+    "sortOrder": 7,
+    "category": "EVERYDAY GIFTS",
+    "name": "Panda",
+    "coinPrice": 5,
+    "emoji": "🐼",
+    "assetKey": "panda"
+  },
+  {
+    "sortOrder": 8,
+    "category": "EVERYDAY GIFTS",
+    "name": "Kiss",
+    "coinPrice": 5,
+    "emoji": "💋",
+    "assetKey": "kiss"
+  },
+  {
+    "sortOrder": 9,
+    "category": "EVERYDAY GIFTS",
+    "name": "Pink Tulip",
+    "coinPrice": 10,
+    "emoji": "🌷",
+    "assetKey": "pink-tulip"
+  },
+  {
+    "sortOrder": 10,
+    "category": "EVERYDAY GIFTS",
+    "name": "Coffee",
+    "coinPrice": 10,
+    "emoji": "☕",
+    "assetKey": "coffee"
+  },
+  {
+    "sortOrder": 11,
+    "category": "EVERYDAY GIFTS",
+    "name": "Balloon",
+    "coinPrice": 10,
+    "emoji": "🎈",
+    "assetKey": "balloon"
+  },
+  {
+    "sortOrder": 12,
+    "category": "EVERYDAY GIFTS",
+    "name": "Bravo",
+    "coinPrice": 15,
+    "emoji": "👏✨",
+    "assetKey": "bravo"
+  },
+  {
+    "sortOrder": 13,
+    "category": "EVERYDAY GIFTS",
+    "name": "Flower Bouquet",
+    "coinPrice": 20,
+    "emoji": "💐",
+    "assetKey": "flower-bouquet"
+  },
+  {
+    "sortOrder": 14,
+    "category": "EVERYDAY GIFTS",
+    "name": "Swan",
+    "coinPrice": 20,
+    "emoji": "🦢",
+    "assetKey": "swan"
+  },
+  {
+    "sortOrder": 15,
+    "category": "EVERYDAY GIFTS",
+    "name": "Doughnut",
+    "coinPrice": 30,
+    "emoji": "🍩",
+    "assetKey": "doughnut"
+  },
+  {
+    "sortOrder": 16,
+    "category": "EVERYDAY GIFTS",
+    "name": "Teddy Bear",
+    "coinPrice": 30,
+    "emoji": "🧸",
+    "assetKey": "teddy-bear"
+  },
+  {
+    "sortOrder": 17,
+    "category": "EVERYDAY GIFTS",
+    "name": "Birthday Cake",
+    "coinPrice": 50,
+    "emoji": "🎂",
+    "assetKey": "birthday-cake"
+  },
+  {
+    "sortOrder": 18,
+    "category": "EVERYDAY GIFTS",
+    "name": "Sunflower",
+    "coinPrice": 50,
+    "emoji": "🌻",
+    "assetKey": "sunflower"
+  },
+  {
+    "sortOrder": 19,
+    "category": "EVERYDAY GIFTS",
+    "name": "Love Letter",
+    "coinPrice": 75,
+    "emoji": "💌",
+    "assetKey": "love-letter"
+  },
+  {
+    "sortOrder": 20,
+    "category": "EVERYDAY GIFTS",
+    "name": "Stylish Cap",
+    "coinPrice": 99,
+    "emoji": "🧢",
+    "assetKey": "stylish-cap"
+  },
+  {
+    "sortOrder": 21,
+    "category": "SUPPORTER GIFTS",
+    "name": "Hand Hearts",
+    "coinPrice": 100,
+    "emoji": "🫶",
+    "assetKey": "hand-hearts"
+  },
+  {
+    "sortOrder": 22,
+    "category": "SUPPORTER GIFTS",
+    "name": "Confetti Celebration",
+    "coinPrice": 100,
+    "emoji": "🎊",
+    "assetKey": "confetti-celebration"
+  },
+  {
+    "sortOrder": 23,
+    "category": "SUPPORTER GIFTS",
+    "name": "Crystal Gem",
+    "coinPrice": 150,
+    "emoji": "💎",
+    "assetKey": "crystal-gem"
+  },
+  {
+    "sortOrder": 24,
+    "category": "SUPPORTER GIFTS",
+    "name": "Cool Sunglasses",
+    "coinPrice": 199,
+    "emoji": "🕶️",
+    "assetKey": "cool-sunglasses"
+  },
+  {
+    "sortOrder": 25,
+    "category": "SUPPORTER GIFTS",
+    "name": "Celebration Toast",
+    "coinPrice": 250,
+    "emoji": "🥂",
+    "assetKey": "celebration-toast"
+  },
+  {
+    "sortOrder": 26,
+    "category": "SUPPORTER GIFTS",
+    "name": "Corgi",
+    "coinPrice": 299,
+    "emoji": "🐶",
+    "assetKey": "corgi"
+  },
+  {
+    "sortOrder": 27,
+    "category": "SUPPORTER GIFTS",
+    "name": "Grand Rose Bouquet",
+    "coinPrice": 300,
+    "emoji": "🌹💐",
+    "assetKey": "grand-rose-bouquet"
+  },
+  {
+    "sortOrder": 28,
+    "category": "SUPPORTER GIFTS",
+    "name": "Premium Headphones",
+    "coinPrice": 350,
+    "emoji": "🎧",
+    "assetKey": "premium-headphones"
+  },
+  {
+    "sortOrder": 29,
+    "category": "SUPPORTER GIFTS",
+    "name": "Butterfly Wings",
+    "coinPrice": 399,
+    "emoji": "🦋",
+    "assetKey": "butterfly-wings"
+  },
+  {
+    "sortOrder": 30,
+    "category": "SUPPORTER GIFTS",
+    "name": "Coral Treasure",
+    "coinPrice": 499,
+    "emoji": "🪸",
+    "assetKey": "coral-treasure"
+  },
+  {
+    "sortOrder": 31,
+    "category": "PREMIUM GIFTS",
+    "name": "Money Gun",
+    "coinPrice": 500,
+    "emoji": "💸",
+    "assetKey": "money-gun"
+  },
+  {
+    "sortOrder": 32,
+    "category": "PREMIUM GIFTS",
+    "name": "Golden Microphone",
+    "coinPrice": 550,
+    "emoji": "🎤",
+    "assetKey": "golden-microphone"
+  },
+  {
+    "sortOrder": 33,
+    "category": "PREMIUM GIFTS",
+    "name": "Drum Performance",
+    "coinPrice": 600,
+    "emoji": "🥁",
+    "assetKey": "drum-performance"
+  },
+  {
+    "sortOrder": 34,
+    "category": "PREMIUM GIFTS",
+    "name": "Dance Spotlight",
+    "coinPrice": 650,
+    "emoji": "💃",
+    "assetKey": "dance-spotlight"
+  },
+  {
+    "sortOrder": 35,
+    "category": "PREMIUM GIFTS",
+    "name": "Silver Trophy",
+    "coinPrice": 700,
+    "emoji": "🏆",
+    "assetKey": "silver-trophy"
+  },
+  {
+    "sortOrder": 36,
+    "category": "PREMIUM GIFTS",
+    "name": "Gaming Champion",
+    "coinPrice": 750,
+    "emoji": "🎮",
+    "assetKey": "gaming-champion"
+  },
+  {
+    "sortOrder": 37,
+    "category": "PREMIUM GIFTS",
+    "name": "Royal Peacock",
+    "coinPrice": 800,
+    "emoji": "🦚",
+    "assetKey": "royal-peacock"
+  },
+  {
+    "sortOrder": 38,
+    "category": "PREMIUM GIFTS",
+    "name": "Celebration Fireworks",
+    "coinPrice": 850,
+    "emoji": "🎆",
+    "assetKey": "celebration-fireworks"
+  },
+  {
+    "sortOrder": 39,
+    "category": "PREMIUM GIFTS",
+    "name": "Ocean Dolphin",
+    "coinPrice": 900,
+    "emoji": "🐬",
+    "assetKey": "ocean-dolphin"
+  },
+  {
+    "sortOrder": 40,
+    "category": "PREMIUM GIFTS",
+    "name": "Royal Crown",
+    "coinPrice": 999,
+    "emoji": "👑",
+    "assetKey": "royal-crown"
+  },
+  {
+    "sortOrder": 41,
+    "category": "ELITE GIFTS",
+    "name": "Galaxy",
+    "coinPrice": 1000,
+    "emoji": "🌌",
+    "assetKey": "galaxy"
+  },
+  {
+    "sortOrder": 42,
+    "category": "ELITE GIFTS",
+    "name": "Royal Peacock Show",
+    "coinPrice": 1200,
+    "emoji": "🦚✨",
+    "assetKey": "royal-peacock-show"
+  },
+  {
+    "sortOrder": 43,
+    "category": "ELITE GIFTS",
+    "name": "Dream Wedding",
+    "coinPrice": 1500,
+    "emoji": "💒",
+    "assetKey": "dream-wedding"
+  },
+  {
+    "sortOrder": 44,
+    "category": "ELITE GIFTS",
+    "name": "Shooting Stars",
+    "coinPrice": 1800,
+    "emoji": "🌠",
+    "assetKey": "shooting-stars"
+  },
+  {
+    "sortOrder": 45,
+    "category": "ELITE GIFTS",
+    "name": "Ocean Whale",
+    "coinPrice": 2000,
+    "emoji": "🐋",
+    "assetKey": "ocean-whale"
+  },
+  {
+    "sortOrder": 46,
+    "category": "ELITE GIFTS",
+    "name": "Sunset of Love",
+    "coinPrice": 2200,
+    "emoji": "💖🌅",
+    "assetKey": "sunset-of-love"
+  },
+  {
+    "sortOrder": 47,
+    "category": "ELITE GIFTS",
+    "name": "Super Motorcycle",
+    "coinPrice": 2500,
+    "emoji": "🏍️",
+    "assetKey": "super-motorcycle"
+  },
+  {
+    "sortOrder": 48,
+    "category": "ELITE GIFTS",
+    "name": "Party Bus",
+    "coinPrice": 2800,
+    "emoji": "🚌",
+    "assetKey": "party-bus"
+  },
+  {
+    "sortOrder": 49,
+    "category": "ELITE GIFTS",
+    "name": "Meteor Shower",
+    "coinPrice": 3000,
+    "emoji": "☄️",
+    "assetKey": "meteor-shower"
+  },
+  {
+    "sortOrder": 50,
+    "category": "ELITE GIFTS",
+    "name": "Rockstar Concert",
+    "coinPrice": 3500,
+    "emoji": "🎸",
+    "assetKey": "rockstar-concert"
+  },
+  {
+    "sortOrder": 51,
+    "category": "ELITE GIFTS",
+    "name": "Golden Dragon",
+    "coinPrice": 4000,
+    "emoji": "🐉",
+    "assetKey": "golden-dragon"
+  },
+  {
+    "sortOrder": 52,
+    "category": "ELITE GIFTS",
+    "name": "Private Jet",
+    "coinPrice": 4888,
+    "emoji": "✈️",
+    "assetKey": "private-jet"
+  },
+  {
+    "sortOrder": 53,
+    "category": "LEGENDARY GIFTS",
+    "name": "Hero Spaceship",
+    "coinPrice": 5000,
+    "emoji": "🚀",
+    "assetKey": "hero-spaceship"
+  },
+  {
+    "sortOrder": 54,
+    "category": "LEGENDARY GIFTS",
+    "name": "Superstar Performance",
+    "coinPrice": 6000,
+    "emoji": "🎭",
+    "assetKey": "superstar-performance"
+  },
+  {
+    "sortOrder": 55,
+    "category": "LEGENDARY GIFTS",
+    "name": "Luxury Sports Car",
+    "coinPrice": 7000,
+    "emoji": "🏎️",
+    "assetKey": "luxury-sports-car"
+  },
+  {
+    "sortOrder": 56,
+    "category": "LEGENDARY GIFTS",
+    "name": "Golden Eagle",
+    "coinPrice": 8000,
+    "emoji": "🦅",
+    "assetKey": "golden-eagle"
+  },
+  {
+    "sortOrder": 57,
+    "category": "LEGENDARY GIFTS",
+    "name": "Volcanic Explosion",
+    "coinPrice": 9000,
+    "emoji": "🌋",
+    "assetKey": "volcanic-explosion"
+  },
+  {
+    "sortOrder": 58,
+    "category": "LEGENDARY GIFTS",
+    "name": "Interstellar Journey",
+    "coinPrice": 10000,
+    "emoji": "🌠🌌",
+    "assetKey": "interstellar-journey"
+  },
+  {
+    "sortOrder": 59,
+    "category": "LEGENDARY GIFTS",
+    "name": "Global Superstar",
+    "coinPrice": 12000,
+    "emoji": "🎤🌟",
+    "assetKey": "global-superstar"
+  },
+  {
+    "sortOrder": 60,
+    "category": "LEGENDARY GIFTS",
+    "name": "Planetary Kingdom",
+    "coinPrice": 15000,
+    "emoji": "🪐",
+    "assetKey": "planetary-kingdom"
+  },
+  {
+    "sortOrder": 61,
+    "category": "LEGENDARY GIFTS",
+    "name": "Royal Castle",
+    "coinPrice": 18000,
+    "emoji": "🏰",
+    "assetKey": "royal-castle"
+  },
+  {
+    "sortOrder": 62,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Creator Hub Shuttle",
+    "coinPrice": 20000,
+    "emoji": "🛸",
+    "assetKey": "creator-hub-shuttle"
+  },
+  {
+    "sortOrder": 63,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Diamond Lion",
+    "coinPrice": 22000,
+    "emoji": "🦁",
+    "assetKey": "diamond-lion"
+  },
+  {
+    "sortOrder": 64,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Legendary Phoenix",
+    "coinPrice": 25000,
+    "emoji": "🔥🐦",
+    "assetKey": "legendary-phoenix"
+  },
+  {
+    "sortOrder": 65,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "League Champion",
+    "coinPrice": 30000,
+    "emoji": "🏆👑",
+    "assetKey": "league-champion"
+  },
+  {
+    "sortOrder": 66,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "World of Wonders",
+    "coinPrice": 35000,
+    "emoji": "🌍✨",
+    "assetKey": "world-of-wonders"
+  },
+  {
+    "sortOrder": 67,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Dragon Emperor",
+    "coinPrice": 40000,
+    "emoji": "🐉👑",
+    "assetKey": "dragon-emperor"
+  },
+  {
+    "sortOrder": 68,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Cosmic Empire",
+    "coinPrice": 45000,
+    "emoji": "🌌👑",
+    "assetKey": "cosmic-empire"
+  },
+  {
+    "sortOrder": 69,
+    "category": "CHAMPION AND LEAGUE GIFTS",
+    "name": "Diamond Kingdom",
+    "coinPrice": 49999,
+    "emoji": "💎🏰",
+    "assetKey": "diamond-kingdom"
+  },
+  {
+    "sortOrder": 70,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Inferno Lion",
+    "coinPrice": 50000,
+    "emoji": "🦁🔥",
+    "assetKey": "inferno-lion"
+  },
+  {
+    "sortOrder": 71,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Cosmic Supernova",
+    "coinPrice": 75000,
+    "emoji": "🌠🚀",
+    "assetKey": "cosmic-supernova"
+  },
+  {
+    "sortOrder": 72,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Emperor's Lion",
+    "coinPrice": 100000,
+    "emoji": "👑🦁",
+    "assetKey": "emperors-lion"
+  },
+  {
+    "sortOrder": 73,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Diamond Planet",
+    "coinPrice": 150000,
+    "emoji": "🌎💎",
+    "assetKey": "diamond-planet"
+  },
+  {
+    "sortOrder": 74,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Galactic Dragon",
+    "coinPrice": 200000,
+    "emoji": "🐉🌌",
+    "assetKey": "galactic-dragon"
+  },
+  {
+    "sortOrder": 75,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Imperial Palace",
+    "coinPrice": 250000,
+    "emoji": "🏰👑",
+    "assetKey": "imperial-palace"
+  },
+  {
+    "sortOrder": 76,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Infinite Galaxy",
+    "coinPrice": 300000,
+    "emoji": "🌌💫",
+    "assetKey": "infinite-galaxy"
+  },
+  {
+    "sortOrder": 77,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Celestial Phoenix",
+    "coinPrice": 400000,
+    "emoji": "🦅⚡",
+    "assetKey": "celestial-phoenix"
+  },
+  {
+    "sortOrder": 78,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "World Emperor",
+    "coinPrice": 500000,
+    "emoji": "🌍👑",
+    "assetKey": "world-emperor"
+  },
+  {
+    "sortOrder": 79,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Eternal Diamond Universe",
+    "coinPrice": 750000,
+    "emoji": "💎🌌",
+    "assetKey": "eternal-diamond-universe"
+  },
+  {
+    "sortOrder": 80,
+    "category": "MYTHICAL AND ULTIMATE GIFTS",
+    "name": "Creator Hub Ultimate Universe",
+    "coinPrice": 1000000,
+    "emoji": "👑🌌🔥",
+    "assetKey": "creator-hub-ultimate-universe"
+  },
+  {
+    "sortOrder": 81,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Yard Certified",
+    "coinPrice": 50,
+    "emoji": "🇯🇲",
+    "assetKey": "yard-certified"
+  },
+  {
+    "sortOrder": 82,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Pretty Like Yard",
+    "coinPrice": 100,
+    "emoji": "🌺",
+    "assetKey": "pretty-like-yard"
+  },
+  {
+    "sortOrder": 83,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Beat A Di Yard",
+    "coinPrice": 250,
+    "emoji": "🥁🇯🇲",
+    "assetKey": "beat-a-di-yard"
+  },
+  {
+    "sortOrder": 84,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Road Ready",
+    "coinPrice": 500,
+    "emoji": "🎭",
+    "assetKey": "road-ready"
+  },
+  {
+    "sortOrder": 85,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Island Life",
+    "coinPrice": 1000,
+    "emoji": "🌴🌅",
+    "assetKey": "island-life"
+  },
+  {
+    "sortOrder": 86,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Born Fi Run",
+    "coinPrice": 2500,
+    "emoji": "🏃🇯🇲",
+    "assetKey": "born-fi-run"
+  },
+  {
+    "sortOrder": 87,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Cricket Boss",
+    "coinPrice": 5000,
+    "emoji": "🏏🏆",
+    "assetKey": "cricket-boss"
+  },
+  {
+    "sortOrder": 88,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Parish Don",
+    "coinPrice": 10000,
+    "emoji": "⚽🇯🇲",
+    "assetKey": "parish-don"
+  },
+  {
+    "sortOrder": 89,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Yard Champion",
+    "coinPrice": 25000,
+    "emoji": "🏆🇯🇲",
+    "assetKey": "yard-champion"
+  },
+  {
+    "sortOrder": 90,
+    "category": "YARD TINGZ 🇯🇲",
+    "name": "Caribbean Don",
+    "coinPrice": 50000,
+    "emoji": "🌎🇯🇲",
+    "assetKey": "caribbean-don"
+  }
+]
