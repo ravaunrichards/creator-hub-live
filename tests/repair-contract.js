@@ -1,0 +1,35 @@
+// Cross-layer checks for the website's existing LIVE, payment and data contracts.
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read = p => fs.readFileSync(p, 'utf8');
+const server = read('backend/src/server.js');
+const token = read('backend/src/livekit-token.js');
+const room = read('frontend/src/pages-room.js');
+const livePending = read('database/migrations/0009_live_pending_state.sql');
+const rls = read('database/migrations/0010_rls_hardening.sql');
+const userSettings = read('database/migrations/0011_user_settings.sql');
+const chat = read('database/migrations/0012_live_chat_messages.sql');
+const wallet = read('frontend/src/pages-wallet.js');
+const shell = read('frontend/index.html');
+
+assert.match(server,/await verifyHostPublishing\(/,'LIVE start verifies host publishing before announcing the room is live');
+const verify = server.indexOf('await verifyHostPublishing(');
+const promoted = server.slice(verify).search(/\.update\(\{\s*status:\s*['"]live['"]/);
+assert.ok(verify >= 0 && promoted > 0, 'LIVE database status is promoted only after the publish gate');
+assert.match(token,/canPublishSources:\s*canPublish\s*\?/,'LiveKit token scopes media publish permissions');
+assert.doesNotMatch(server,/wss:\/\/creator-hub-live-9susyfri\.livekit\.cloud/,'backend does not hardcode a LiveKit project URL');
+assert.match(room,/joinResult && joinResult\.roomName/,'room join consumes authoritative backend roomName');
+assert.match(room,/room\.room_name/,'room join retains the backend room_name fallback');
+assert.doesNotMatch(room,/var roomName = roomId;/,'database room UUID is not assumed to be the LiveKit room name');
+assert.match(livePending,/'pending',\s*'live',\s*'ended'/,'migration models pending/live/ended states');
+assert.match(livePending,/add column if not exists updated_at/i,'LIVE migration provides updated_at used by the server');
+assert.match(rls,/alter table public\.coin_packages enable row level security/i,'wallet package table has RLS');
+assert.match(rls,/alter table public\.league_events enable row level security/i,'league event table has RLS');
+assert.match(userSettings,/create table if not exists public\.user_settings/i,'persistent account settings table exists');
+assert.match(userSettings,/user_id = auth\.uid\(\)/i,'settings RLS restricts records to their owner');
+assert.match(chat,/create table if not exists public\.live_chat_messages/i,'LIVE messages persist in a real table');
+assert.match(server,/"\/api\/wallet\/gift"/,'server-authoritative gift endpoint exists');
+assert.match(server,/"\/api\/wallet\/transactions"/,'wallet transaction endpoint exists');
+assert.match(wallet,/choosePaymentMethod/,'website wallet retains payment selection UI');
+assert.match(shell,/src\/pages-room\.js/,'website loads the canonical LIVE room UI');
+console.log('PASS — website LiveKit start gate, token permission, LIVE state, chat persistence, RLS, and wallet contracts');

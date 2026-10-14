@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read=(p)=>fs.readFileSync(new URL(p,import.meta.url),'utf8');
+const settings=read('../frontend/src/pages-settings.js');
+const html=read('../frontend/index.html');
+const css=read('../frontend/styles/app.css');
+const admin=read('../frontend/src/pages-admin.js');
+const migration=read('../database/migrations/0026_appearance_preferences.sql');
+const adminMigration=read('../database/migrations/0024_creator_community_account_controls.sql');
+for(const value of ['compact','balanced','spacious','dark','light','system','Apply & Save','chcn_appearance','user_settings']) assert.ok(settings.includes(value),`appearance contract missing ${value}`);
+for(const value of ['compact-ui','balanced-ui','spacious-ui','dataset.chcnTheme','colorScheme']) assert.ok(html.includes(value),`startup appearance persistence missing ${value}`);
+assert.ok(settings.includes("upsert({user_id:CHL.user.id,appearance:v,updated_at:new Date().toISOString()}") , 'per-account appearance upsert missing');
+for(const value of ['compact-ui','balanced-ui','spacious-ui','data-chcn-theme="system"','appearance-preview']) assert.ok(css.includes(value),`appearance CSS missing ${value}`);
+assert.ok(admin.includes("sb.from('public_creator_badges').upsert") || admin.includes("sb.from('public_creator_badges').upsert".replace('public_creator_badges','public_creator_badges')), 'admin badge grant write missing');
+assert.ok(admin.includes("sb.from('public_creator_badges').delete()"), 'admin badge revocation missing');
+assert.ok(adminMigration.includes('public_creator_badges') && adminMigration.includes('public.is_admin()'), '0024 must restrict badge writes to admins');
+assert.ok(migration.includes('user_settings_appearance_contract') && migration.includes("notify pgrst, 'reload schema'"), 'appearance migration lacks validation/cache refresh');
+console.log('Appearance and verification update contract: 22 assertions passed.');
