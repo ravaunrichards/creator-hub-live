@@ -1,68 +1,56 @@
-# Manual installation — Creator Hub Creator Network 4.0.2
+# Creator Hub Creator Network — consolidated Teams/backend update
 
-This is a manual-install source bundle for the existing project. It makes no changes to GitHub, the live database or hosting by itself.
+Target: existing repository `ravaunrichards/creator-hub-live`, branch `main`.
 
-## 1. Before starting
+**Manual installation only.** Nothing in this ZIP has been applied to GitHub, Supabase, or a deployment.
 
-1. Confirm you are installing into the existing `ravaunrichards/creator-hub-live` project.
-2. Make a backup of the currently deployed website and backend source/configuration.
-3. Take a Supabase database backup and save current migration history, environment settings and hosting build settings.
-4. Save current health-check output, PayPal test evidence, LIVE test evidence and team/league state.
-5. Review `KNOWN_LIMITATIONS.md`, `SECURITY.md`, `DATABASE.md`, `DEPLOYMENT.md` and `VALIDATION-4.0.2.md`.
+## What the audit established
 
-## 2. Package layout
+Read `AUDIT_FINDINGS.md` first. The key connection defects are confirmed in the current branch: the Teams route module is not imported/dispatched by the backend server, the CORS allow-methods header excludes `PATCH`/`DELETE`, and `frontend/index.html` does not load `src/pages-teams.js`. The supplied database output confirms `teams`, `team_members`, `leagues`, `league_seasons`, and `league_standings` exist; `creator_leagues` does not. The latter is a separate feature and is intentionally outside this Teams package.
 
-- `frontend/` is the static-site root. Deploy its contents as the website. Do not upload the project root as if it were a static directory.
-- `backend/` is the Node.js API application. Deploy it through the existing backend service, with Node 20+ and server environment variables.
-- `database/migrations/` is an ordered history. Migration files are not an instruction to run every migration over a database which already has them.
-- `database/diagnostics/` contains read-only inspection SQL.
-- `tests/` and `backend/tests/` contain code/contract tests.
+## Files and integration changes
 
-## 3. Configuration and secrets
+- `backend/src/teams-routes.js` — Teams API route module.
+- `frontend/src/pages-teams.js` — complete Teams list, search, create/edit forms, details, roster and membership controls. It shows division placement rather than treating numeric levels 1–50 as league progression.
+- `database/migrations/0015_teams_backend_complete.sql` — additive fields and server-only atomic RPC functions. The owner-membership backfill uses `ON CONFLICT DO NOTHING` so existing membership roles are not overwritten.
+- `docs/server-integration.patch.txt` — three exact edits to the existing backend server.
+- `docs/frontend-integration.patch.txt` — one script-tag insertion into the existing frontend entry point.
+- `docs/PREFLIGHT.sql` — read-only prerequisite/column/division checks.
+- `tests/teams-contract-check.mjs` — local static contract check.
 
-`frontend/config.js` contains the existing deployment's browser-safe settings and may include a public Supabase publishable/anon key. Treat that as public browser configuration, not a secret. Review the API URL, Supabase URL, and configured media storage bucket before deployment.
+## Installation order
 
-`frontend/config.example.js` is a template only; its example values are not production credentials. Never place Supabase service-role keys, PayPal client secrets, OAuth access tokens, webhook IDs/secrets, LiveKit API secrets, or JWT signing keys in frontend files or a public repository.
+1. Back up Supabase and preserve any local source edits. Do not replace the full server file with a sample.
+2. Run `docs/PREFLIGHT.sql` in Supabase SQL Editor. Confirm `public.teams`, `public.team_members`, `public.leagues`, required columns, and division `D5` exist. Stop if prerequisites are missing; do not guess or blindly rerun other migrations.
+3. Copy `backend/src/teams-routes.js` to the same path, then apply the exact import, dispatch, and CORS changes in `docs/server-integration.patch.txt` to the existing `backend/src/server.js`.
+4. Copy `frontend/src/pages-teams.js` to the same path, then insert the script tag exactly as shown in `docs/frontend-integration.patch.txt`. Keep it after `src/pages-creator.js` so this route registration takes precedence, and before `window.CHL.start()`.
+5. Review `database/migrations/0015_teams_backend_complete.sql`, then apply it once. It is additive and creates no fake teams or accounts. The owner membership backfill does not overwrite an existing role.
+6. Run the local checks below, then deploy the backend and frontend using your own manual process.
+7. Verify with real test accounts after deployment using the checklist below. Static checks do not prove live credentials or deployment behavior.
 
-Configure the backend with `backend/.env.example` as the variable-name reference only. Do not overwrite working PayPal settings blindly. The backend should acquire short-lived PayPal OAuth tokens from its configured client credentials; a manually copied temporary access token is not a durable configuration.
+## API behavior
 
-## 4. Database work
+- `GET /api/teams?q=&limit=` — list/search and member counts.
+- `GET /api/teams/:id` — team details and roster.
+- `POST /api/teams` — authenticated team creation and owner membership.
+- `PATCH /api/teams/:id` — owner-only editable profile/recruitment/member limit.
+- `POST /api/teams/:id/join` and `/leave` — authenticated membership operations.
+- `DELETE /api/teams/:id/members/:userId` — owner-only removal of a non-owner member.
 
-Run these read-only diagnostics first:
+The server validates the Supabase bearer token and derives the user ID; it does not trust a client-supplied owner ID. Team creation and joining use server-side RPC functions and capacity checks. The service-role key must remain in backend environment variables only.
 
-- `database/diagnostics/full_supabase_inventory_audit.sql`
-- `database/diagnostics/creator_community_preflight.sql`
-- `database/diagnostics/league_schema_preflight.sql` for team league tables
+## Division/level rule
 
-Run `database/diagnostics/chcn_live_repair_preflight.sql` first and follow `CHCN-LIVE-REPAIR-PLAN.md`. The connected database audit had no readable migration-history table, so compare actual schema objects and preconditions rather than relying on filename numbers. Back up first; apply only the reviewed selected migrations in the documented dependency order. Do not replay 0001–0014 just because they exist in the tree.
+The competition divisions are `A`, `A1`–`A3`, `B1`–`B5`, `C1`–`C5`, and `D1`–`D5`, with `D5` the lowest. New teams start in `D5`. The numeric `teams.level` column is retained for compatibility and is not used by this UI as league progression. Division movement, standings, promotion and relegation remain under the existing league system; users cannot set their own division or points through the Teams form.
 
-Do not seed example users, standings, gifts, payment records, missions or verification badges to make pages look populated. Empty states are correct when no real records exist.
+## Local checks
 
-## 5. Backend installation
-
-Install and test the existing backend in its deployed service/workspace:
+From the package root:
 
 ```sh
-cd backend
-npm install
-npm test
-npm start
+node --check backend/src/teams-routes.js
+node --check frontend/src/pages-teams.js
+node tests/teams-contract-check.mjs
 ```
 
-Use the existing provider configuration and health route. Verify `GET /api/health` and `GET /api/config/public`; do not expose server environment variables in responses or logs. Deploy the backend before relying on the new account lifecycle endpoints.
-
-## 6. Website installation
-
-1. Publish `frontend/` through the current static website service.
-2. Confirm `frontend/config.js` points to the correct existing API and Supabase project.
-3. Confirm the service serves `index.html` and all local `src/`, `styles/`, and `assets/` paths.
-4. Confirm the service-worker cache uses release 4.0.2 and invalidate any CDN cache only if needed.
-5. Run `npm run check` from the release root before deployment and `npm run repair:contracts` after installation in a copy of the source workspace.
-
-## 7. Rollback
-
-If a new route or backend release fails, redeploy the previously saved website/backend source and configuration. Database changes are forward-only unless a migration explicitly supplies a reviewed rollback. Do not manually drop tables or reverse policies by guessing. If migration 0024 has been applied and fails acceptance, disable affected UI routes through a reviewed forward change and preserve records while investigating.
-
-## 8. Final sign-off
-
-Use `VALIDATION-4.0.2.md` and `PRODUCTION-ACCEPTANCE-CHECKLIST.md`. Only mark complete when production checks have been performed against the actual deployment. Local tests do not constitute live acceptance.
+From the installed repository, also run its existing backend test/check scripts. Do not mark the live integration verified until you test: list teams; create a team and refresh to confirm persistence; join with a second account; reject duplicate join; edit as owner; reject edit as non-owner; leave as member; and remove a member as owner.

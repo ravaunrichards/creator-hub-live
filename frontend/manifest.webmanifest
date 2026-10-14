@@ -1,7 +1,7 @@
 {
-  "name": "Creator Hub Creator Network",
-  "short_name": "Creator Hub",
-  "description": "Creator Hub Creator Network — creators, social posts, LIVE, teams and competitions.",
+  "name": "Creator Hub Live",
+  "short_name": "CHL",
+  "description": "Create. Connect. Go LIVE.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0b0b12",

@@ -1,38 +1,35 @@
-# Security guide — Creator Hub Creator Network 4.0.2
+# Creator Hub Creator Network — Security Review
 
-## Credentials
+## Corrections made in this source package
 
-- `SUPABASE_SERVICE_ROLE_KEY`, PayPal client/webhook secrets, LiveKit API secret, JWT/signing secrets and provider access tokens belong only in private backend environment settings.
-- Browser `config.js` may contain the Supabase public publishable/anon key and public API/project URLs; it must not contain a service-role key or provider secret.
-- Never write secrets to issues, source commits, client logs, screenshots or this package. Rotate a credential if it has been exposed.
+- Replaced private-looking credential values in `backend/.env.example` with placeholders.
+- Added a repository-wide secret-hygiene check (`npm run security:check`).
+- Excluded `android/app/release.keystore` and the two supplied APKs from this package.
+- Kept privileged Supabase, LiveKit, and PayPal credentials server-side.
+- Restricted LIVE host publishing tokens to LiveKit camera/microphone sources and guarded LIVE start against a concurrent end transition.
+- Added request-body size limiting.
+- Added PayPal captured order ID, amount, and currency checks before wallet credit.
+- Added exact-origin CORS normalization and Android WebView origin guidance.
 
-## Accounts and authorization
+## Important incident response
 
-- Backend routes validate the Supabase access token and active account status.
-- Migration 0024 tightens allowed profile UPDATE columns so a browser cannot self-edit admin/role/account-state fields, restricts browser SELECT to explicitly allowed profile columns (the internal admin flag is retrieved with an owner-scoped function), and places active-account conditions on selected RLS policies. Follow/like/comment counter triggers run as controlled SECURITY DEFINER routines with a fixed search path so column grants do not break counters.
-- Before applying migration 0024, compare all replaced policy/function names and effective privileges against the live schema. Confirm auth/session behavior using disposable test accounts.
-- Deactivation does not invalidate every already-issued JWT instantaneously; database RLS and backend status checks are included to block subsequent use. Verify both in target deployment.
-- Account deletion is destructive and constrained by real FK cascade rules. Audit transaction retention, dispute handling and legal requirements before enabling it for regular users.
+The original supplied archive contained values in a file named `.env.example` that looked like real Supabase service-role, LiveKit, and PayPal credentials. Treat them as exposed. Rotate/revoke them in the relevant provider dashboards, update the deployed backend environment, and check repository history and deployment logs for further exposure. Do not reuse the old values.
 
-## Payments and LIVE
+The original archive also contained `android/app/release.keystore`. It has been excluded from this output. Because signing keys are sensitive and the archive documentation reports a certificate mismatch with the supplied APKs, do not assume this key is a valid production update key. Check the official Play Console signing state before publishing updates.
 
-- PayPal order creation/capture and coin credit stay server-authoritative and use idempotency. Do not mark wallet funds credited based on a browser redirect alone.
-- Payout requests do not mean a PayPal transfer has happened. Mark transferred only when the actual external transaction is confirmed and its reference stored.
-- LiveKit credentials and token signing stay backend-only; tokens should grant only the necessary participant permissions.
+## Not verified externally
 
-## Data and moderation
+- Actual production environment variables and CORS allowlist
+- Supabase migration state and live RLS behavior
+- LiveKit cloud connectivity, media publishing, and viewer subscriptions
+- PayPal sandbox/live order and webhook flows
+- Android build, installation, camera/microphone permissions, and release signing
+- Repository history and deployment logs for exposed credentials
 
-- Mission rewards require real configuration and manual fulfillment; the website does not transfer rewards automatically.
-- Verification requests are private; only approved minimal badge records are publicly displayed.
-- Do not ask users to host identity documents at public URLs. Verification requires a reviewed secure evidence process before being treated as production-ready.
-- The browser account export is a bounded, partial export and clearly reports when individual sources failed.
-- Terms and privacy documents are draft product copy until legally reviewed.
+## Required actions before production
 
-## Security validation
-
-The source scan is a useful hygiene guard, not a penetration test. Manually test effective database grants/RLS, admin authorization, auth expiry, data isolation, CORS, SSRF/input constraints, storage ownership, provider webhook signature checks, and account deletion against a staging environment before public release.
-
-
-## Appearance preference storage
-
-Migration 0025 adds only the user-controlled `appearance` JSON setting to the existing account-owned `user_settings` row and validates its layout/theme values. It does not store payment credentials or provider secrets. Keep existing user-scoped row-level security in force.
+1. Rotate exposed credentials and configure fresh values in the hosting provider.
+2. Verify the frontend origin and Android WebView origin in `FRONTEND_URL`.
+3. Back up the database and apply/verify migrations `0001`–`0013`.
+4. Test payment idempotency and ledger balances in PayPal sandbox.
+5. Confirm the real Android signing identity and test on-device.

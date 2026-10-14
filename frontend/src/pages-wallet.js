@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network — wallet and Go LIVE pages. All wallet mutations use the backend. */
+/* Creator Hub Live — wallet and Go LIVE pages. All wallet mutations use the backend. */
 (function () {
   'use strict';
   var CHL = window.CHL, el = CHL.el, ui = CHL.ui;
@@ -14,60 +14,41 @@
     } catch (e) { outlet.appendChild(el('div', { class: 'note', text: e.code === 'BACKEND_UNAVAILABLE' ? 'WALLET_UNAVAILABLE: the wallet backend is unreachable.' : (e.message || 'Wallet unavailable.') })); }
 
     outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Buy coins' }));
-    outlet.appendChild(el('p', { class: 'sub', text: 'Packages and USD prices are loaded from the active server catalogue. The checkout server decides the final amount.' }));
-    var grid = el('div', { class: 'grid coin-package-grid' });
-    var paymentChoice = el('div', { class: 'card', style: 'display:none;margin-top:14px;max-width:560px' });
+    var grid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fill,minmax(150px,1fr))' });
     outlet.appendChild(grid);
-    outlet.appendChild(paymentChoice);
     try {
-      var catalog = await CHL.apiRequest('/api/wallet/packages');
+      var catalog = await CHL.authenticatedApiRequest('/api/wallet/packages');
       var packages = catalog && Array.isArray(catalog.packages) ? catalog.packages : [];
       if (!packages.length) {
-        grid.appendChild(ui.empty('🪙', 'No active USD packages', 'The backend returned no valid active USD coin packages. Review public.coin_packages; prices are not guessed in the browser.'));
+        grid.appendChild(ui.empty('🪙', 'No coin packages available', 'The server has no active USD coin packages configured.'));
       } else {
         packages.forEach(function (p) {
-          var price = Number(p.price);
-          var coins = Number(p.coins);
-          if (!Number.isSafeInteger(coins) || coins <= 0 || !Number.isFinite(price) || price <= 0) return;
-          grid.appendChild(el('div', { class: 'card coin-package', style: 'text-align:center' }, [
-            el('div', { style: 'font-size:26px', text: '🪙' }),
-            el('div', { style: 'font-size:20px;font-weight:800', text: CHL.fmt(coins) }),
-            el('div', { style: 'color:var(--mut);font-size:12px;margin-bottom:10px', text: 'Creator Coins' }),
-            el('button', { class: 'btn primary block', onclick: function () { choosePaymentMethod({ coins: coins, price: price, currency: p.currency || 'USD', packageId: p.id }, paymentChoice); } }, '$' + price.toFixed(2) + ' ' + String(p.currency || 'USD'))
+          grid.appendChild(el('div', { class: 'card', style: 'text-align:center' }, [
+            el('div', { style: 'font-size:30px', text: '🪙' }),
+            el('div', { style: 'font-size:22px;font-weight:800', text: CHL.fmt(p.coins) }),
+            el('div', { style: 'color:var(--mut);font-size:12px;margin-bottom:10px', text: 'coins' }),
+            el('button', { class: 'btn primary block', onclick: function () { buy(p); } }, '$' + Number(p.price).toFixed(2))
           ]));
         });
       }
-    } catch (catalogError) {
-      grid.appendChild(el('div', { class: 'note', text: 'Coin catalogue unavailable: ' + (catalogError && catalogError.message || 'The backend request failed.') + ' No package prices are invented.' }));
+    } catch (e) {
+      grid.appendChild(ui.empty('🪙', 'Coin packages unavailable', e.message || 'Could not load current prices from the server.'));
     }
-    outlet.appendChild(el('div', { class: 'note', text: 'Secure checkout is server-authoritative. The browser never supplies the PayPal amount or credits the wallet. PayPal is the currently integrated provider.' }));
+    outlet.appendChild(el('div', { class: 'note', text: 'Secure checkout is server-authoritative. Prices come from the active server catalog; the browser never supplies the PayPal amount or credits the wallet.' }));
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
     handlePaypalReturn();
   });
 
   async function handlePaypalReturn() {
-    var q = new URLSearchParams(location.search || ''); var orderId = q.get('token'); var state = q.get('paypal');
-    if (!state) return;
-    if (state === 'cancel') { history.replaceState(null, '', location.pathname + location.hash); CHL.toast('PayPal checkout was cancelled. No coins were added.'); return; }
-    if (state !== 'success' || !orderId || !CHL.user) return;
+    var q = new URLSearchParams(location.search || ''); var orderId = q.get('token');
+    if (q.get('paypal') !== 'success' || !orderId || !CHL.user) return;
     history.replaceState(null, '', location.pathname + location.hash);
-    try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d && (d.captured || d.credited || d.status === 'completed') ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
+    try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
     catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
-    if (CHL.ui && CHL.ui.refreshCoins) CHL.ui.refreshCoins();
-  }
-  function choosePaymentMethod(p, panel) {
-    panel.innerHTML = '';
-    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:8px', text: 'Choose payment method' }));
-    panel.appendChild(el('div', { style: 'color:var(--mut);margin-bottom:12px', text: CHL.fmt(p.coins) + ' coins · $' + Number(p.price).toFixed(2) + ' ' + (p.currency || 'USD') }));
-    panel.appendChild(el('button', { class: 'btn primary block', onclick: function () { buy(p); } }, 'Continue with PayPal'));
-    panel.appendChild(el('div', { class: 'note', style: 'margin-top:10px', text: 'PayPal is the currently integrated payment method. Other methods will appear here only after they are connected and tested.' }));
-    panel.style.display = '';
-    if (panel.scrollIntoView) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   async function buy(p) {
     try {
       var d = await CHL.authenticatedApiRequest('/api/payments/paypal/create-order', { method: 'POST', headers: { 'Idempotency-Key': 'checkout:' + CHL.uuid() }, body: { coins: p.coins } });
-      if (d && (d.credited || d.status === 'completed')) { CHL.toast('This order is already completed.'); return; }
       if (!d || !d.approveUrl) throw new Error('PAYMENT_PROVIDER_ERROR: checkout approval URL was not returned.');
       location.href = d.approveUrl;
     } catch (e) { CHL.toast(e.message || 'PAYMENT_BACKEND_UNAVAILABLE'); }

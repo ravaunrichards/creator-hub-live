@@ -70,15 +70,7 @@
             card.addEventListener('click', function () { CHL.navigate('#/teams/' + team.id); });
             list.appendChild(card);
           });
-        }).catch(function (error) {
-          list.innerHTML = '';
-          var detail=(error && error.message) || 'Backend request failed.';
-          if (error && error.code) detail += ' ['+error.code+']';
-          if (error && error.status) detail += ' (HTTP '+error.status+')';
-          if (error && error.details && error.details.databaseCode) detail += ' [database: '+String(error.details.databaseCode)+']';
-          if (error && error.details && error.details.databaseMessage) detail += ' '+String(error.details.databaseMessage);
-          list.appendChild(note('Teams could not be loaded: ' + detail, 'error'));
-        });
+        }).catch(function (error) { list.innerHTML = ''; list.appendChild(note('Teams could not be loaded: ' + (error.message || 'Backend request failed.'), 'error')); });
     }
     loadTeams('');
   }
@@ -144,7 +136,7 @@
       if (team.badge_url) heading.appendChild(el('img', { src: team.badge_url, alt: team.name + ' badge', style: 'width:48px;height:48px;object-fit:contain;' }));
       out.appendChild(heading);
       if (team.description) out.appendChild(el('div', { class: 'card', style: 'margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere;', text: team.description }));
-      out.appendChild(note('League placement is based on division ' + division(team) + '. Competitive placement uses official divisions; the legacy numeric level does not control league progression.'));
+      out.appendChild(note('League placement is based on division ' + division(team) + '. Numeric levels 1–50 are retained only for database compatibility; this page does not use them as league progression.'));
       var actions = el('div', { class: 'row wrap', style: 'gap:8px;margin:12px 0;' });
       if (!CHL.user) actions.appendChild(button('Sign in to join', function () { CHL.navigate('#/login'); }, true));
       else if (result.is_owner) actions.appendChild(button('Edit team', function () { renderEditForm(out, team, function (saved) { if (saved) renderDetail(out, id); else renderDetail(out, id); }); }, true));

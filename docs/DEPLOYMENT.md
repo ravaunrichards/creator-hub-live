@@ -1,27 +1,45 @@
-# Deployment guide — Creator Hub Creator Network 4.0.2
+# Creator Hub Creator Network — Deployment
 
 ## Architecture
 
-Static website/PWA (`frontend/`) → Node.js backend (`backend/`) → Supabase. LIVE video/signaling uses LiveKit. Coin checkout uses PayPal Orders/Capture and server-side idempotent ledger updates. Creator payout requests are stored for review; this request flow does not itself transfer fiat money.
+- Web/PWA frontend → Node backend → Supabase
+- LIVE audio/video → LiveKit
+- Coin purchases → PayPal → backend verification → server-side wallet ledger
 
-## Manual deployment only
+## Backend environment
 
-No production service was changed when preparing this package. Publish `frontend/` as the static-site root and deploy `backend/` as a separate Node.js 20+ service. A static-site publish does not deploy backend code or apply database migrations.
+Set real values in the hosting provider's environment panel. Use `backend/.env.example` only as a placeholder guide. Never put Supabase service-role keys, LiveKit API secrets, PayPal secrets, webhook secrets, or release passwords in browser assets.
 
-## Order of operations
+`FRONTEND_URL` accepts comma-separated exact origins. Set it to the actual production web origin and include `https://appassets.androidplatform.net` for the Android WebView origin. Origins must be exact, without paths. Verify CORS preflight and authenticated calls against the deployed service.
 
-1. Back up deployed source/configuration and Supabase.
-2. Run the read-only schema audits and reconcile migrations/policies/functions before applying a database change.
-3. Configure backend environment variables using `backend/.env.example` for names only.
-4. Run `database/diagnostics/chcn_live_repair_preflight.sql` and follow `CHCN-LIVE-REPAIR-PLAN.md`. Apply only approved missing migrations after backup and schema/policy preflight.
-5. Deploy backend and verify `GET /api/health`, `GET /api/config/public`, and `GET /api/livekit/health`.
-6. Publish `frontend/` as the site root. Verify the actual URL/API base, CORS, storage bucket and browser-safe config.
-7. Complete `VALIDATION-4.0.2.md` and `PRODUCTION-ACCEPTANCE-CHECKLIST.md` before release acceptance.
+## LiveKit
+
+Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` in the backend environment. The backend issues short-lived tokens and only grants camera/microphone publishing to the room host. The backend rejects tokens for ended sessions and viewers entering a pending session. The LIVE start endpoint verifies host camera and microphone publication before transitioning the database row to `live`.
+
+## Supabase database
+
+Apply and verify migrations `0001` through `0013` in order. Check the actual database state; a file existing in the repository does not mean it was applied to Supabase.
 
 ## PayPal
 
-Keep `PAYPAL_ENV`, client ID and client secret matched to the same PayPal app/environment. Restart/redeploy the actual backend after environment changes. The backend should fetch OAuth tokens itself. A Postman token is temporary and is not a replacement for backend credentials. Test create-order, PayPal approval, capture, webhook verification and single ledger credit in the target environment.
+Use sandbox mode first. Coin package amounts are read from active USD rows in `coin_packages`; the browser no longer owns the price list. The backend checks the capture order ID, captured amount, and currency before crediting coins. Test successful payment, cancellation, repeated capture, mismatched amount, and failed provider responses before enabling live payments.
 
-## Rollback
+## Android
 
-Keep the prior frontend and backend source plus environment-variable snapshot. If routes fail, restore the previous known-good release at the service layer. SQL changes are forward migrations and must not be reversed by guessed `DROP` statements; use a reviewed forward fix or restore plan if data/schema changes have committed. Service rollback does not roll back database mutations.
+The project uses Android Gradle Plugin 8.5.2 and SDK level 34. No Gradle wrapper or Android SDK was present in the supplied archive environment, so an APK build and real-device installation were not performed here. Open the `android/` project in Android Studio, configure compatible build tools, and test on a physical Android device.
+
+## Release signing
+
+The supplied keystore was excluded from the corrected source package because signing material must not be redistributed. The supplied APKs were also excluded because their update compatibility and installability were not independently verified. Determine the official signing identity from Google Play Console (if already published) before creating an update. Do not replace an existing signing key without checking the Play App Signing/upload-key situation.
+
+## Required live verification
+
+1. Deploy the backend and verify `GET /api/health` and `GET /api/livekit/health`.
+2. Sign in with a real test account.
+3. Create a LIVE room, publish camera and microphone, and confirm the backend marks it `live` only after verification.
+4. Confirm viewers cannot publish and cannot receive a token for pending/ended rooms.
+5. Test chat and gifts with a funded test wallet and real database catalog.
+6. Test PayPal sandbox capture and verify exactly one ledger credit.
+7. Install the Android debug build and test login, camera/microphone, app permissions, file picker, navigation, and reconnect behavior.
+
+These live-service checks remain unverified until performed against the user's actual deployment.
