@@ -1,0 +1,28 @@
+CREATOR HUB CREATOR NETWORK — PACKAGE MANIFEST 4.0.2
+
+Project: ravaunrichards/creator-hub-live (existing project; branch main)
+Read-only source snapshot inspected: 13f12800349652f5920c3f3ae992c53fc5737afd
+Package type: full source tree with local manual-install repair updates
+
+Includes:
+- Existing full frontend website/PWA source
+- Existing backend/API source and tests
+- Existing database migration history plus new migration 0025 for appearance preferences
+- Read-only live schema preflight SQL
+- Dependency-aware repair plan, audit notes, install guide, validation checklist and local test result summary
+- New Compact/Balanced/Spacious and Dark/Light/Follow Device settings, account sync, and admin Verified Creator badge grant/revoke controls
+- Regression test coverage and consistent 4.0.2 release/cache identifiers
+
+Validation performed locally:
+- `npm run check` — PASS (exit code 0)
+- `npm run repair:contracts` — PASS (exit code 0)
+- ZIP/source tests do not prove Supabase migration execution, production RLS behavior, successful PayPal transactions, a deployed backend or physical-device visual rendering.
+
+Manual install requirements:
+- Back up the existing database and deployed source/config before starting.
+- Run the read-only preflight and read the repair plan before applying any migration.
+- Do not replay all migrations blindly; the audited database had no readable migration history table.
+- Do not deploy before checking the target project/service/configuration.
+
+Boundary:
+No GitHub source file was changed, no Supabase migration was applied, no Render setting/deployment was changed, and no PayPal credentials/transaction were changed or tested as part of producing this package.

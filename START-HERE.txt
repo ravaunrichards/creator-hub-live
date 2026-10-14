@@ -1,0 +1,12 @@
+CREATOR HUB CREATOR NETWORK — UPDATE 4.0.2
+Manual installation only. Existing project; do not create a replacement project.
+
+1. Read docs/CHCN-LIVE-REPAIR-PLAN.md and docs/INSTALL.md.
+2. Back up the existing Supabase database and retain current website/backend deployment details.
+3. Run database/diagnostics/chcn_live_repair_preflight.sql in the Supabase SQL editor. It makes no changes.
+4. Review docs/CHCN-LIVE-REPAIR-PLAN.md and apply only the listed reconciliation migrations, in dependency order, after confirming preconditions. Do not blindly run 0001–0025.
+5. Deploy the website/backend source files manually using your existing hosting method; this ZIP does not deploy them.
+6. Run `npm run check` locally, then complete docs/VALIDATION-4.0.2.md and docs/PRODUCTION-ACCEPTANCE-CHECKLIST.md.
+7. Treat PayPal checkout and payouts as unverified until you test them safely with the currently intended PayPal environment. Never place a short-lived OAuth access token in environment variables and never expose PayPal secrets in the frontend.
+
+Prepared as local update files only. Nothing was written to GitHub, Supabase or the live site.

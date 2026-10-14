@@ -5,7 +5,7 @@ const settings=read('../frontend/src/pages-settings.js');
 const html=read('../frontend/index.html');
 const css=read('../frontend/styles/app.css');
 const admin=read('../frontend/src/pages-admin.js');
-const migration=read('../database/migrations/0026_appearance_preferences.sql');
+const migration=read('../database/migrations/0025_appearance_preferences.sql');
 const adminMigration=read('../database/migrations/0024_creator_community_account_controls.sql');
 for(const value of ['compact','balanced','spacious','dark','light','system','Apply & Save','chcn_appearance','user_settings']) assert.ok(settings.includes(value),`appearance contract missing ${value}`);
 for(const value of ['compact-ui','balanced-ui','spacious-ui','dataset.chcnTheme','colorScheme']) assert.ok(html.includes(value),`startup appearance persistence missing ${value}`);

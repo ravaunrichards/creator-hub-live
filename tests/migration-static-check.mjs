@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 const dir = 'database/migrations';
 const files = fs.readdirSync(dir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
-assert.equal(files.length, 28, `Expected 28 ordered migrations, found ${files.length}`);
+assert.equal(files.length, 25, `Expected 25 ordered migrations, found ${files.length}`);
 files.forEach((f, i) => assert.equal(Number(f.slice(0, 4)), i + 1, `Migration sequence gap before ${f}`));
 
 function validateSql(text, label, allowDollar = true) {
@@ -70,7 +70,7 @@ function validateSql(text, label, allowDollar = true) {
 
 for (const f of files) validateSql(fs.readFileSync(path.join(dir, f), 'utf8'), f);
 const release = fs.readFileSync(path.join(dir, '0024_creator_community_account_controls.sql'), 'utf8');
-const appearance = fs.readFileSync(path.join(dir, '0026_appearance_preferences.sql'), 'utf8');
+const appearance = fs.readFileSync(path.join(dir, '0025_appearance_preferences.sql'), 'utf8');
 assert.match(release, /^\s*(?:--[^\n]*\n\s*)*begin;/i, 'Release migration begins a transaction');
 assert.match(release, /notify pgrst\s*,\s*'reload schema'\s*;\s*commit;\s*$/i, 'Release migration refreshes PostgREST schema cache and commits');
 assert.match(release, /revoke select on public\.profiles from anon,authenticated/i, 'Profile internal-column exposure is restricted');
