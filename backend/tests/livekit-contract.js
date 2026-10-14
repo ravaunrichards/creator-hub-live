@@ -30,13 +30,17 @@ for (const [name, tracks, camera, microphone] of cases) {
   console.log(`PASS — ${name}`);
 }
 
-assert(SERVER.includes("await verifyHostPublishing("), 'LIVE start endpoint does not verify host publication before update.');
-const verifyIndex = SERVER.indexOf('await verifyHostPublishing(');
-const updateOffset = SERVER.slice(verifyIndex).search(/\.update\(\{\s*status:\s*['\"]live['\"]/);
-assert(verifyIndex >= 0 && updateOffset > 0, 'LIVE status update appears before host publication verification.');
-assert(/const LIVEKIT_URL = String\(\s*process\.env\.LIVEKIT_URL \|\| ['\"]['\"]/.test(SERVER), 'Server still has a silent hard-coded LIVEKIT_URL fallback.');
-assert(TOKEN.includes('canPublishSources: canPublish ? [1, 2] : []') || TOKEN.includes("canPublishSources: canPublish ? ['camera', 'microphone'] : []"), 'Host token is not restricted to camera/microphone publishing sources.');
-assert(/joinResult\s*&&\s*joinResult\.roomName/.test(ROOM_PAGE) && ROOM_PAGE.includes('room.room_name'), 'Frontend does not use the backend-authoritative LiveKit room name.');
+const startRouteIndex = SERVER.indexOf('liveParts.action === "start"');
+const endRouteIndex = SERVER.indexOf('liveParts.action === "end"', startRouteIndex);
+const startRoute = SERVER.slice(startRouteIndex, endRouteIndex);
+const verifyIndex = startRoute.indexOf('await verifyHostPublishing(');
+const updateIndex = startRoute.indexOf('.update({', verifyIndex);
+assert(startRouteIndex >= 0 && verifyIndex >= 0 && updateIndex > verifyIndex, 'LIVE status update appears before host publication verification.');
+assert(startRoute.includes('.in("status", ["pending", "live"])'), 'LIVE start update is not guarded against a concurrent end transition.');
+assert(/const LIVEKIT_URL = String\(\s*process\.env\.LIVEKIT_URL \|\| ""\s*\)/.test(SERVER) && !SERVER.includes("wss://creator-hub-live-9susyfri.livekit.cloud"), 'Server must use deployment-provided LIVEKIT_URL only.');
+assert(TOKEN.includes("canPublishSources: canPublish ? [1, 2] : []"), 'Host token must use LiveKit Server SDK TrackSource enum values CAMERA=1 and MICROPHONE=2.');
+assert(SERVER.includes('room.status === "ended"') && SERVER.includes('"LIVE_NOT_STARTED"'), 'Token endpoint does not reject ended/pending viewer sessions.');
+assert(ROOM_PAGE.includes('joinResult && joinResult.roomName') && ROOM_PAGE.includes('room.room_name'), 'Frontend does not use the backend-authoritative LiveKit room name.');
 assert(!/var roomName = roomId;/.test(ROOM_PAGE), 'Frontend still substitutes the database room UUID as the LiveKit room name.');
 
 console.log('PASS — LIVE start authorization ordering');

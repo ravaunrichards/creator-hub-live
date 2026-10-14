@@ -7,8 +7,6 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const WEB = path.join(ROOT, '..', 'frontend');
 const SERVER = path.join(ROOT, 'src', 'server.js');
-const PAYOUT = fs.readFileSync(path.join(ROOT, 'src', 'payout-routes.js'), 'utf8');
-const TEAM_LEAGUE = fs.readFileSync(path.join(ROOT, 'src', 'team-leagues.js'), 'utf8');
 
 function node(){ return { style:{}, children:[], classList:{add(){},remove(){},toggle(){},contains(){return false;}}, appendChild(c){this.children.push(c);return c;}, setAttribute(){}, getAttribute(){return null;}, addEventListener(){}, querySelector(){return null;}, querySelectorAll(){return [];}, remove(){}, parentNode:null, innerHTML:'', textContent:'' }; }
 globalThis.document={createElement:()=>node(),createTextNode:()=>node(),querySelector(){return null;},querySelectorAll(){return [];},body:node(),addEventListener(){}};
@@ -22,7 +20,7 @@ globalThis.window.supabase = { createClient() {
   return { auth: { getSession(){return Promise.resolve({data:{session:null}});}, getUser(){return Promise.resolve({data:{user:null}});}, onAuthStateChange(){return {data:{subscription:{unsubscribe(){}}}};}, signOut(){return Promise.resolve({});} }, from(){return chain;}, rpc(){return Promise.resolve({data:null,error:null});} };
 } };
 
-const files=['src/core.js','src/ui.js','src/pages-auth.js','src/pages.js','src/pages-admin.js','src/pages-creator.js','src/pages-teams.js','src/pages-extra.js','src/pages-room.js','src/pages-settings.js','src/pages-wallet.js','src/livekit.js'];
+const files=['src/core.js','src/ui.js','src/pages-auth.js','src/pages.js','src/pages-admin.js','src/pages-creator.js','src/pages-extra.js','src/pages-room.js','src/pages-settings.js','src/pages-wallet.js','src/livekit.js'];
 for(const f of files) globalThis.eval(fs.readFileSync(path.join(WEB,f),'utf8'));
 
 const CHL=globalThis.window.CHL;
@@ -40,24 +38,14 @@ const forbidden=[/sb_secret_/i,/service_role/i,/LIVEKIT_API_SECRET/i,/PAYPAL_CLI
 const leaks=[]; for(const f of publicFiles){const ext=path.extname(f).toLowerCase();if(!['.js','.html','.css','.json','.webmanifest','.map','.txt'].includes(ext))continue;const t=fs.readFileSync(f,'utf8');for(const rx of forbidden)if(rx.test(t))leaks.push(path.relative(ROOT,f)+': '+rx);}
 if(leaks.length){console.error('PUBLIC SECRET SCAN FAILED:',leaks);process.exit(1);}
 
-const requiredRoutes=['/api/health','/api/livekit/health','/api/livekit/token','/api/config/public','/api/live/rooms','/api/live/rooms/:id','/api/live/rooms/:id/join','/api/live/rooms/:id/start','/api/live/rooms/:id/end','/api/live/rooms/:id/chat','/api/payments/paypal/create-order','/api/payments/paypal/capture-order','/api/payments/paypal/info','/api/payments/webhook','/api/leagues/standings','/api/wallet','/api/wallet/balance','/api/wallet/transactions','/api/wallet/gift'];
+const requiredRoutes=['/api/health','/api/livekit/health','/api/livekit/token','/api/config/public','/api/live/rooms','/api/live/rooms/:id','/api/live/rooms/:id/join','/api/live/rooms/:id/start','/api/live/rooms/:id/end','/api/live/rooms/:id/chat','/api/payments/paypal/create-order','/api/payments/paypal/capture-order','/api/payments/paypal/info','/api/payments/webhook','/api/wallet','/api/wallet/balance','/api/wallet/packages','/api/wallet/transactions','/api/wallet/gift','/api/leagues/standings'];
 const server=fs.readFileSync(SERVER,'utf8');
-const teamLeague=fs.readFileSync(path.join(ROOT,'src','team-leagues.js'),'utf8');
 const missing=requiredRoutes.filter(x=> {
   if (x.includes(':id')) return !server.includes("liveRoomParts(pathname)");
-  if (x === '/api/leagues/standings') return !teamLeague.includes(`'${x}'`);
   return !server.includes(`'${x}'`)&&!server.includes(`\"${x}\"`);
 });
 if(missing.length){console.error('BACKEND ROUTE REGRESSION:',missing);process.exit(1);}
-if(!server.includes('handleTeamLeagueRoute({') || !teamLeague.includes("'/api/leagues/standings'")){console.error('TEAM LEAGUE ROUTE REGRESSION: /api/leagues/standings is not connected');process.exit(1);}
-if(!CHL.routes['/teams'] || !fs.readFileSync(path.join(WEB,'src','pages-teams.js'),'utf8').includes("CHL.routes['/teams']")){console.error('TEAMS UI REGRESSION: the full Teams page is not loaded');process.exit(1);}
 
-for (const route of ['/api/creator/payouts','/api/admin/payouts']) {
-  if (!PAYOUT.includes(`'${route}'`)) { console.error('PAYOUT ROUTE REGRESSION:', route); process.exit(1); }
-}
-for (const action of ['/fixtures\\/generate','/finalize','/matches\\/']) {
-  if (!TEAM_LEAGUE.includes(action)) { console.error('LEAGUE OPERATIONS REGRESSION:', action); process.exit(1); }
-}
 console.log(`PASS — ${Object.keys(CHL.routes).length} browser routes registered; ${registry.length} routes checked.`);
 console.log(`PASS — ${publicFiles.length} frontend files scanned; no forbidden private credential patterns found.`);
-console.log(`PASS — ${requiredRoutes.length} canonical backend endpoint strings verified across the server and route modules, including team league standings and creator payout APIs.`);
+console.log(`PASS — ${requiredRoutes.length} canonical backend endpoint strings verified in server.js.`);

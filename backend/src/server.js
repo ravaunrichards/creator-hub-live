@@ -2,11 +2,6 @@ import "dotenv/config";
 import http from "node:http";
 import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { handleTeamsRoute } from "./teams-routes.js";
-import { handleCreatorLeagueRoute } from "./creator-leagues.js";
-import { handleTeamLeagueRoute } from "./team-leagues.js";
-import { handlePayoutRoute } from "./payout-routes.js";
-import { normalizePayPalEnvironment, readEnvironmentSetting } from "./paypal-env.js";
 import {
   createLiveKitToken,
   validateRoomName,
@@ -31,7 +26,6 @@ process.on("unhandledRejection", (reason, promise) => {
 // Creator Hub Creator Network - Backend HTTP API
 // ============================================================================
 
-const BACKEND_RELEASE = "4.0.2";
 const PORT = Number(process.env.PORT || 3000);
 
 const FRONTEND_URL = String(
@@ -49,13 +43,9 @@ const SUPABASE_ANON_KEY =
 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-const PAYPAL_ENV_CONFIG = normalizePayPalEnvironment(
-  readEnvironmentSetting(process.env, "PAYPAL_ENV"),
-  readEnvironmentSetting(process.env, "PAYPAL_MODE"),
-  readEnvironmentSetting(process.env, "PAYPAL_ENVIRONMENT")
-);
-const PAYPAL_ENV_RAW = PAYPAL_ENV_CONFIG.raw;
-const PAYPAL_ENV = PAYPAL_ENV_CONFIG.environment;
+const PAYPAL_ENV = String(
+  process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox"
+).toLowerCase();
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
@@ -200,14 +190,19 @@ function errorResponse(res, error) {
 
 function allowedOrigin(origin) {
   if (!origin) return true;
-  const list = FRONTEND_URL.split(",")
+  const configured = [
+    ...FRONTEND_URL.split(","),
+    ...String(process.env.ADDITIONAL_ALLOWED_ORIGINS || "").split(","),
+  ]
     .map((value) => value.trim())
-    .filter(Boolean);
-  if (list.length) return list.includes(origin);
-  return (
-    origin === `http://localhost:${PORT}` ||
-    origin === `http://127.0.0.1:${PORT}`
-  );
+    .filter(Boolean)
+    .map((value) => {
+      try { return new URL(value).origin; } catch { return value.replace(/\/$/, ""); }
+    });
+  const list = configured.length
+    ? configured
+    : [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`];
+  return list.includes(origin);
 }
 
 function applyCors(req, res) {
@@ -225,13 +220,35 @@ function applyCors(req, res) {
       "X-Requested-With",
     ].join(", ")
   );
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
 }
 
+// Keep request parsing bounded so JSON endpoints and the PayPal webhook cannot
+// be used to make the process buffer an unbounded request body.
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
 async function readRawBody(req) {
-  let raw = "";
-  for await (const chunk of req) raw += chunk;
-  return raw;
+  const chunks = [];
+  let bytes = 0;
+  let tooLarge = false;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > MAX_REQUEST_BODY_BYTES) {
+      tooLarge = true;
+      // Continue draining the request, but do not retain additional bytes.
+      continue;
+    }
+    chunks.push(buffer);
+  }
+  if (tooLarge) {
+    throw fail(
+      413,
+      "REQUEST_BODY_TOO_LARGE",
+      "Request body exceeds the 1 MiB limit."
+    );
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
 }
 
 async function readJson(req) {
@@ -318,20 +335,6 @@ async function requireSupabaseUser(req) {
   }
   if (!data?.user)
     throw fail(401, "AUTH_REQUIRED", "Invalid or expired Supabase session.");
-  const adminDb = db();
-  const profileState = await adminDb.from("profiles").select("account_status").eq("id", data.user.id).maybeSingle();
-  if (profileState.error) {
-    const normalized = normalizeExternalError(profileState.error);
-    throw fail(503, "ACCOUNT_STATUS_LOOKUP_FAILED",
-      normalized.code === "PGRST204" || normalized.code === "PGRST205" || normalized.code === "42703"
-        ? "Account lifecycle schema is not ready. Review and apply database migration 0024 before enabling account lifecycle controls."
-        : normalized.message,
-      { databaseCode: normalized.code || undefined });
-  }
-  if (!profileState.data)
-    throw fail(403, "ACCOUNT_NOT_ACTIVE", "No active Creator Hub profile exists for this account.");
-  if (profileState.data.account_status !== "active")
-    throw fail(403, "ACCOUNT_DEACTIVATED", "This account is deactivated. Contact platform support for reactivation.");
   return data.user;
 }
 
@@ -408,13 +411,6 @@ function validateLiveRoomName(roomName) {
 // ============================================================================
 
 async function paypalToken() {
-  if (PAYPAL_ENV === "invalid") {
-    throw fail(
-      500,
-      "PAYPAL_ENV_INVALID",
-      `Invalid PayPal environment setting ${JSON.stringify(PAYPAL_ENV_RAW)}. Set the backend variable PAYPAL_ENV to live or sandbox (production is also accepted). PAYPAL_MODE and PAYPAL_ENVIRONMENT are supported aliases.`
-    );
-  }
   requireServerConfig(["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
   const auth = Buffer.from(
     `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
@@ -428,27 +424,17 @@ async function paypalToken() {
     body: "grant_type=client_credentials",
   });
   const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = null;
-  }
   if (!response.ok) {
-    if (response.status === 401) {
-      throw fail(
-        502,
-        "PAYPAL_OAUTH_AUTH_FAILED",
-        "PayPal rejected the configured client credentials. Confirm PAYPAL_ENV and use a Client ID and Secret from the same PayPal environment."
-      );
-    }
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
       `PayPal OAuth failed (${response.status}).`
     );
   }
-  if (!data) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
@@ -548,6 +534,28 @@ async function paymentByOrder(client, orderId) {
   return data;
 }
 
+function assertCaptureMatchesPayment(payment, capture) {
+  const capturedAmount = capture?.amount;
+  const actualValue = Number(capturedAmount?.value);
+  const expectedValue = Number(payment?.amount);
+  const actualCurrency = String(capturedAmount?.currency_code || "").toUpperCase();
+  const expectedCurrency = String(payment?.currency || "").toUpperCase();
+  if (
+    String(payment?.provider || "").toLowerCase() !== "paypal" ||
+    !Number.isFinite(actualValue) ||
+    !Number.isFinite(expectedValue) ||
+    actualValue.toFixed(2) !== expectedValue.toFixed(2) ||
+    !actualCurrency ||
+    actualCurrency !== expectedCurrency
+  ) {
+    throw fail(
+      502,
+      "PAYMENT_AMOUNT_MISMATCH",
+      "The captured amount or currency does not match the stored payment order. Coins were not credited."
+    );
+  }
+}
+
 async function creditCapture(client, payment, captureId) {
   if (!captureId)
     throw fail(
@@ -580,10 +588,30 @@ async function creditCapture(client, payment, captureId) {
   return true;
 }
 
+function paypalApprovalUrl(order) {
+  const links = Array.isArray(order?.links) ? order.links : [];
+  const link = links.find((item) =>
+    item && (item.rel === "approve" || item.rel === "payer-action") && item.href
+  );
+  if (!link) return null;
+  try {
+    const url = new URL(link.href);
+    const allowedHosts = PAYPAL_ENV === "live"
+      ? new Set(["www.paypal.com", "paypal.com"])
+      : new Set(["www.sandbox.paypal.com", "sandbox.paypal.com"]);
+    if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function coinPackage(client, coins) {
+  // PayPal checkout is currently denominated in USD. The schema stores price
+  // and currency separately (there is no price_usd column).
   const { data, error } = await client
     .from("coin_packages")
-    .select("*")
+    .select("id,coins,price,currency,active,sort")
     .eq("coins", coins)
     .eq("currency", "USD")
     .eq("active", true)
@@ -593,9 +621,13 @@ async function coinPackage(client, coins) {
     throw fail(
       400,
       "INVALID_PACKAGE",
-      "The requested coin package is not available."
+      "The requested USD coin package is not available."
     );
-  return data;
+  const price = Number(data.price);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw fail(503, "INVALID_PACKAGE_PRICE", "The selected coin package has an invalid price.");
+  }
+  return { ...data, price: price.toFixed(2) };
 }
 
 // ============================================================================
@@ -686,58 +718,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // Account lifecycle controls — require a fresh, verified Supabase user and a
-    // literal confirmation phrase. These actions use the backend service role,
-    // never a service key delivered to the browser.
-    if (pathname === "/api/account/deactivate" && method === "POST") {
-      const user = await requireSupabaseUser(req);
-      const body = await readJson(req);
-      if (body.confirm !== "DEACTIVATE") throw fail(400, "CONFIRMATION_REQUIRED", "Send confirm: DEACTIVATE to continue.");
-      const client = db();
-      const updated = await client.from("profiles").update({ account_status: "deactivated", deactivated_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", user.id).select("id").maybeSingle();
-      if (updated.error || !updated.data) {
-        const normalized = normalizeExternalError(updated.error);
-        throw fail(503, "ACCOUNT_DEACTIVATION_FAILED", normalized.message || "The account status could not be updated.", { databaseCode: normalized.code || undefined });
-      }
-      const banned = await client.auth.admin.updateUserById(user.id, { ban_duration: "876000h" });
-      if (banned.error) {
-        await client.from("profiles").update({ account_status: "active", deactivated_at: null, updated_at: new Date().toISOString() }).eq("id", user.id);
-        const normalized = normalizeExternalError(banned.error);
-        throw fail(503, "ACCOUNT_DEACTIVATION_FAILED", normalized.message || "The authentication provider did not confirm deactivation; the database status was rolled back.");
-      }
-      return ok(res, { deactivated: true, accountId: user.id, message: "Account deactivated and future authentication blocked. Existing signed tokens may remain valid until expiry." });
-    }
-    if (pathname === "/api/account" && method === "DELETE") {
-      const user = await requireSupabaseUser(req);
-      const body = await readJson(req);
-      if (body.confirm !== "DELETE") throw fail(400, "CONFIRMATION_REQUIRED", "Send confirm: DELETE to permanently delete this account.");
-      const client = db();
-      const deleted = await client.auth.admin.deleteUser(user.id);
-      if (deleted.error) {
-        const normalized = normalizeExternalError(deleted.error);
-        throw fail(503, "ACCOUNT_DELETION_FAILED", normalized.message || "The authentication provider could not delete this account.");
-      }
-      return ok(res, { deleted: true, accountId: user.id, message: "The authentication account was deleted. Related application records follow the installed database foreign-key deletion rules." });
-    }
-
-    // Teams API — connected to the same authenticated server and service-role client.
-    if (await handleTeamsRoute({
-      pathname, method, req, res, url,
-      fail, ok, db, requireSupabaseUser, readJson, normalizeExternalError
-    })) return;
-
-    // Creator payout history/request and admin payout processing use the existing
-    // diamond withdrawal ledger; no parallel or fictitious `payouts` table.
-    if (await handlePayoutRoute({
-      pathname, method, req, res,
-      fail, ok, db, requireSupabaseUser, profileFor, readJson, normalizeExternalError
-    })) return;
-
     // Infrastructure & Health
     if (pathname === "/api/health" && method === "GET") {
       return ok(res, {
         status: "operational",
-        backendRelease: BACKEND_RELEASE,
         livekit: livekitHealth(),
         time: new Date().toISOString(),
       });
@@ -749,15 +733,47 @@ const server = http.createServer(async (req, res) => {
     // Public Configuration
     if (pathname === "/api/config/public" && method === "GET") {
       return ok(res, {
-        backendRelease: BACKEND_RELEASE,
         frontendUrl: FRONTEND_URL || null,
         livekitUrl: LIVEKIT_URL || null,
         paypalEnvironment: PAYPAL_ENV,
         features: {
           livekit: livekitHealth().configured,
-          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET && PAYPAL_ENV !== "invalid"),
+          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET),
         },
       });
+    }
+
+    // League standings are read from the active server-managed season only.
+    // Empty results are valid when no season has been activated; never invent rows.
+    if (pathname === "/api/leagues/standings" && method === "GET") {
+      const client = db();
+      const { data: season, error: seasonError } = await client
+        .from("league_seasons")
+        .select("id,name,status,starts_at,ends_at")
+        .eq("status", "active")
+        .maybeSingle();
+      if (seasonError) {
+        const normalized = normalizeExternalError(seasonError);
+        throw fail(500, "LEAGUE_SEASON_LOOKUP_FAILED", normalized.message, {
+          code: normalized.code,
+        });
+      }
+      if (!season) return ok(res, { activeSeason: null, standings: [] });
+
+      const { data, error } = await client
+        .from("league_standings")
+        .select("season_id,team_id,division_code,played,wins,draws,losses,goals_for,goals_against,points,form,position,promoted,relegated,teams(id,name,division_code)")
+        .eq("season_id", season.id)
+        .order("division_code", { ascending: true })
+        .order("position", { ascending: true, nullsFirst: false })
+        .order("points", { ascending: false });
+      if (error) {
+        const normalized = normalizeExternalError(error);
+        throw fail(500, "LEAGUE_STANDINGS_LOOKUP_FAILED", normalized.message, {
+          code: normalized.code,
+        });
+      }
+      return ok(res, { activeSeason: season, standings: data || [] });
     }
 
     // LiveKit Token Generation
@@ -769,23 +785,33 @@ const server = http.createServer(async (req, res) => {
       let canPublish = false;
       const roomId = body.roomId ? String(body.roomId).trim() : null;
 
+      let room;
       if (roomId) {
-        const room = await liveRoomById(client, roomId);
-        roomName = String(room.room_name).trim();
-        canPublish = String(room.host_id) === String(user.id);
+        room = await liveRoomById(client, roomId);
       } else if (body.roomName && String(body.roomName).trim()) {
-        roomName = String(body.roomName).trim();
-        const { data: room, error } = await client
+        roomName = validateLiveRoomName(body.roomName);
+        const { data, error } = await client
           .from("live_sessions")
           .select("id,host_id,room_name,status")
           .eq("room_name", roomName)
           .maybeSingle();
         if (error) throw error;
-        if (!room)
+        if (!data)
           throw fail(404, "LIVE_ROOM_NOT_FOUND", "LIVE room not found.");
-        canPublish = String(room.host_id) === String(user.id);
+        room = data;
       } else {
         throw fail(400, "INVALID_ROOM", "A valid LIVE room is required.");
+      }
+
+      if (room.status === "ended") {
+        throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
+      }
+      roomName = validateLiveRoomName(room.room_name);
+      canPublish = String(room.host_id) === String(user.id);
+
+      // A pending room is reserved for its host until publication is verified.
+      if (room.status !== "live" && !canPublish) {
+        throw fail(409, "LIVE_NOT_STARTED", "The host has not started this LIVE session yet.");
       }
 
       const token = await createLiveKitToken({
@@ -914,14 +940,18 @@ const server = http.createServer(async (req, res) => {
             updated_at: new Date().toISOString(),
           })
           .eq("id", room.id)
+          .in("status", ["pending", "live"])
           .select("*")
-          .single();
+          .maybeSingle();
         if (error) {
           const normalized = normalizeExternalError(error);
           throw fail(500, "LIVE_ROOM_START_FAILED", normalized.message, {
             code: normalized.code,
             details: normalized.details,
           });
+        }
+        if (!data) {
+          throw fail(409, "LIVE_STATE_CHANGED", "This LIVE session ended or changed state before it could start.");
         }
         return ok(res, data);
       }
@@ -973,9 +1003,6 @@ const server = http.createServer(async (req, res) => {
         throw fail(400, "INVALID_PACKAGE", "A valid coin package is required.");
       }
       const client = db();
-      if (!PAYPAL_RETURN_URL) {
-        throw fail(503, "PAYPAL_RETURN_URL_REQUIRED", "Set FRONTEND_URL on the backend to the deployed website origin. The return URL is sent by the server when it creates the PayPal order; it is not entered in the PayPal app credentials screen.");
-      }
       const pkg = await coinPackage(client, coins);
       const { data: existingPayment, error: existingError } = await client
         .from("payments")
@@ -991,26 +1018,19 @@ const server = http.createServer(async (req, res) => {
             "This idempotency key is already associated with another account."
           );
         }
-        const existingApproveUrl = Array.isArray(existingPayment.metadata?.links)
-          ? existingPayment.metadata.links.find((link) => ["approve", "payer-action"].includes(link.rel))?.href
+        const approveUrl = existingPayment.status === "pending"
+          ? paypalApprovalUrl(existingPayment.metadata)
           : null;
         return ok(res, {
           orderId: existingPayment.provider_order_id,
-          approveUrl: existingApproveUrl,
           status: existingPayment.status,
           coins: existingPayment.package_coins,
           amount: Number(existingPayment.amount),
+          approveUrl,
         });
       }
 
-      // The canonical coin_packages schema uses `price`, not `price_usd`.
-      // Keep the amount server-authoritative and reject malformed catalog rows
-      // before contacting PayPal (Number(undefined).toFixed() previously sent NaN).
-      const packagePrice = Number(pkg.price);
-      if (!Number.isFinite(packagePrice) || packagePrice <= 0 || !Number.isSafeInteger(Number(pkg.coins))) {
-        throw fail(503, "COIN_PACKAGE_CONFIG_INVALID", "The selected USD coin package has an invalid price or coin count. Review public.coin_packages before enabling checkout.");
-      }
-      const amountUsd = packagePrice.toFixed(2);
+      const amountUsd = Number(pkg.price).toFixed(2);
       const payload = {
         intent: "CAPTURE",
         purchase_units: [
@@ -1022,11 +1042,12 @@ const server = http.createServer(async (req, res) => {
         ],
         application_context: {
           user_action: "PAY_NOW",
-          // PayPal return/cancel URLs are supplied per Order API request.
-          // They are not a field in the PayPal Developer App credentials page.
-          // Keep query parameters before the hash for the browser's capture flow.
-          return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
-          cancel_url: `${PAYPAL_RETURN_URL}/?paypal=cancel#/wallet`,
+          ...(PAYPAL_RETURN_URL
+            ? {
+                return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
+                cancel_url: `${PAYPAL_RETURN_URL}/#/wallet?canceled=true`,
+              }
+            : {}),
         },
       };
       const order = await paypal("/v2/checkout/orders", {
@@ -1040,15 +1061,6 @@ const server = http.createServer(async (req, res) => {
           502,
           "PAYMENT_PROVIDER_ERROR",
           "PayPal did not return an order ID."
-        );
-      const approveUrl = Array.isArray(order.links)
-        ? order.links.find((link) => ["approve", "payer-action"].includes(link.rel))?.href
-        : null;
-      if (!approveUrl)
-        throw fail(
-          502,
-          "PAYMENT_PROVIDER_ERROR",
-          "PayPal did not return a checkout approval link."
         );
 
       const { error: insertError } = await client.from("payments").insert({
@@ -1067,12 +1079,20 @@ const server = http.createServer(async (req, res) => {
         const normalized = normalizeExternalError(insertError);
         throw fail(500, "PAYMENT_RECORD_FAILED", normalized.message);
       }
+      const approveUrl = paypalApprovalUrl(order);
+      if (!approveUrl) {
+        throw fail(
+          502,
+          "PAYMENT_PROVIDER_ERROR",
+          "PayPal did not return a valid approval URL. The order was recorded but was not sent to the browser."
+        );
+      }
       return ok(res, {
         orderId,
-        approveUrl,
         status: "pending",
         coins: pkg.coins,
         amount: Number(amountUsd),
+        approveUrl,
       });
     }
 
@@ -1094,6 +1114,7 @@ const server = http.createServer(async (req, res) => {
       if (payment.status === "completed" || payment.credited) {
         return ok(res, {
           captured: true,
+          credited: true,
           coins: payment.package_coins,
           status: "completed",
         });
@@ -1102,9 +1123,7 @@ const server = http.createServer(async (req, res) => {
         `/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`,
         {
           method: "POST",
-          headers: payment.idempotency_key
-            ? { "PayPal-Request-Id": payment.idempotency_key }
-            : {},
+          headers: { "PayPal-Request-Id": `capture-${orderId}` },
         }
       );
       const captureUnits =
@@ -1114,13 +1133,21 @@ const server = http.createServer(async (req, res) => {
       );
       const captureId = successfulCapture?.id || null;
       if (
+        captureResponse.id &&
+        String(captureResponse.id) !== orderId
+      ) {
+        throw fail(502, "PAYMENT_VERIFICATION_FAILED", "PayPal returned a different order ID.");
+      }
+      if (
         captureResponse.status === "COMPLETED" &&
         successfulCapture &&
         captureId
       ) {
+        assertCaptureMatchesPayment(payment, successfulCapture);
         await creditCapture(client, payment, captureId);
         return ok(res, {
           captured: true,
+          credited: true,
           coins: payment.package_coins,
           status: "completed",
         });
@@ -1145,12 +1172,7 @@ const server = http.createServer(async (req, res) => {
         .maybeSingle();
       if (error) {
         const normalized = normalizeExternalError(error);
-        const missingSchema = ["PGRST204", "PGRST205", "42P01", "42703"].includes(String(normalized.code || ""));
-        throw fail(missingSchema ? 503 : 500, "PAYPAL_INFO_LOOKUP_FAILED",
-          missingSchema
-            ? `PayPal payout settings schema is not ready. Review database/diagnostics/league_schema_preflight.sql and migration 0019_league_operations_and_payouts.sql before changing the database. ${normalized.message || ""}`.trim()
-            : normalized.message,
-          { databaseCode: normalized.code || undefined, databaseMessage: normalized.message || undefined });
+        throw fail(500, "PAYPAL_INFO_LOOKUP_FAILED", normalized.message);
       }
       return ok(res, {
         paypalEmail: data?.paypal_email || null,
@@ -1188,12 +1210,7 @@ const server = http.createServer(async (req, res) => {
         .single();
       if (error) {
         const normalized = normalizeExternalError(error);
-        const missingSchema = ["PGRST204", "PGRST205", "42P01", "42703"].includes(String(normalized.code || ""));
-        throw fail(missingSchema ? 503 : 500, "PAYPAL_INFO_SAVE_FAILED",
-          missingSchema
-            ? `PayPal payout settings schema is not ready. Review database/diagnostics/league_schema_preflight.sql and migration 0019_league_operations_and_payouts.sql before changing the database. ${normalized.message || ""}`.trim()
-            : normalized.message,
-          { databaseCode: normalized.code || undefined, databaseMessage: normalized.message || undefined });
+        throw fail(500, "PAYPAL_INFO_SAVE_FAILED", normalized.message);
       }
       return ok(res, {
         saved: true,
@@ -1223,9 +1240,7 @@ const server = http.createServer(async (req, res) => {
       if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
         const captureId = String(event.resource?.id || "").trim();
         const orderId = String(
-          event.resource?.supplementary_data?.related_ids?.order_id ||
-            event.resource?.custom_id ||
-            ""
+          event.resource?.supplementary_data?.related_ids?.order_id || ""
         ).trim();
         if (!captureId || !orderId) {
           throw fail(
@@ -1236,7 +1251,10 @@ const server = http.createServer(async (req, res) => {
         }
         const client = db();
         const payment = await paymentByOrder(client, orderId);
-        if (!payment.credited) await creditCapture(client, payment, captureId);
+        if (!payment.credited) {
+          assertCaptureMatchesPayment(payment, event.resource);
+          await creditCapture(client, payment, captureId);
+        }
       }
       return ok(res, { received: true, eventType: event.event_type || null });
     }
@@ -1317,32 +1335,6 @@ const server = http.createServer(async (req, res) => {
       return ok(res, { gifts });
     }
 
-    // Public, server-read coin package catalogue. Only active USD packages are
-    // offered because the current checkout creates USD-denominated PayPal orders.
-    if (pathname === "/api/wallet/packages" && method === "GET") {
-      const client = db();
-      const { data, error } = await client
-        .from("coin_packages")
-        .select("id,coins,price,currency,sort")
-        .eq("active", true)
-        .eq("currency", "USD")
-        .order("sort", { ascending: true })
-        .order("coins", { ascending: true });
-      if (error) {
-        const normalized = normalizeExternalError(error);
-        throw fail(503, "COIN_PACKAGE_LOOKUP_FAILED", normalized.message, {
-          databaseCode: normalized.code || undefined,
-        });
-      }
-      const packages = (data || []).map((pkg) => ({
-        id: pkg.id,
-        coins: Number(pkg.coins),
-        price: Number(pkg.price),
-        currency: "USD",
-      })).filter((pkg) => Number.isSafeInteger(pkg.coins) && pkg.coins > 0 && Number.isFinite(pkg.price) && pkg.price > 0);
-      return ok(res, { packages });
-    }
-
     // Wallet transactions and gifts — server-authoritative only
     if (pathname === "/api/wallet/transactions" && method === "GET") {
       const user = await requireSupabaseUser(req);
@@ -1412,6 +1404,33 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // The active database catalog is the source of truth for checkout prices.
+    if (pathname === "/api/wallet/packages" && method === "GET") {
+      await requireSupabaseUser(req);
+      const client = db();
+      const { data, error } = await client
+        .from("coin_packages")
+        .select("id,coins,price,currency,sort")
+        .eq("active", true)
+        .eq("currency", "USD")
+        .order("sort", { ascending: true });
+      if (error) {
+        const normalized = normalizeExternalError(error);
+        throw fail(500, "COIN_PACKAGES_LOOKUP_FAILED", normalized.message, {
+          code: normalized.code,
+        });
+      }
+      return ok(res, {
+        packages: (data || []).map((pkg) => ({
+          id: pkg.id,
+          coins: Number(pkg.coins),
+          price: Number(pkg.price),
+          currency: pkg.currency,
+        })).filter((pkg) => Number.isSafeInteger(pkg.coins) && pkg.coins > 0 &&
+          Number.isFinite(pkg.price) && pkg.price > 0),
+      });
+    }
+
     // Wallet Balance
     if (
       (pathname === "/api/wallet" || pathname === "/api/wallet/balance") &&
@@ -1426,18 +1445,6 @@ const server = http.createServer(async (req, res) => {
         lifetimeGiftsSent: wallet.lifetime_gifts_sent,
       });
     }
-
-    // Existing team division/season standings API. Kept separate from creator-created leagues.
-    if (await handleTeamLeagueRoute({
-      pathname, method, req, res, fail, ok, db, requireSupabaseUser, profileFor, readJson, normalizeExternalError
-    })) return;
-
-    // Creator-specific league API. Kept separate from the existing team division/standings system.
-    const handledCreatorLeague = await handleCreatorLeagueRoute({
-      req, res, pathname, method,
-      deps: { requireSupabaseUser, db, readJson, ok, send, paypal, paypalReturnUrl: PAYPAL_RETURN_URL, paypalEnv: PAYPAL_ENV }
-    });
-    if (handledCreatorLeague !== false) return;
 
     // 404 Fallback
     return send(res, 404, {

@@ -9,20 +9,8 @@ export async function handleTeamsRoute(ctx) {
   if (!root && !match) return false;
 
   const client = db();
-  const normalizeDbFailure = (error, code, message, tableName) => {
+  const normalizeDbFailure = (error, code, message) => {
     const n = normalizeExternalError(error);
-    if (["PGRST205", "PGRST204", "42P01", "42703"].includes(String(n.code))) {
-      const missingColumn = ["PGRST204", "42703"].includes(String(n.code));
-      const target = tableName ? `public.${tableName}` : "a database object required by Teams";
-      const diagnostic = "Review database/diagnostics/teams_backend_restart_preflight.sql and database/diagnostics/league_schema_preflight.sql. Check base dependencies in migrations 0001_identity_social.sql, 0004_live_social_systems.sql, 0006_seed_config.sql and 0008_server_authoritative_leagues.sql before applying Teams/league extensions 0015–0019. Apply only the migration that matches the verified missing object, then run NOTIFY pgrst, 'reload schema' if the SQL object exists but PostgREST still cannot see it.";
-      const messageText = missingColumn
-        ? `A required column on ${target} is missing. ${diagnostic} ${n.message || ""}`.trim()
-        : `${tableName ? `Teams data table ${target}` : "A table or view required by Teams"} is missing or not visible in the Supabase schema cache. ${diagnostic}`;
-      throw fail(503, code, messageText, { databaseCode: n.code, databaseMessage: n.message || undefined, details: n.details || undefined, hint: n.hint || undefined, table: tableName ? `public.${tableName}` : undefined });
-    }
-    if (["PGRST202", "42883"].includes(String(n.code)) && code === "TEAM_CREATE_FAILED") {
-      throw fail(503, code, "The team-creation database function is missing or not visible. Review database/migrations/0015_teams_backend_complete.sql and confirm its prerequisites before applying it.", { databaseCode: n.code, function: "public.create_team_for_user" });
-    }
     if (n.code === "23505") throw fail(409, "TEAM_CONFLICT", "That team name or membership already exists.");
     if (n.code === "P0001" || n.code === "23514") {
       const text = String(n.message || "").toLowerCase();
@@ -32,7 +20,7 @@ export async function handleTeamsRoute(ctx) {
       if (text.includes("already a member")) throw fail(409, "ALREADY_TEAM_MEMBER", "You are already a member of this team.");
       throw fail(400, code, n.message || message, { databaseCode: n.code });
     }
-    throw fail(500, code, message, { databaseCode: n.code, databaseMessage: n.message || undefined, details: n.details || undefined, hint: n.hint || undefined });
+    throw fail(500, code, message, { databaseCode: n.code, details: n.details });
   };
   const validName = value => {
     const name = String(value || "").trim().replace(/\s+/g, " ");
@@ -53,16 +41,11 @@ export async function handleTeamsRoute(ctx) {
     if (parsed.protocol !== "https:") throw fail(400, "INVALID_IMAGE_URL", `${label} must use HTTPS.`);
     return parsed.toString();
   };
-  const publicTeam = team => {
-    if (!team || typeof team !== "object") return team;
-    const { level: legacyLevel, ...visibleFields } = team;
-    return visibleFields;
-  };
   const readTeam = async id => {
     const { data, error } = await client.from("teams")
-      .select("id,name,description,parish,logo_url,badge_url,points,division_code,owner_id,max_members,recruiting,created_at,updated_at")
+      .select("id,name,description,parish,logo_url,badge_url,level,points,division_code,owner_id,max_members,recruiting,created_at,updated_at")
       .eq("id", id).maybeSingle();
-    if (error) normalizeDbFailure(error, "TEAM_LOOKUP_FAILED", "Could not load team.", "teams");
+    if (error) normalizeDbFailure(error, "TEAM_LOOKUP_FAILED", "Could not load team.");
     if (!data) throw fail(404, "TEAM_NOT_FOUND", "Team not found.");
     return data;
   };
@@ -71,18 +54,18 @@ export async function handleTeamsRoute(ctx) {
     const limitRaw = Number(url.searchParams.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 50) : 30;
     let query = client.from("teams")
-      .select("id,name,description,parish,logo_url,badge_url,points,division_code,owner_id,max_members,recruiting,created_at,updated_at")
+      .select("id,name,description,parish,logo_url,badge_url,level,points,division_code,owner_id,max_members,recruiting,created_at,updated_at")
       .order("points", { ascending: false }).order("created_at", { ascending: false }).limit(limit);
     const search = String(url.searchParams.get("q") || "").trim().slice(0, 48);
     if (search) query = query.ilike("name", `%${search.replace(/[%_,]/g, " ")}%`);
     const { data, error } = await query;
-    if (error) normalizeDbFailure(error, "TEAMS_LOOKUP_FAILED", "Could not load teams.", "teams");
+    if (error) normalizeDbFailure(error, "TEAMS_LOOKUP_FAILED", "Could not load teams.");
     const teams = data || [];
     const ids = teams.map(t => t.id);
     const counts = Object.create(null);
     if (ids.length) {
       const { data: members, error: membersError } = await client.from("team_members").select("team_id").in("team_id", ids);
-      if (membersError) normalizeDbFailure(membersError, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not load team member counts.", "team_members");
+      if (membersError) normalizeDbFailure(membersError, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not load team member counts.");
       for (const m of members || []) counts[m.team_id] = (counts[m.team_id] || 0) + 1;
     }
     return ok(res, { teams: teams.map(t => ({ ...t, member_count: counts[t.id] || 0 })) });
@@ -105,7 +88,7 @@ export async function handleTeamsRoute(ctx) {
     if (error) normalizeDbFailure(error, "TEAM_CREATE_FAILED", "Could not create team.");
     const team = Array.isArray(data) ? data[0] : data;
     if (!team?.id) throw fail(500, "TEAM_CREATE_FAILED", "The database did not return the created team.");
-    return ok(res, { team: publicTeam(team) });
+    return ok(res, { team });
   }
 
   const id = match?.[1];
@@ -115,13 +98,13 @@ export async function handleTeamsRoute(ctx) {
     const team = await readTeam(id);
     const { data: memberRows, error: memberError } = await client.from("team_members")
       .select("team_id,user_id,role,joined_at").eq("team_id", id).order("joined_at", { ascending: true });
-    if (memberError) normalizeDbFailure(memberError, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not load team members.", "team_members");
+    if (memberError) normalizeDbFailure(memberError, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not load team members.");
     const rows = memberRows || [];
     const userIds = [...new Set(rows.map(m => m.user_id).filter(Boolean))];
     let profiles = [];
     if (userIds.length) {
       const { data, error } = await client.from("profiles").select("id,username,display_name").in("id", userIds);
-      if (error) normalizeDbFailure(error, "TEAM_PROFILES_LOOKUP_FAILED", "Could not load team member profiles.", "profiles");
+      if (error) normalizeDbFailure(error, "TEAM_PROFILES_LOOKUP_FAILED", "Could not load team member profiles.");
       profiles = data || [];
     }
     const byId = new Map(profiles.map(p => [String(p.id), p]));
@@ -183,7 +166,7 @@ export async function handleTeamsRoute(ctx) {
       const max = Number(body.max_members);
       if (!Number.isInteger(max) || max < 2 || max > 500) throw fail(400, "INVALID_MEMBER_LIMIT", "Maximum members must be a whole number from 2 to 500.");
       const { count, error } = await client.from("team_members").select("user_id", { count: "exact", head: true }).eq("team_id", id);
-      if (error) normalizeDbFailure(error, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not validate member limit.", "team_members");
+      if (error) normalizeDbFailure(error, "TEAM_MEMBERS_LOOKUP_FAILED", "Could not validate member limit.");
       if (max < (count || 0)) throw fail(409, "MEMBER_LIMIT_BELOW_CURRENT", "Maximum members cannot be lower than the current membership count.");
       updates.max_members = max;
     }
@@ -205,7 +188,7 @@ export async function handleTeamsRoute(ctx) {
       normalizeDbFailure(error, "TEAM_UPDATE_FAILED", "Could not update team.");
     }
     const updatedTeam = Array.isArray(data) ? data[0] : data;
-    return ok(res, { team: publicTeam(updatedTeam) });
+    return ok(res, { team: updatedTeam });
   }
 
   return false;
