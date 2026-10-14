@@ -1298,8 +1298,7 @@ const server = http.createServer(async (req, res) => {
         .from("gifts")
         .select("id,name,coin_price,diamond_value,active")
         .eq("active", true)
-        .order("coin_price", { ascending: true })
-        .order("name", { ascending: true });
+        .order("coin_price", { ascending: true });
       if (error) {
         const normalized = normalizeExternalError(error);
         throw fail(500, "GIFTS_LOOKUP_FAILED", normalized.message, {
