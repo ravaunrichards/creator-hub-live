@@ -2,6 +2,7 @@ import "dotenv/config";
 import http from "node:http";
 import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { RoomServiceClient } from "livekit-server-sdk";
 import {
   createLiveKitToken,
   validateRoomName,
@@ -372,6 +373,79 @@ async function liveRoomById(client, id) {
   return data;
 }
 
+/*
+ * Reconcile stale database LIVE rows against LiveKit before advertising them.
+ * A room is only ended when LiveKit confirms there are no participants and the
+ * database says it has been live for at least five minutes. LiveKit/API errors
+ * are treated as unknown, never as proof that a room is empty.
+ */
+async function closeOrphanedLiveRooms(client) {
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const httpBase = LIVEKIT_URL
+    .replace(/^wss:/i, "https:")
+    .replace(/^ws:/i, "http:");
+
+  if (!apiKey || !apiSecret || !httpBase) return;
+
+  const { data: rows, error } = await client
+    .from("live_sessions")
+    .select("id,room_name,started_at,created_at,updated_at")
+    .eq("status", "live")
+    .is("ended_at", null);
+
+  if (error) {
+    const normalized = normalizeExternalError(error);
+    throw fail(500, "LIVE_ROOMS_RECONCILE_FAILED", normalized.message, {
+      code: normalized.code,
+      details: normalized.details,
+    });
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) return;
+
+  const service = new RoomServiceClient(httpBase, apiKey, apiSecret);
+  const now = Date.now();
+  const minimumAgeMs = 5 * 60 * 1000;
+
+  for (const room of rows) {
+    if (!room.room_name) continue;
+    const timestamp = room.started_at || room.updated_at || room.created_at;
+    const startedMs = timestamp ? Date.parse(timestamp) : NaN;
+    if (!Number.isFinite(startedMs) || now - startedMs < minimumAgeMs) continue;
+
+    try {
+      const participants = await service.listParticipants(String(room.room_name));
+      if (Array.isArray(participants) && participants.length > 0) continue;
+
+      const endedAt = new Date().toISOString();
+      const { error: updateError } = await client
+        .from("live_sessions")
+        .update({ status: "ended", ended_at: endedAt, updated_at: endedAt })
+        .eq("id", room.id)
+        .eq("status", "live")
+        .is("ended_at", null);
+
+      if (updateError) {
+        console.warn(
+          "[LIVE cleanup] Could not close orphaned room:",
+          room.id,
+          normalizeExternalError(updateError).message
+        );
+      } else {
+        console.info("[LIVE cleanup] Closed orphaned room:", room.id);
+      }
+    } catch (error) {
+      // A transient LiveKit error must not end a potentially active session.
+      console.warn(
+        "[LIVE cleanup] Could not verify room; leaving it unchanged:",
+        room.id,
+        error && error.message ? error.message : error
+      );
+    }
+  }
+}
+
 function validateLiveRoomName(roomName) {
   const value = String(roomName || "").trim();
   if (!validateRoomName(value))
@@ -715,6 +789,7 @@ const server = http.createServer(async (req, res) => {
     // LIVE Rooms - List
     if (pathname === "/api/live/rooms" && method === "GET") {
       const client = db();
+      await closeOrphanedLiveRooms(client);
       const limit = clampLimit(url.searchParams.get("limit"), 30, 100);
       const { data, error } = await client
         .from("live_sessions")
