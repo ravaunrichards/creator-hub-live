@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="320" viewBox="0 0 420 320" role="img" aria-label="Animated World Emperor">
+<defs><radialGradient id="b"><stop stop-color="#a5b4fc" stop-opacity=".76"/><stop offset="1" stop-color="#080c18" stop-opacity="0"/></radialGradient><linearGradient id="r"><stop stop-color="#312e81"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
+<circle cx="210" cy="145" r="130" fill="url(#b)"/>
+<circle cx="210" cy="145" r="67" fill="none" stroke="#a5b4fc" stroke-width="3" stroke-dasharray="12 13"><animateTransform attributeName="transform" type="rotate" from="0 210 145" to="360 210 145" dur="2.7s" repeatCount="indefinite"/></circle>
+<circle cx="210" cy="145" r="92" fill="none" stroke="#ffffff" stroke-opacity=".8" stroke-width="2" stroke-dasharray="2 14"><animateTransform attributeName="transform" type="rotate" from="360 210 145" to="0 210 145" dur="5.2s" repeatCount="indefinite"/></circle>
+<g><animateTransform attributeName="transform" type="translate" values="0 4;0 -8;0 4" dur="1.4s" repeatCount="indefinite"/><text x="210" y="177" font-size="94" text-anchor="middle" font-family="'Segoe UI Emoji','Apple Color Emoji',sans-serif">🌍👑</text></g>
+<path d="M70 220 Q210 193 350 220" fill="none" stroke="url(#r)" stroke-width="2" stroke-opacity=".7"/>
+<text x="210" y="260" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-weight="850" font-size="18">World Emperor</text>
+<text x="210" y="284" text-anchor="middle" fill="#ffffff" font-family="system-ui,sans-serif" font-size="12" letter-spacing="2">500,000 COINS</text></svg>
