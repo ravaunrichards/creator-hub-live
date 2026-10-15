@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+android/.gradle/
+android/build/
+android/app/build/
+*.iml
+.idea/
+
+# Keep Android release signing keys out of source control.
+*.keystore
+*.jks
