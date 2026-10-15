@@ -25,6 +25,17 @@ for (const key of assetSets.art) {
 const room = fs.readFileSync(path.join(ROOT, 'frontend', 'src', 'pages-room.js'), 'utf8');
 assert(room.includes("el('button'") && room.includes("assets/gifts/art/") && room.includes("assets/gifts/animations/") && room.includes("assets/gifts/sounds/"), 'LIVE gift UI is not wired to accessible buttons and restored assets.');
 assert(room.includes("authenticatedApiRequest('/api/gifts'") && room.includes("authenticatedApiRequest('/api/wallet/gift'"), 'LIVE gifts are not sourced and sent through the authenticated backend APIs.');
+const core = fs.readFileSync(path.join(ROOT, 'frontend', 'src', 'core.js'), 'utf8');
+const html = fs.readFileSync(path.join(ROOT, 'frontend', 'index.html'), 'utf8');
+const sw = fs.readFileSync(path.join(ROOT, 'frontend', 'sw.js'), 'utf8');
+assert(core.includes("'Creator Hub Live'") && !core.includes("'Creator Hub Creator Network'"), 'Runtime brand fallback is not Creator Hub Live.');
+assert(html.includes('<title>Creator Hub Live'), 'Document title does not identify Creator Hub Live.');
+assert(sw.includes("chl-web-v3-3-0") && sw.includes("./assets/gifts/multi-guest.svg"), 'Service worker cache version or restored multi-guest precache is stale.');
+for (const rel of ['src/core.js', 'src/pages-settings.js', 'styles/app.css', 'sw.js', 'config.js', 'index.html']) {
+  const a = fs.readFileSync(path.join(ROOT, 'frontend', rel));
+  const b = fs.readFileSync(path.join(android, rel));
+  assert(a.equals(b), `Android web runtime differs from frontend: ${rel}`);
+}
 const env = fs.readFileSync(path.join(ROOT, 'backend', '.env.example'), 'utf8');
 const secretLines = env.split(/\r?\n/).filter((line) => /^(SUPABASE_SERVICE_ROLE_KEY|LIVEKIT_API_SECRET|PAYPAL_CLIENT_SECRET)=/.test(line));
 assert(secretLines.every((line) => line.split('=', 2)[1].startsWith('YOUR_')), 'Example environment file contains a non-placeholder secret.');
@@ -32,3 +43,5 @@ console.log('PASS — restored gift assets exist and match Android copies');
 console.log('PASS — WAV headers are valid');
 console.log('PASS — LIVE gifts use accessible buttons and backend-authoritative catalogue/transactions');
 console.log('PASS — environment template contains no live-looking private secrets');
+console.log('PASS — CHL runtime branding and service-worker cache are consistent');
+console.log('PASS — key Android web runtime files match frontend byte-for-byte');
