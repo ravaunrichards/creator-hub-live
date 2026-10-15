@@ -1,7 +1,7 @@
-# Creator Hub Creator Network — Final Validation Report
+# Creator Hub Live — Final Validation Report
 
 ## PROJECT
-Creator Hub Creator Network
+Creator Hub Live
 
 ## CONTINUATION
 YES — replacement/continuation of `creator-hub-live`

@@ -1,9 +1,22 @@
-# Release history
+# Creator Hub Live — Releases
 
-## 4.0.0 — Creator Hub Creator Network website source release
+## Supplied APKs
 
-Full website/backend/database source continuation for the existing `ravaunrichards/creator-hub-live` project, prepared for manual installation. Website branding/cache version aligned to 4.0.0; unrelated learning/academy, games and map/tool browser modules excluded; account/privacy/security settings expanded; username signup contract aligned to database trigger; account status/deactivation/delete service routes and forward-only migration 0024 added; creator battles are invitation/status-only; mission claims and verification require actual configuration/review; gift rankings use real recorded gift transactions; tests and installation/acceptance docs updated.
+`releases/creator-hub-live-release.apk` and `releases/creator-hub-live-release-alt.apk` are byte-for-byte identical.
 
-The ZIP does not deploy remotely. Live database migration behavior, provider credentials, checkout/capture/webhook, LIVE media, host/CORS state and physical-device rendering require the checks in `VALIDATION-4.0.0.md`.
+SHA-256:
+`b061a97bced2b20d5115fe5bf93b780f30e37d37d8d5bc59a944b9a706e29a0a`
 
-Prior implementation notes and APKs are intentionally not bundled in this website-only release. Existing migration files through 0023 are retained as project history; migration 0024 is a new forward-only account/community-controls migration and must be preflighted before application. Do not replay prior migrations blindly.
+Certificate SHA-256:
+`1D:DE:83:C9:77:CE:3A:D7:E7:EE:FF:DA:7C:AD:B0:B0:80:E4:33:CD:0F:11:14:89:A8:34:E1:91:41:EA:FE:46`
+
+## Repository keystore
+
+Certificate SHA-256:
+`B6:84:18:EC:AE:2F:31:EA:25:11:AF:55:C9:E6:01:5B:69:2A:1F:04:D0:E3:ED:88:8C:2C:D3:BB:E7:DB:03:4C`
+
+The mismatch means the existing APKs were not treated as the repaired release.
+
+## Required final artifact
+
+`releases/creator-hub-app-release.apk` must only be created after an actual `assembleRelease` build and signature/install verification. It was **not fabricated** in this snapshot because the Gradle wrapper/Android SDK were unavailable.
