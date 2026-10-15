@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network \u2014 pages: route handlers. Real Supabase reads/writes.
+/* Creator Hub Live \u2014 pages: route handlers. Real Supabase reads/writes.
    Honest empty states; never fabricated data. */
 (function(){
   'use strict';
@@ -24,16 +24,6 @@
     outlet.appendChild(hero);
     if (needSetup(outlet)) return;
 
-    var shortcuts = el('div',{class:'grid settings-grid',style:'margin:14px 0 18px'},[
-      el('a',{class:'card settings-card',href:'#/compose'},[el('strong',{text:'Create a post'}),el('span',{class:'u',text:'Share an update with your audience.'})]),
-      el('a',{class:'card settings-card',href:'#/battles'},[el('strong',{text:'Creator Battles'}),el('span',{class:'u',text:'Send and manage real invitations.'})]),
-      el('a',{class:'card settings-card',href:'#/gift-rankings'},[el('strong',{text:'Gift Rankings'}),el('span',{class:'u',text:'View daily, weekly and monthly gift records.'})]),
-      el('a',{class:'card settings-card',href:'#/teams'},[el('strong',{text:'Teams & Leagues'}),el('span',{class:'u',text:'Open teams, fixtures and standings.'})]),
-      el('a',{class:'card settings-card',href:'#/creator/analytics'},[el('strong',{text:'Creator statistics'}),el('span',{class:'u',text:'Review activity recorded for your account.'})]),
-      el('a',{class:'card settings-card',href:'#/hall-of-fame'},[el('strong',{text:'Hall of Fame'}),el('span',{class:'u',text:'Explore leaders from public platform records.'})])
-    ]);
-    outlet.appendChild(shortcuts);
-
     outlet.appendChild(el('div',{class:'row between',style:'margin:4px 0 12px'},[
       el('div',{class:'h1',style:'font-size:20px',text:'Live now'}),
       el('a',{href:'#/discover',style:'color:var(--mut);font-size:13px'},'See all \u2192')
@@ -44,19 +34,47 @@
   });
 
   function loadLive(grid, limit){
-    sb.from('live_sessions')
-      .select('id,title,viewer_count,status,started_at,host:profiles!live_sessions_host_id_fkey(username,display_name)')
-      .eq('status','live').order('viewer_count',{ascending:false}).limit(limit||20)
-      .then(function(r){
-        grid.innerHTML = '';
-        var rows = (r && r.data) || [];
-        if (!rows.length){
-          grid.appendChild(ui.empty('\uD83D\uDCF4','No one is live right now','Be the first to go LIVE \u2014 your stream will appear here in real time.', el('a',{href:'#/create',class:'btn primary',style:'margin-top:8px'},'Start streaming')));
-          grid.style.display='block'; return;
-        }
-        grid.style.display='';
-        rows.forEach(function(s){ grid.appendChild(ui.liveTile(s)); });
-      }).catch(function(e){ grid.innerHTML=''; grid.appendChild(el('div',{class:'note',text:'Could not load streams: '+e.message})); });
+    // A live tile is valid only while the session is explicitly live and has
+    // no end timestamp. Poll while this route is mounted so ended broadcasts
+    // disappear without requiring a manual refresh.
+    var stopped = false;
+    var timer = null;
+    function refresh(){
+      if (stopped || !grid.isConnected) {
+        stopped = true;
+        if (timer) window.clearInterval(timer);
+        return;
+      }
+      if (grid._chlLiveLoading) return;
+      grid._chlLiveLoading = true;
+      sb.from('live_sessions')
+        .select('id,title,viewer_count,status,started_at,ended_at,host:profiles!live_sessions_host_id_fkey(username,display_name)')
+        .eq('status','live').is('ended_at', null)
+        .order('viewer_count',{ascending:false}).limit(limit||20)
+        .then(function(r){
+          if (stopped || !grid.isConnected) return;
+          if (r && r.error) throw r.error;
+          grid.innerHTML = '';
+          var rows = ((r && r.data) || []).filter(function(s){
+            return s && s.status === 'live' && !s.ended_at;
+          });
+          if (!rows.length){
+            grid.appendChild(ui.empty('📴','No one is live right now','Be the first to go LIVE — your stream will appear here in real time.', el('a',{href:'#/create',class:'btn primary',style:'margin-top:8px'},'Start streaming')));
+            grid.style.display='block'; return;
+          }
+          grid.style.display='';
+          rows.forEach(function(s){ grid.appendChild(ui.liveTile(s)); });
+        }).catch(function(e){
+          if (!stopped || grid.isConnected) {
+            if (!grid.children.length || grid.querySelector('.spinner')) {
+              grid.innerHTML='';
+              grid.appendChild(el('div',{class:'note',text:'Could not load streams: '+(e && e.message || 'Please try again.')}));
+            }
+          }
+        }).finally(function(){ grid._chlLiveLoading = false; });
+    }
+    refresh();
+    timer = window.setInterval(refresh, 10000);
   }
 
   /* ============ DISCOVER ============ */
