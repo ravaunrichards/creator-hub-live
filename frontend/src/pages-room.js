@@ -1,420 +1,1132 @@
-/* Creator Hub Creator Network — creator center, teams, leagues, rankings, subscriptions, gifts. */
-(function(){
+/* Creator Hub Creator Network — real LiveKit room,
+   server-authoritative LIVE state, synchronized chat and database-priced gifts. */
+(function () {
   'use strict';
-  var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
 
-  function guard(o, title, sub){
-    o.appendChild(ui.pageHead(title, sub));
-    if (!CHL.configured){ o.appendChild(ui.setupNotice()); return true; }
-    return false;
-  }
-  function subnav(items){
-    var bar=el('div',{class:'row wrap',style:'gap:8px;margin-bottom:16px'});
-    items.forEach(function(it){
-      var on = CHL.current.path === it.h.replace('#','');
-      bar.appendChild(el('a',{href:it.h,class:'chip'+(on?' on':'')},it.label));
-    });
-    return bar;
-  }
+  var CHL = window.CHL;
+  var el = CHL.el;
+  var ui = CHL.ui;
 
-  var CREATOR_NAV = [
-    {h:'#/creator',label:'Overview'},{h:'#/creator/analytics',label:'Analytics'},
-    {h:'#/creator/live',label:'LIVE'},{h:'#/creator/live/history',label:'Session history'},
-    {h:'#/creator/live/schedule',label:'Schedule'},{h:'#/creator/earnings',label:'Earnings'},
-    {h:'#/creator/subscriptions',label:'Subscribers'},{h:'#/creator/gifts',label:'Gifts'}
-  ];
+  // Never show invented sample gifts. The database-backed API is the source of truth.
+  var GIFTS = [];
 
-  /* ---- creator overview + subpages ---- */
-  CHL.route('/creator', function(o){
-    if (guard(o,'Creator Center','Manage your content, LIVE, earnings and subscribers.')) return;
-    if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to open Creator Center.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
-    o.appendChild(subnav(CREATOR_NAV));
-    var stat=el('div',{class:'grid stat'}); o.appendChild(stat);
-    stat.appendChild(ui.statCard('\u2026','Followers')); stat.appendChild(ui.statCard('\u2026','Streams')); stat.appendChild(ui.statCard('\u2026','Diamonds'));
-    Promise.all([
-      sb.from('follows').select('*',{count:'exact',head:true}).eq('followee_id',CHL.user.id),
-      sb.from('live_sessions').select('*',{count:'exact',head:true}).eq('host_id',CHL.user.id),
-      sb.from('wallets').select('diamond_balance').eq('user_id',CHL.user.id).maybeSingle()
-    ]).then(function(res){ if(res.some(function(x){return x.error;}))throw (res.find(function(x){return x.error;}).error); stat.innerHTML='';
-      stat.appendChild(ui.statCard(CHL.fmt(res[0].count||0),'Followers'));
-      stat.appendChild(ui.statCard(CHL.fmt(res[1].count||0),'Streams'));
-      stat.appendChild(ui.statCard(CHL.fmt((res[2].data&&res[2].data.diamond_balance)||0),'Diamonds'));
-    }).catch(function(e){stat.innerHTML='';stat.appendChild(el('div',{class:'note',text:'Creator metrics could not be loaded: '+(e.message||'request failed')}));});
-    o.appendChild(el('div',{class:'row wrap',style:'gap:10px;margin-top:16px'},[
-      el('a',{href:'#/create',class:'btn primary'},'\u25B6 Go LIVE'),
-      el('a',{href:'#/creator/analytics',class:'btn'},'View analytics')
-    ]));
-  });
+  var roomHostId = null;
+  var currentRoomId = null;
+  var isHost = false;
+  var liveStarted = false;
+  var chatPollTimer = null;
+  var liveToolsPollTimer = null;
+  var chatRequestsInFlight = Object.create(null);
+  var giftRequestsInFlight = Object.create(null);
+  var guestRefreshInFlight = Object.create(null);
 
-  CHL.route('/creator/analytics', function(o){
-    if (guard(o,'Creator Analytics','Real metrics from your account — calculated from saved posts, follows, LIVE sessions and the verified gift ledger.')) return;
-    o.appendChild(subnav(CREATOR_NAV));
-    if (!CHL.user) { o.appendChild(ui.empty('🔐','Sign in required','Sign in to view your private creator analytics.',el('a',{href:'#/login',class:'btn primary'},'Sign in'))); return; }
-    var grid=el('div',{class:'grid stat'});o.appendChild(grid);grid.appendChild(ui.spinner());
-    sb.rpc('get_my_creator_metrics').then(function(r){
-      if(r.error)throw r.error;
-      var m=r.data||{};
-      grid.innerHTML='';
-      [['followers','Followers'],['following','Following'],['posts','Published posts'],['views','Post views'],['likes','Likes'],['comments','Comments'],['streams','LIVE sessions'],['live_now','Live now'],['viewer_events','Recorded LIVE viewers'],['gifts_received','Gifts received'],['diamonds_from_gifts','Diamonds from gifts'],['coins_spent_gifting','Coins spent gifting']].forEach(function(x){
-        grid.appendChild(ui.statCard(CHL.fmt(Number(m[x[0]])||0),x[1]));
-      });
-      o.appendChild(el('div',{class:'note',text:'Your Creator Journey, at a Glance. Track your creator activity, review your performance trends, and follow your progress over time. Your analytics reflect the data currently available for your account.'}));
-    }).catch(function(e){
-      grid.innerHTML='';
-      grid.appendChild(el('div',{class:'note',text:'Analytics unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 and access to get_my_creator_metrics().'}));
-    });
-  });
-
-  CHL.route('/creator/live', function(o){
-    if (guard(o,'LIVE Center','Start a broadcast and manage your current stream.')) return;
-    if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in before starting or managing a LIVE.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
-    o.appendChild(subnav(CREATOR_NAV));
-    o.appendChild(el('a',{href:'#/create',class:'btn primary'},'\u25B6 Start a new LIVE'));
-  });
-
-  CHL.route('/creator/live/history', function(o){
-    if (guard(o,'LIVE Session History','Real past sessions only. Replay controls appear when a verified recording provider is connected.')) return;
-    o.appendChild(subnav(CREATOR_NAV));
-    if (!CHL.user) { o.appendChild(ui.empty('🔐','Sign in required','Sign in to view your LIVE session history.',el('a',{href:'#/login',class:'btn primary'},'Sign in')); return; }
-    var list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(list);list.appendChild(ui.spinner());
-    sb.from('live_sessions').select('id,title,started_at,ended_at,status,viewer_count').eq('host_id',CHL.user.id).order('started_at',{ascending:false}).limit(50).then(function(r){
-      if(r.error)throw r.error;list.innerHTML='';var rows=r.data||[];
-      if(!rows.length){list.appendChild(ui.empty('📺','No LIVE sessions yet','Your saved broadcast sessions appear after you start a LIVE.'));return;}
-      rows.forEach(function(x){list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[
-        el('div',{class:'meta',style:'min-width:0'},[
-          el('div',{class:'t',text:x.title||'Untitled LIVE'}),
-          el('div',{class:'u',text:(x.started_at?new Date(x.started_at).toLocaleString():'Start time unavailable')+' · '+String(x.status||'unknown').toUpperCase()}),
-          el('div',{class:'u',text:CHL.fmt(Number(x.viewer_count)||0)+' recorded viewer count'+(x.ended_at?' · Ended '+new Date(x.ended_at).toLocaleString():'')})
-        ]),
-        el('a',{href:'#/live/'+x.id,class:'btn small'},'Open session')
-      ]));});
-    }).catch(function(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'LIVE history could not be loaded: '+(e.message||'request failed')}));});
-  });
-
-  CHL.route('/creator/live/schedule', function(o){
-    if (guard(o,'LIVE Schedule','Create and cancel upcoming LIVE plans. Scheduling notifies followers in the app; it never starts a broadcast automatically.')) return;
-    o.appendChild(subnav(CREATOR_NAV));
-    if (!CHL.user) { o.appendChild(ui.empty('🔐','Sign in required','Sign in to schedule a LIVE.',el('a',{href:'#/login',class:'btn primary'},'Sign in')); return; }
-    var card=el('div',{class:'card',style:'max-width:780px;min-width:0;margin-bottom:14px'});card.appendChild(el('h3',{class:'section-title',text:'Schedule a LIVE'}));var f=el('form',{class:'form-stack'});
-    f.appendChild(ui.field('LIVE title','title','What will you go LIVE about?'));f.appendChild(ui.field('Description','description','Optional details'));
-    var category=el('select',{class:'input',name:'category'},['Just Chatting','Music','Gaming','IRL','Dance','Sports','Education','Culture','Other'].map(function(x){return el('option',{value:x,text:x});}));f.appendChild(el('label',{class:'field'},[el('span',{text:'Category'}),category]));
-    var starts=el('input',{class:'input',name:'starts_at',type:'datetime-local',required:true});var minDate=new Date(Date.now()+60000);starts.min=new Date(minDate.getTime()-minDate.getTimezoneOffset()*60000).toISOString().slice(0,16);f.appendChild(el('label',{class:'field'},[el('span',{text:'Start time (device time zone)'}),starts]));
-    var audience=el('select',{class:'input',name:'audience'},[['public','Public'],['followers','Followers only'],['private','Private']].map(function(x){return el('option',{value:x[0],text:x[1]});}));f.appendChild(el('label',{class:'field'},[el('span',{text:'Audience'}),audience]));
-    var notify=el('input',{type:'checkbox',name:'notify_followers',checked:true});f.appendChild(el('label',{class:'row',style:'gap:8px;align-items:center'},[notify,el('span',{text:'Notify followers who allow LIVE notifications'})]));var feedback=el('div',{});f.appendChild(el('div',{class:'row wrap',style:'gap:8px'},[el('button',{class:'btn primary',type:'submit'},'Save schedule'),el('a',{href:'#/schedule',class:'btn'},'View public schedule')]));f.appendChild(feedback);card.appendChild(f);o.appendChild(card);
-    f.addEventListener('submit',async function(e){e.preventDefault();feedback.innerHTML='';var date=new Date(starts.value);if(!f.elements.title.value.trim()||!Number.isFinite(date.getTime())||date.getTime()<=Date.now()){feedback.appendChild(el('div',{class:'note',text:'Enter a title and choose a valid future date and time.'}));return;}var button=f.querySelector('button[type=submit]');button.disabled=true;try{var r=await sb.from('live_schedules').insert({creator_id:CHL.user.id,title:f.elements.title.value.trim(),description:f.elements.description.value.trim(),category:category.value,starts_at:date.toISOString(),audience:audience.value,notify_followers:notify.checked,status:'scheduled'}).select('id').single();if(r.error)throw r.error;feedback.appendChild(el('div',{class:'note',text:'LIVE schedule saved. It will not automatically start your camera or broadcast.'}));f.reset();notify.checked=true;loadSchedules();}catch(err){feedback.appendChild(el('div',{class:'note',text:'Could not save schedule: '+(err.message||'request failed')+'. Confirm migration 0023 is applied.'}));}finally{button.disabled=false;}});
-    var schedules=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Your upcoming schedules'}));o.appendChild(schedules);
-    function loadSchedules(){schedules.innerHTML='';schedules.appendChild(ui.spinner());sb.from('live_schedules').select('id,title,description,category,starts_at,audience,status,notify_followers').eq('creator_id',CHL.user.id).eq('status','scheduled').order('starts_at',{ascending:true}).limit(50).then(function(r){if(r.error)throw r.error;schedules.innerHTML='';var rows=r.data||[];if(!rows.length){schedules.appendChild(ui.empty('📅','Nothing scheduled','Your saved upcoming broadcasts appear here.'));return;}rows.forEach(function(x){var cancel=el('button',{class:'btn small',type:'button',text:'Cancel schedule',onclick:async function(e){var b=e.currentTarget;if(!window.confirm('Cancel this scheduled LIVE?'))return;b.disabled=true;try{var u=await sb.from('live_schedules').update({status:'cancelled'}).eq('id',x.id).eq('creator_id',CHL.user.id);if(u.error)throw u.error;CHL.toast('Schedule cancelled.');loadSchedules();}catch(err){CHL.toast(err.message||'Could not cancel schedule.');b.disabled=false;}}});schedules.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:x.title}),el('div',{class:'u',text:new Date(x.starts_at).toLocaleString()+' · '+x.category+' · '+x.audience}),x.description?el('div',{class:'u',text:x.description}):null]),cancel]));});}).catch(function(e){schedules.innerHTML='';schedules.appendChild(el('div',{class:'note',text:'Schedules unavailable: '+(e.message||'request failed')}));});}
-    loadSchedules();
-  });
-
-  CHL.route('/schedule', function(o){
-    if (guard(o,'LIVE Schedule','Upcoming public creator broadcasts published by real accounts.')) return;
-    o.appendChild(el('div',{class:'row wrap',style:'gap:8px;margin-bottom:12px'},[el('a',{href:'#/creator/live/schedule',class:'btn primary'},'＋ Schedule a LIVE'),el('a',{href:'#/discover',class:'btn'},'Live now')]));var list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(list);list.appendChild(ui.spinner());
-    sb.from('live_schedules').select('id,creator_id,title,description,category,starts_at,creator:profiles!live_schedules_creator_id_fkey(username,display_name)').eq('status','scheduled').eq('audience','public').gte('starts_at',new Date().toISOString()).order('starts_at',{ascending:true}).limit(60).then(function(r){if(r.error)throw r.error;list.innerHTML='';var rows=r.data||[];if(!rows.length){list.appendChild(ui.empty('📅','No public LIVE schedules yet','When creators publish upcoming broadcasts, they will appear here.'));return;}rows.forEach(function(x){var p=x.creator||{};list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:x.title}),el('div',{class:'u',text:(p.display_name||p.username||'Creator')+' · '+new Date(x.starts_at).toLocaleString()+' · '+x.category}),x.description?el('div',{class:'u',text:x.description}):null]),el('a',{href:'#/profile/'+encodeURIComponent(p.username||''),class:'btn small'},'Creator profile')]));});}).catch(function(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Public schedule unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));});
-  });
-
-  CHL.route('/creator/earnings', function(o){
-    if (guard(o,'Earnings','Diamond balance and creator payout requests from the server-authoritative ledger.')) return;
-    if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to view balances and payout requests.',el('a',{href:'#/login',class:'btn primary'},'Sign in'));return;}
-    o.appendChild(subnav(CREATOR_NAV));
-    var stat=el('div',{class:'grid stat'}); o.appendChild(stat);
-    stat.appendChild(ui.statCard('…','Diamond balance'));
-    stat.appendChild(ui.statCard('…','Pending requests'));
-    stat.appendChild(ui.statCard('…','Paid requests'));
-    o.appendChild(el('div',{class:'note',style:'margin:12px 0'},'PayPal is the initial payout destination. Diamond-to-currency conversion is not configured in this release, so an authorized administrator must confirm the actual fiat amount. Requests reserve/deduct diamonds when submitted. Rejected requests are refunded by the server ledger.'));
-    var requestCard=el('div',{class:'card',style:'max-width:700px;min-width:0;margin-bottom:14px'});
-    requestCard.appendChild(el('div',{class:'t',text:'Request a payout'}));
-    requestCard.appendChild(el('div',{class:'u',text:'Save a PayPal email in Settings → Payments first. Submitting a request does not send money automatically.'}));
-    var form=el('form',{style:'display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px'});
-    var amount=el('input',{class:'input',type:'number',name:'amount',min:'1',max:'1000000000',step:'1',inputmode:'numeric',required:true,placeholder:'Whole number of diamonds'});
-    var amountWrap=el('label',{class:'field',style:'flex:1 1 220px;min-width:0'},[el('span',{text:'Diamonds to request'}),amount]);
-    var submit=el('button',{class:'btn primary',type:'submit'},'Submit payout request');
-    var feedback=el('div',{style:'width:100%'});form.appendChild(amountWrap);form.appendChild(submit);form.appendChild(feedback);requestCard.appendChild(form);o.appendChild(requestCard);
-    var history=el('div',{class:'card',style:'min-width:0;overflow:auto'});history.appendChild(el('div',{class:'t',text:'Payout request history'}));o.appendChild(history);
-    var requestKey=newPayoutKey();
-    form.addEventListener('submit',async function(event){
-      event.preventDefault();feedback.innerHTML='';
-      var n=Number(amount.value);
-      if(!Number.isSafeInteger(n)||n<=0||n>1000000000){feedback.appendChild(el('div',{class:'note',text:'Enter a whole-number amount between 1 and 1,000,000,000 diamonds.'}));return;}
-      submit.disabled=true;submit.textContent='Submitting…';
-      try{
-        var result=await CHL.authenticatedApiRequest('/api/creator/payouts',{method:'POST',headers:{'Idempotency-Key':requestKey},body:{amount:n}});
-        if(!result||!result.request||!result.request.id)throw new Error('The backend did not confirm the request. Refresh payout history before retrying.');
-        feedback.appendChild(el('div',{class:'note',text:'Payout request recorded. Reference: '+result.request.reference+'. No PayPal transfer has been sent yet.'}));
-        amount.value='';requestKey=newPayoutKey();loadBalance();loadHistory();
-      }catch(error){feedback.appendChild(el('div',{class:'note',text:(error&&error.message)||'Could not submit payout request.'}));}
-      finally{submit.disabled=false;submit.textContent='Submit payout request';}
-    });
-    function newPayoutKey(){return 'creator-payout-'+(window.crypto&&typeof window.crypto.randomUUID==='function'?window.crypto.randomUUID():(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2)));}
-    function loadBalance(){
-      CHL.authenticatedApiRequest('/api/wallet').then(function(r){stat.children[0].querySelector('.stat-v').textContent=CHL.fmt(Number(r&&r.diamondBalance)||0);})
-        .catch(function(){stat.children[0].querySelector('.stat-v').textContent='Unavailable';});
+  CHL.route('/live', async function (outlet, r) {
+    if (!CHL.user) {
+      CHL.navigate('#/login');
+      return;
     }
-    function loadHistory(){
-      history.innerHTML='';history.appendChild(el('div',{class:'t',text:'Payout request history'}));history.appendChild(ui.spinner());
-      CHL.authenticatedApiRequest('/api/creator/payouts').then(function(r){
-        history.innerHTML='';history.appendChild(el('div',{class:'t',text:'Payout request history'}));
-        var rows=r&&r.requests||[];
-        stat.children[1].querySelector('.stat-v').textContent=CHL.fmt(rows.filter(function(x){return x.status==='pending'||x.status==='approved';}).length);
-        stat.children[2].querySelector('.stat-v').textContent=CHL.fmt(rows.filter(function(x){return x.status==='paid';}).length);
-        if(!rows.length){history.appendChild(ui.empty('💰','No payout requests yet','Your payout request history will appear here after you submit a request.'));return;}
-        rows.forEach(function(x){
-          var lines=[el('div',{class:'t',text:CHL.fmt(Number(x.amount)||0)+' diamonds · '+String(x.status||'unknown').toUpperCase()}),el('div',{class:'u',text:'Created: '+(x.created_at?new Date(x.created_at).toLocaleString():'—')}),el('div',{class:'u',text:'Reference: '+String(x.reference||'—')}),el('div',{class:'u',text:x.fiat_amount!=null?'Recorded payout: '+String(x.fiat_currency||'USD')+' '+Number(x.fiat_amount).toFixed(2):'Fiat amount has not been confirmed.'}];
-          if(x.admin_note)lines.push(el('div',{class:'u',text:'Administrator note: '+x.admin_note}));
-          if(x.paypal_transaction_id)lines.push(el('div',{class:'u',text:'PayPal transaction: '+x.paypal_transaction_id}));
-          history.appendChild(el('div',{class:'tile',style:'margin-top:10px;min-width:0;overflow-wrap:anywhere'},lines));
+
+    stopChatPolling();
+
+    var roomId = String((r && r.id) || '').trim();
+
+    if (!roomId) {
+      outlet.appendChild(
+        ui.empty('📹', 'Invalid LIVE room', 'A room ID is required.')
+      );
+      return;
+    }
+
+    currentRoomId = roomId;
+    roomHostId = null;
+    isHost = false;
+    liveStarted = false;
+
+    var roomTitleHeading = el('div', { class: 'h1', text: 'LIVE' });
+    var roomSubtitle = el('p', {
+      class: 'sub',
+      text: 'Secure LiveKit video session'
+    });
+    outlet.appendChild(
+      el('div', { class: 'row between', style: 'min-width:0;margin-bottom:10px' }, [
+        el('div', { style: 'min-width:0' }, [roomTitleHeading, roomSubtitle])
+      ])
+    );
+
+    var layout = el('div', {
+      class: 'grid live-room-layout',
+      style: 'gap:16px;align-items:start;min-width:0'
+    });
+
+    var video = el('div', {
+      class: 'card live-video-card',
+      style:
+        'background:#05050a;' +
+        'position:relative;' +
+        'display:flex;' +
+        'flex-direction:column;' +
+        'gap:10px;' +
+        'min-width:0;' +
+        'overflow:hidden;' +
+        'align-self:start'
+    });
+
+    var stage = el('div', {
+      class: 'live-stage',
+      style:
+        'width:100%;' +
+        'min-width:0;' +
+        'min-height:0;' +
+        'position:relative;' +
+        'overflow:hidden'
+    });
+
+    var status = el('div', {
+      class: 'live-status',
+      style:
+        'position:absolute;' +
+        'z-index:4;' +
+        'top:12px;' +
+        'left:12px;' +
+        'background:rgba(0,0,0,.7);' +
+        'padding:7px 10px;' +
+        'border-radius:8px;' +
+        'color:#fff',
+      text: 'CONNECTING'
+    });
+
+    stage.appendChild(status);
+    video.appendChild(stage);
+
+    var side = el('div', {
+      class: 'live-room-side',
+      style: 'min-width:0;align-self:start'
+    });
+
+    layout.appendChild(video);
+    layout.appendChild(side);
+    outlet.appendChild(layout);
+
+    /* LIVE controls. */
+    var controls = el('div', {
+      class: 'row wrap live-controls',
+      style: 'gap:8px;margin-top:10px;display:none'
+    });
+
+    var micButton = el('button', {
+      class: 'btn',
+      type: 'button',
+      onclick: function () {
+        CHL.toggleMicrophone().catch(function (e) {
+          CHL.toast(e.message || 'Microphone failed.');
         });
-      }).catch(function(error){history.innerHTML='';history.appendChild(el('div',{class:'t',text:'Payout request history'}));history.appendChild(el('div',{class:'note',text:(error&&error.message)||'Could not load payout history.'}));});
-    }
-    loadBalance();loadHistory();
-  });
+      }
+    }, 'Mic');
 
-  CHL.route('/creator/subscriptions', function(o){
-    if (guard(o,'Subscribers & Membership Tiers','Manage public tier information and review subscriptions stored in the database.')) return;
-    o.appendChild(subnav(CREATOR_NAV));if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to manage creator tiers.',el('a',{href:'#/login',class:'btn primary'},'Sign in'));return;}
-    var formCard=el('div',{class:'card',style:'max-width:780px;min-width:0;margin-bottom:14px'});formCard.appendChild(el('h3',{class:'section-title',text:'Create a membership tier'}));var f=el('form',{class:'form-stack'});f.appendChild(ui.field('Tier name','name','Supporter'));f.appendChild(ui.field('Monthly price (USD)','price','4.99','number'));f.elements.price.min='0.5';f.elements.price.max='10000';f.elements.price.step='0.01';f.appendChild(ui.field('Badge (optional)','badge','Supporter'));f.appendChild(ui.field('Emoji (optional)','emoji','⭐'));var perks=el('textarea',{class:'input',name:'perks',rows:'3',maxlength:'1000',placeholder:'One perk per line'});f.appendChild(el('label',{class:'field'},[el('span',{text:'Perks — one per line'}),perks]));var msg=el('div',{});var save=el('button',{class:'btn primary',type:'submit'},'Save tier');f.appendChild(save);f.appendChild(msg);formCard.appendChild(f);o.appendChild(formCard);
-    f.addEventListener('submit',async function(e){e.preventDefault();msg.innerHTML='';var name=f.elements.name.value.trim(),price=Number(f.elements.price.value);if(!name||!Number.isFinite(price)||price<0.5||price>10000){msg.appendChild(el('div',{class:'note',text:'Enter a tier name and valid monthly price from $0.50 to $10,000 USD.'}));return;}save.disabled=true;try{var r=await sb.from('subscription_tiers').insert({creator_id:CHL.user.id,name:name,price:price,currency:'USD',badge:f.elements.badge.value.trim()||null,emoji:f.elements.emoji.value.trim()||null,perks:f.elements.perks.value.split(/\r?\n/).map(function(x){return x.trim();}).filter(Boolean).slice(0,12),active:true}).select('id').single();if(r.error)throw r.error;msg.appendChild(el('div',{class:'note',text:'Tier saved. Recurring billing is not enabled until a real billing provider and verified webhook are configured; no payment has been taken.'}));f.reset();loadTiers();}catch(err){msg.appendChild(el('div',{class:'note',text:'Could not save tier: '+(err.message||'request failed')+'. Confirm migration 0023 and subscription_tiers policies.'}));}finally{save.disabled=false;}});
-    var tiers=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Your tiers and recorded subscriber counts'}));o.appendChild(tiers);
-    function loadTiers(){tiers.innerHTML='';tiers.appendChild(ui.spinner());sb.from('subscription_tiers').select('id,name,price,currency,badge,emoji,perks,active').eq('creator_id',CHL.user.id).order('price',{ascending:true}).then(async function(r){if(r.error)throw r.error;tiers.innerHTML='';var rows=r.data||[];if(!rows.length){tiers.appendChild(ui.empty('⭐','No tiers yet','Create a tier above. Active tiers are listed publicly.'));return;}for(var i=0;i<rows.length;i++){var x=rows[i],sr=await sb.from('subscriptions').select('id,status,subscriber_id,created_at').eq('tier_id',x.id).order('created_at',{ascending:false}).limit(100);if(sr.error)throw sr.error;var count=(sr.data||[]).filter(function(y){return y.status==='active';}).length;var toggle=el('button',{class:'btn small',type:'button',text:x.active?'Deactivate':'Activate',onclick:async function(tier,e){var b=e.currentTarget;b.disabled=true;try{var u=await sb.from('subscription_tiers').update({active:!tier.active}).eq('id',tier.id).eq('creator_id',CHL.user.id);if(u.error)throw u.error;loadTiers();}catch(err){CHL.toast(err.message||'Could not update tier.');b.disabled=false;}}.bind(null,x)});tiers.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:(x.emoji||'⭐')+' '+x.name+' · '+x.currency+' '+Number(x.price).toFixed(2)+'/month'}),el('div',{class:'u',text:(x.active?'Public offer':'Inactive offer')+' · '+count+' active recorded subscription(s)'}),el('div',{class:'u',text:(Array.isArray(x.perks)?x.perks:[]).join(' · ')||'No perks listed'})]),el('div',{class:'row wrap',style:'gap:6px'},[toggle])]));}}).catch(function(e){tiers.innerHTML='';tiers.appendChild(el('div',{class:'note',text:'Tier list unavailable: '+(e.message||'request failed')}));});}
-    loadTiers();
-  });
+    var cameraButton = el('button', {
+      class: 'btn',
+      type: 'button',
+      onclick: function () {
+        CHL.toggleCamera().catch(function (e) {
+          CHL.toast(e.message || 'Camera failed.');
+        });
+      }
+    }, 'Camera');
 
-  CHL.route('/creator/gifts', function(o){renderGiftHistory(o,'received');});
-  CHL.route('/gifts', function(o){renderGiftHistory(o,'both');});
+    var shareButton = el('button', {
+      class: 'btn',
+      type: 'button',
+      onclick: function () {
+        CHL.startScreenShare().catch(function (e) {
+          CHL.toast(e.message || 'Screen share failed.');
+        });
+      }
+    }, 'Share screen');
 
-  async function renderGiftHistory(o,mode){
-    if (guard(o,mode==='received'?'Gifts Received':'Gift History','Real gift transactions only. Wallet changes come from the server-authoritative gift ledger.')) return;
-    if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to view gift history.',el('a',{href:'#/login',class:'btn primary'},'Sign in'));return;}
-    var totals=el('div',{class:'grid stat'});o.appendChild(totals);var list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(list);list.appendChild(ui.spinner());
-    try{
-      var q=sb.from('gift_transactions').select('id,gift_id,sender_id,recipient_id,coin_cost,diamond_value,created_at');
-      q=mode==='received'?q.eq('recipient_id',CHL.user.id):q.or('sender_id.eq.'+CHL.user.id+',recipient_id.eq.'+CHL.user.id);
-      var r=await q.order('created_at',{ascending:false}).limit(100);
-      if(r.error)throw r.error;
-      var rows=r.data||[];
-      var coins=rows.reduce(function(a,x){return a+(x.sender_id===CHL.user.id?Number(x.coin_cost)||0:0);},0);
-      var diamonds=rows.reduce(function(a,x){return a+(x.recipient_id===CHL.user.id?Number(x.diamond_value)||0:0);},0);
-      totals.appendChild(ui.statCard(CHL.fmt(rows.length),'Gift transactions'));
-      totals.appendChild(ui.statCard(CHL.fmt(coins),'Coins sent'));
-      totals.appendChild(ui.statCard(CHL.fmt(diamonds),'Diamonds received'));
-      if(!rows.length){list.appendChild(ui.empty('🎁','No gifts recorded yet','Transactions appear here after successful server-confirmed gifts.'));return;}
-      var giftIds=[...new Set(rows.map(function(x){return x.gift_id;}))],userIds=[...new Set(rows.map(function(x){return x.sender_id===CHL.user.id?x.recipient_id:x.sender_id;}))];
-      var gs=await sb.from('gifts').select('id,name,graphic_url,coin_price,diamond_value').in('id',giftIds);if(gs.error)throw gs.error;
-      var ps=await sb.from('profiles').select('id,username,display_name').in('id',userIds);if(ps.error)throw ps.error;
-      var gm={},pm={};(gs.data||[]).forEach(function(x){gm[x.id]=x;});(ps.data||[]).forEach(function(x){pm[x.id]=x;});
-      rows.forEach(function(x){
-        var g=gm[x.gift_id]||{},otherId=x.sender_id===CHL.user.id?x.recipient_id:x.sender_id,p=pm[otherId]||{},label=x.sender_id===CHL.user.id?'Sent to ':'Received from ';
-        list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[
-          el('div',{style:'font-size:22px',text:'🎁'}),
-          el('div',{class:'meta',style:'min-width:0'},[
-            el('div',{class:'t',text:(g.name||'Gift')+' · '+label+(p.display_name||p.username||'Creator')}),
-            el('div',{class:'u',text:(x.sender_id===CHL.user.id?x.coin_cost+' coins spent':x.diamond_value+' diamonds earned')+' · '+new Date(x.created_at).toLocaleString()}),
-            el('div',{class:'u',text:'Reference '+x.id})
-          ])
-        ]));
+    var endButton = el('button', {
+      class: 'btn danger',
+      type: 'button',
+      onclick: function () {
+        endLive(roomId);
+      }
+    }, 'End LIVE');
+
+    controls.appendChild(micButton);
+    controls.appendChild(cameraButton);
+    controls.appendChild(shareButton);
+
+    // Only the server-authorized host can see/use End LIVE.
+    endButton.style.display = 'none';
+    controls.appendChild(endButton);
+    video.appendChild(controls);
+
+    /* Chat panel. Its messages scroll independently of the video/page. */
+    var chat = el('div', {
+      class: 'card live-chat-card',
+      style:
+        'min-width:0;' +
+        'display:flex;' +
+        'flex-direction:column;' +
+        'overflow:hidden'
+    });
+
+    var messages = el('div', {
+      class: 'live-chat-messages',
+      role: 'log',
+      'aria-live': 'polite',
+      'aria-relevant': 'additions text',
+      style:
+        'height:260px;' +
+        'max-height:40vh;' +
+        'min-height:100px;' +
+        'overflow-y:auto;' +
+        'overflow-x:hidden;' +
+        'overscroll-behavior:contain;' +
+        'overflow-anchor:auto;' +
+        'flex:0 1 auto;' +
+        'min-width:0;' +
+        'scrollbar-gutter:stable'
+    });
+
+    chat.appendChild(el('div', {
+      style: 'font-weight:800;margin-bottom:8px',
+      text: 'Chat'
+    }));
+    chat.appendChild(messages);
+
+    var chatInput = el('input', {
+      class: 'input',
+      type: 'text',
+      placeholder: 'Say something…',
+      autocomplete: 'off',
+      maxlength: 1000
+    });
+
+    var chatForm = el('form', {
+      class: 'row live-chat-form',
+      style:
+        'display:flex;' +
+        'gap:8px;' +
+        'align-items:center;' +
+        'margin-top:8px;' +
+        'min-width:0',
+      onsubmit: function (e) {
+        e.preventDefault();
+        sendChatMessage(roomId, chatInput, messages);
+      }
+    });
+
+    chatInput.style.flex = '1';
+    chatInput.style.minWidth = '0';
+
+    var sendChatButton = el('button', {
+      class: 'btn primary',
+      type: 'submit',
+      style: 'flex:0 0 auto',
+      text: 'Send'
+    });
+
+    chatForm.appendChild(chatInput);
+    chatForm.appendChild(sendChatButton);
+    chat.appendChild(chatForm);
+    side.appendChild(chat);
+
+    /* Gifts panel. Prices are loaded from the backend's active gift records. */
+    var giftCard = el('div', {
+      class: 'card live-gift-card',
+      style: 'margin-top:14px;min-width:0'
+    });
+
+    giftCard.appendChild(el('div', {
+      class: 'row between',
+      style: 'margin-bottom:10px'
+    }, [
+      el('div', {
+        style: 'font-weight:700',
+        text: 'Send a gift'
+      }),
+      el('a', {
+        href: '#/wallet',
+        class: 'pill'
+      }, '💎 Wallet')
+    ]));
+
+    var giftStatus = el('div', {
+      class: 'sub',
+      style: 'margin-bottom:8px',
+      text: 'Loading gift prices…'
+    });
+
+    var giftGrid = el('div', {
+      class: 'gift-grid',
+      style: 'min-width:0'
+    });
+
+    giftCard.appendChild(giftStatus);
+    giftCard.appendChild(giftGrid);
+    side.appendChild(giftCard);
+
+    renderGifts(giftGrid, giftStatus, roomId);
+    loadGiftCatalog(giftGrid, giftStatus, roomId);
+
+    /* Guest stage requests and host approvals use the backend guest workflow. */
+    var guestCard = el('div', { class: 'card live-guest-card', style: 'margin-top:14px;min-width:0' });
+    guestCard.appendChild(el('div', { style: 'font-weight:800;margin-bottom:8px', text: 'Guest stage' }));
+    var guestStatus = el('div', { class: 'sub', style: 'margin-bottom:8px', text: 'Loading guest stage…' });
+    var guestList = el('div', { class: 'live-guest-list', style: 'display:grid;gap:8px;min-width:0' });
+    var requestGuestButton = el('button', { class: 'btn primary block', type: 'button', onclick: function () { requestGuestStage(roomId, guestStatus, guestList); } }, 'Request to join stage');
+    var refreshGuestButton = el('button', { class: 'btn block', type: 'button', onclick: function () { loadGuests(roomId, guestStatus, guestList, requestGuestButton); } }, 'Refresh guests');
+    var inviteInput = el('input', { class: 'input', type: 'text', placeholder: 'Creator user ID to invite', autocomplete: 'off', style: 'display:none;margin-top:8px' });
+    var inviteButton = el('button', { class: 'btn', type: 'button', style: 'display:none;margin-top:8px', onclick: async function () {
+      var userId = String(inviteInput.value || '').trim();
+      if (!userId) { CHL.toast('Enter a creator user ID.'); return; }
+      inviteButton.disabled = true;
+      try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/invite', { method: 'POST', body: { userId: userId } }); inviteInput.value = ''; guestStatus.textContent = 'Guest invitation saved.'; await loadGuests(roomId, guestStatus, guestList, requestGuestButton); }
+      catch (e) { CHL.toast(e.message || 'Guest invitation failed.'); }
+      finally { inviteButton.disabled = false; }
+    } }, 'Invite creator');
+    guestCard.appendChild(requestGuestButton);
+    guestCard.appendChild(refreshGuestButton);
+    guestCard.appendChild(inviteInput);
+    guestCard.appendChild(inviteButton);
+    guestCard.appendChild(guestStatus);
+    guestCard.appendChild(guestList);
+    side.appendChild(guestCard);
+
+    // Expanded LIVE controls are wired to persisted backend APIs. Every list is
+    // server-backed; no placeholder polls, reactions, gifts or recordings are invented.
+    var liveTools = buildLiveTools(side, roomId);
+    liveTools.updateAccess();
+    liveTools.refresh();
+    if (liveToolsPollTimer) window.clearInterval(liveToolsPollTimer);
+    liveToolsPollTimer = window.setInterval(function () {
+      if (currentRoomId === roomId) liveTools.refresh();
+    }, 6000);
+
+    // Load chat now and refresh it while this room remains open.
+    loadChatMessages(roomId, messages);
+
+    chatPollTimer = window.setInterval(function () {
+      if (currentRoomId === roomId) {
+        loadChatMessages(roomId, messages);
+      }
+    }, 2000);
+
+    /* Load authoritative room details from the backend. */
+    try {
+      var room = await CHL.authenticatedApiRequest(
+        '/api/live/rooms/' + encodeURIComponent(roomId)
+      );
+
+      if (currentRoomId !== roomId) return;
+
+      if (!room || !room.id) {
+        throw new Error('LIVE room not found.');
+      }
+
+      roomHostId = room.host_id || null;
+      isHost = !!CHL.user && !!roomHostId &&
+        String(CHL.user.id) === String(roomHostId);
+      roomTitleHeading.textContent = String(room.title || 'LIVE');
+      roomSubtitle.textContent = [room.category, room.status === 'live' ? 'LIVE session' : (isHost ? 'Ready to go LIVE' : 'Waiting for host')]
+        .filter(function (part) { return String(part || '').trim(); }).join(' · ') || 'Creator Hub LIVE room';
+
+      if (room.status === 'live') {
+        status.textContent = 'LIVE';
+        status.style.background = 'rgba(180,0,40,.85)';
+      } else {
+        status.textContent = isHost
+          ? 'READY TO GO LIVE'
+          : 'WAITING FOR HOST';
+      }
+
+      /* Join through the authenticated backend. */
+      var joinResult = await CHL.authenticatedApiRequest(
+        '/api/live/rooms/' + encodeURIComponent(roomId) + '/join',
+        { method: 'POST' }
+      );
+
+      if (currentRoomId !== roomId) return;
+
+      /* Server publication permission is authoritative. */
+      var canPublishMedia = !!(joinResult && joinResult.canPublish);
+      isHost = !!(joinResult && joinResult.isHost);
+      controls.style.display = canPublishMedia ? '' : 'none';
+      endButton.style.display = isHost ? '' : 'none';
+      loadGuests(roomId, guestStatus, guestList, requestGuestButton, inviteInput, inviteButton);
+      liveTools.updateAccess();
+      liveTools.refresh();
+
+      /* Use the backend-generated LiveKit room name. */
+      var roomName = (joinResult && joinResult.roomName) || room.room_name;
+
+      if (!roomName) {
+        throw new Error(
+          'The backend did not provide an authoritative LiveKit room name.'
+        );
+      }
+
+      await CHL.connectLiveKit({
+        roomName: roomName,
+        roomId: roomId,
+        canPublish: canPublishMedia,
+
+        onConnected: async function (lkRoom) {
+          if (currentRoomId !== roomId) return;
+
+          status.textContent = isHost
+            ? 'CONNECTED — STARTING MEDIA'
+            : 'CONNECTED';
+          status.style.background = 'rgba(0,0,0,.75)';
+
+          // Only the authorized host publishes camera and microphone media.
+          if (canPublishMedia) {
+            try {
+              await CHL.publishCamera();
+              await CHL.publishMicrophone();
+            } catch (e) {
+              status.textContent = 'MEDIA PERMISSION FAILED';
+              CHL.toast(e.message || 'Camera/microphone permission denied.');
+              throw e;
+            }
+          }
+
+          if (isHost) {
+            // Only the host may transition the session to LIVE.
+            var startResult = await CHL.authenticatedApiRequest(
+              '/api/live/rooms/' + encodeURIComponent(roomId) + '/start',
+              { method: 'POST' }
+            );
+            if (!startResult || (startResult.status && startResult.status !== 'live')) {
+              throw new Error('The server did not confirm that LIVE started.');
+            }
+            liveStarted = true;
+            status.textContent = 'LIVE';
+            status.style.background = 'rgba(180,0,40,.85)';
+          }
+
+          // Attach tracks already published by the local participant.
+          if (lkRoom && lkRoom.localParticipant &&
+              lkRoom.localParticipant.trackPublications) {
+            lkRoom.localParticipant.trackPublications.forEach(function (publication) {
+              if (publication.track) {
+                CHL.attachLocalTrack(publication.track, stage);
+              }
+            });
+          }
+        },
+
+        onRemoteTrack: function (track) {
+          if (currentRoomId === roomId) {
+            CHL.attachRemoteTrack(track, stage);
+          }
+        },
+
+        onDisconnected: function () {
+          if (currentRoomId !== roomId) return;
+
+          status.textContent = 'DISCONNECTED';
+          status.style.background = 'rgba(0,0,0,.8)';
+          liveStarted = false;
+        },
+
+        onReconnecting: function () {
+          if (currentRoomId !== roomId) return;
+
+          status.textContent = 'RECONNECTING';
+          status.style.background = 'rgba(0,0,0,.8)';
+        },
+
+        onReconnected: function () {
+          if (currentRoomId !== roomId) return;
+
+          status.textContent = isHost && liveStarted
+            ? 'RECONNECTED'
+            : 'CONNECTED';
+        },
+
+        onParticipantConnected: CHL.handleParticipantConnected,
+        onParticipantDisconnected: CHL.handleParticipantDisconnected
       });
-    }catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Gift history unavailable: '+(e.message||'request failed')+'. Check migration 0020 and gift row security.'}));}
+    } catch (e) {
+      if (currentRoomId !== roomId) return;
+
+      status.textContent = (e && e.code) || 'CONNECTION FAILED';
+      status.style.background = 'rgba(0,0,0,.8)';
+      CHL.toast(e.message || 'LiveKit connection failed.');
+    }
+  });
+
+  function buildLiveTools(side, roomId) {
+    var base = '/api/live/rooms/' + encodeURIComponent(roomId);
+    function card(title) {
+      var node = el('div', { class: 'card live-tool-card', style: 'margin-top:14px;min-width:0;overflow:hidden' });
+      node.appendChild(el('div', { style: 'font-weight:800;margin-bottom:10px', text: title }));
+      side.appendChild(node);
+      return node;
+    }
+    function label(parent, text) { parent.appendChild(el('div', { class: 'sub', style: 'margin:6px 0', text: text })); }
+    function button(text, fn, className) { return el('button', { class: className || 'btn', type: 'button', onclick: fn }, text); }
+    async function api(path, options) { return CHL.authenticatedApiRequest(base + path, options || { method: 'GET' }); }
+    async function safeAction(fn, statusNode, successText) {
+      try { var r = await fn(); if (statusNode) statusNode.textContent = successText || 'Saved.'; return r; }
+      catch (e) { if (statusNode) statusNode.textContent = e.message || 'Request failed.'; else CHL.toast(e.message || 'Request failed.'); return null; }
+    }
+
+    // Reactions: API throttles per account and returns only persisted recent events.
+    var reactionCard = card('Live reactions');
+    var reactionButtons = el('div', { class: 'row wrap', style: 'gap:6px' });
+    ['❤️','👏','🔥','🎉','😂','🇯🇲'].forEach(function (reaction) {
+      reactionButtons.appendChild(button(reaction, function () {
+        safeAction(function () { return api('/reactions', { method: 'POST', body: { reaction: reaction } }); }, reactionStatus, 'Reaction sent.');
+      }, 'btn'));
+    });
+    reactionCard.appendChild(reactionButtons);
+    var reactionStatus = el('div', { class: 'sub', style: 'margin-top:8px', text: 'Reactions appear after the server saves them.' });
+    var reactionList = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px' });
+    reactionCard.appendChild(reactionStatus); reactionCard.appendChild(reactionList);
+    async function loadReactions() {
+      var data = await api('/reactions'); if (currentRoomId !== roomId) return;
+      reactionList.textContent = '';
+      (data.reactions || []).slice(-18).forEach(function (row) {
+        reactionList.appendChild(el('span', { class: 'pill', text: (row.reaction || '') + ' ' + ((row.profile && (row.profile.displayName || row.profile.username)) || 'Member') }));
+      });
+      if (!(data.reactions || []).length) label(reactionList, 'No reactions yet.');
+    }
+
+    // Polls: host creates/ends; any authorized viewer can vote once (and update their vote).
+    var pollCard = card('Polls & audience votes');
+    var pollQuestion = el('input', { class: 'input', type: 'text', maxlength: '220', placeholder: 'Ask your audience a question', style: 'width:100%;margin-bottom:6px' });
+    var pollOptions = el('input', { class: 'input', type: 'text', maxlength: '400', placeholder: 'Options separated by commas (e.g. Music, Games)', style: 'width:100%;margin-bottom:6px' });
+    var createPollButton = button('Create poll', async function () {
+      var options = String(pollOptions.value || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 6);
+      var result = await safeAction(function () { return api('/polls', { method: 'POST', body: { question: pollQuestion.value, options: options, kind: 'poll' } }); }, pollStatus, 'Poll created.');
+      if (result) { pollQuestion.value = ''; pollOptions.value = ''; await loadPolls(); }
+    }, 'btn primary');
+    var createQaPromptButton = button('Post Q&A prompt', async function () {
+      var result = await safeAction(function () { return api('/polls', { method: 'POST', body: { question: pollQuestion.value, kind: 'qa' } }); }, pollStatus, 'Q&A prompt created.');
+      if (result) { pollQuestion.value = ''; await loadPolls(); }
+    }, 'btn');
+    pollCard.appendChild(pollQuestion); pollCard.appendChild(pollOptions);
+    var pollHostActions = el('div', { class: 'row wrap', style: 'gap:6px' });
+    pollHostActions.appendChild(createPollButton); pollHostActions.appendChild(createQaPromptButton); pollCard.appendChild(pollHostActions);
+    var pollStatus = el('div', { class: 'sub', style: 'margin-top:8px', text: 'Loading polls…' });
+    var pollList = el('div', { style: 'display:grid;gap:10px;margin-top:8px' }); pollCard.appendChild(pollStatus); pollCard.appendChild(pollList);
+    async function loadPolls() {
+      var data = await api('/polls'); if (currentRoomId !== roomId) return;
+      pollList.textContent = '';
+      (data.polls || []).forEach(function (poll) {
+        var item = el('div', { class: 'live-tool-subcard', style: 'padding:10px;border:1px solid var(--border,#333);border-radius:10px;min-width:0' });
+        item.appendChild(el('div', { style: 'font-weight:700;overflow-wrap:anywhere', text: poll.question }));
+        item.appendChild(el('div', { class: 'sub', text: (poll.kind === 'qa' ? 'Q&A prompt' : 'Poll') + ' · ' + (poll.status || 'active') + ' · ' + (poll.totalVotes || 0) + ' votes' }));
+        if (poll.kind !== 'qa') (poll.options || []).forEach(function (option, index) {
+          var count = (poll.voteCounts || [])[index] || 0;
+          item.appendChild(button(String(option) + ' (' + count + ')' + (poll.myVote === index ? ' ✓' : ''), async function () {
+            await safeAction(function () { return api('/polls/' + encodeURIComponent(poll.id) + '/vote', { method: 'POST', body: { optionIndex: index } }); }, pollStatus, 'Vote saved.'); await loadPolls();
+          }, 'btn block'));
+        });
+        if (isHost && poll.status === 'active') item.appendChild(button('Close poll', async function () {
+          await safeAction(function () { return api('/polls/' + encodeURIComponent(poll.id) + '/close', { method: 'POST', body: {} }); }, pollStatus, 'Poll closed.'); await loadPolls();
+        }));
+        pollList.appendChild(item);
+      });
+      if (!(data.polls || []).length) pollStatus.textContent = 'No polls have been created for this LIVE yet.';
+      else pollStatus.textContent = 'Results come from saved server votes.';
+    }
+
+    // Questions: every audience member can submit; host/moderator actions are server-authorized.
+    var questionCard = card('Audience questions & Q&A');
+    var questionInput = el('textarea', { class: 'input', rows: '2', maxlength: '500', placeholder: 'Ask the host a question', style: 'width:100%;resize:vertical' });
+    var questionStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'Questions are saved to this LIVE.' });
+    questionCard.appendChild(questionInput);
+    questionCard.appendChild(button('Submit question', async function () {
+      var result = await safeAction(function () { return api('/questions', { method: 'POST', body: { body: questionInput.value } }); }, questionStatus, 'Question submitted.');
+      if (result) { questionInput.value = ''; await loadQuestions(); }
+    }, 'btn primary block'));
+    questionCard.appendChild(questionStatus);
+    var questionList = el('div', { style: 'display:grid;gap:8px;margin-top:8px' }); questionCard.appendChild(questionList);
+    async function loadQuestions() {
+      var data = await api('/questions'); if (currentRoomId !== roomId) return;
+      questionList.textContent = '';
+      (data.questions || []).forEach(function (q) {
+        var item = el('div', { class: 'live-tool-subcard', style: 'padding:9px;border:1px solid var(--border,#333);border-radius:9px;min-width:0' });
+        item.appendChild(el('div', { style: 'overflow-wrap:anywhere', text: (q.pinned ? '📌 ' : '') + q.body }));
+        item.appendChild(el('div', { class: 'sub', text: ((q.profile && (q.profile.displayName || q.profile.username)) || 'Member') + ' · ' + (q.status || 'open') }));
+        if (isHost && q.status !== 'answered') item.appendChild(button(q.pinned ? 'Unpin' : 'Pin', async function () {
+          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id) + '/pin', { method: 'POST', body: { pinned: !q.pinned } }); }, questionStatus); await loadQuestions();
+        }));
+        if (isHost && q.status !== 'answered') item.appendChild(button('Answered', async function () {
+          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id) + '/answer', { method: 'POST', body: {} }); }, questionStatus, 'Question marked answered.'); await loadQuestions();
+        }));
+        if (isHost) item.appendChild(button('Delete', async function () {
+          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id), { method: 'DELETE' }); }, questionStatus, 'Question removed.'); await loadQuestions();
+        }));
+        questionList.appendChild(item);
+      });
+      if (!(data.questions || []).length) label(questionList, 'No questions yet.');
+    }
+
+    // Gift activity and backend-derived analytics.
+    var giftEventsCard = card('Gift activity');
+    var giftEventsStatus = el('div', { class: 'sub', text: 'Recent successful gifts appear here.' });
+    var giftEventsList = el('div', { style: 'display:grid;gap:6px;margin-top:8px' });
+    giftEventsCard.appendChild(giftEventsStatus); giftEventsCard.appendChild(giftEventsList);
+    async function loadGiftEvents() {
+      var data = await api('/gift-events'); if (currentRoomId !== roomId) return;
+      giftEventsList.textContent = '';
+      (data.events || []).slice(-12).reverse().forEach(function (g) {
+        var row = el('div', { class: 'row', style: 'gap:8px;align-items:center;min-width:0' });
+        var img = g.animationUrl || g.assetKey ? el('img', { src: g.animationUrl || ('/assets/gifts/art/' + g.assetKey + '.svg'), alt: g.giftName || 'Gift', style: 'width:42px;height:42px;object-fit:contain;flex:0 0 auto' }) : null;
+        if (img) row.appendChild(img);
+        row.appendChild(el('span', { style: 'overflow-wrap:anywhere', text: (g.sender && (g.sender.displayName || g.sender.username) || 'Creator') + ' sent ' + (g.giftName || 'a gift') + (g.coinCost == null ? '' : ' · ' + g.coinCost + ' coins') }));
+        giftEventsList.appendChild(row);
+      });
+      if (!(data.events || []).length) giftEventsStatus.textContent = 'No completed gift transactions for this LIVE yet.';
+      else giftEventsStatus.textContent = 'Showing saved gift transactions only.';
+    }
+
+    // Host-only recording management. Media is stored privately and downloads
+    // use short-lived presigned URLs; no URL is shown before the backend confirms readiness.
+    var recordingCard = card('Recordings — host only');
+    var recordingStatus = el('div', { class: 'sub', text: 'Recording needs LiveKit Egress and private storage configured on the backend.' });
+    var recordingButtons = el('div', { class: 'row wrap', style: 'gap:6px;margin-top:8px' });
+    recordingButtons.appendChild(button('Start recording', async function () {
+      var r = await safeAction(function () { return api('/recordings/start', { method: 'POST', body: {} }); }, recordingStatus, 'Recording started.'); if (r) await loadRecordings();
+    }, 'btn primary'));
+    recordingButtons.appendChild(button('Refresh recordings', function () { loadRecordings(); }));
+    var recordingList = el('div', { style: 'display:grid;gap:8px;margin-top:8px' });
+    var analyticsStatus = el('div', { class: 'sub', style: 'margin-top:12px', text: 'Analytics are calculated from stored chat, guest and gift records.' });
+    recordingCard.appendChild(recordingStatus); recordingCard.appendChild(recordingButtons); recordingCard.appendChild(recordingList); recordingCard.appendChild(analyticsStatus);
+    async function loadRecordings() {
+      var data = await api('/recordings'); if (currentRoomId !== roomId) return;
+      recordingList.textContent = '';
+      (data.recordings || []).forEach(function (rec) {
+        var row = el('div', { style: 'padding:9px;border:1px solid var(--border,#333);border-radius:9px;overflow-wrap:anywhere' });
+        row.appendChild(el('div', { style: 'font-weight:700', text: 'Recording · ' + rec.status }));
+        row.appendChild(el('div', { class: 'sub', text: 'Started ' + (rec.started_at ? new Date(rec.started_at).toLocaleString() : 'pending') + (rec.file_size_bytes ? ' · ' + Math.round(rec.file_size_bytes / 1024 / 1024) + ' MB' : '') }));
+        if (['recording','processing'].indexOf(rec.status) >= 0) row.appendChild(button('Stop / finalize', async function () {
+          await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id) + '/stop', { method: 'POST', body: {} }); }, recordingStatus, 'Recording is finalizing.'); await loadRecordings();
+        }));
+        if (rec.status === 'ready') row.appendChild(button('Download / save', async function () {
+          var result = await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id) + '/download'); }, recordingStatus, 'Secure download link created.');
+          if (result && result.downloadUrl) {
+            var oldLink = row.querySelector('[data-recording-download]');
+            if (oldLink) oldLink.remove();
+            var a = el('a', { class: 'btn primary', href: result.downloadUrl, target: '_blank', rel: 'noopener noreferrer', download: 'creator-hub-live-' + rec.id + '.mp4', 'data-recording-download': 'true', style: 'display:inline-flex;margin-top:6px' }, 'Open download'); row.appendChild(a);
+          }
+        }, 'btn'));
+        if (rec.status !== 'deleted') row.appendChild(button('Delete recording', async function () {
+          if (!window.confirm('Permanently delete this recording file?')) return;
+          var result = await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id), { method: 'DELETE' }); }, recordingStatus, 'Recording deleted.'); if (result) await loadRecordings();
+        }, 'btn danger'));
+        recordingList.appendChild(row);
+      });
+      if (!(data.recordings || []).length) label(recordingList, 'No recordings saved for this LIVE yet.');
+    }
+    async function loadAnalytics() {
+      var data = await api('/analytics'); if (!data.analytics) return; var a = data.analytics;
+      analyticsStatus.textContent = 'Chat: ' + a.chatMessages + ' · Stage guests: ' + a.activeGuests + ' · Gifts: ' + a.giftsReceived + ' · Gift coins: ' + a.giftCoins + ' · Gift diamonds: ' + a.giftDiamonds + (a.durationSeconds == null ? '' : ' · Duration: ' + Math.floor(a.durationSeconds/60) + ' min');
+    }
+
+    // Room settings (only shown to the host) save to the API; DB RLS blocks direct client writes.
+    var settingsCard = card('LIVE room settings — host only');
+    var settingTitle = el('input', { class: 'input', type: 'text', maxlength: '200', placeholder: 'LIVE title', style: 'width:100%;margin-bottom:6px' });
+    var settingCategory = el('input', { class: 'input', type: 'text', maxlength: '60', placeholder: 'Category', style: 'width:100%;margin-bottom:6px' });
+    var settingAudience = el('select', { class: 'input', style: 'width:100%;margin-bottom:6px' });
+    [['public','Public'],['followers','Followers'],['private','Private']].forEach(function (x) { settingAudience.appendChild(el('option', { value: x[0], text: x[1] })); });
+    var settingCoverUrl = el('input', { class: 'input', type: 'url', maxlength: '500', placeholder: 'Optional HTTPS cover image URL', style: 'width:100%;margin-bottom:6px' });
+    var settingGuests = el('input', { type: 'checkbox', checked: true });
+    var settingGuestLabel = el('label', { style: 'display:flex;align-items:center;gap:8px;margin:6px 0' }, [settingGuests, el('span', { text: 'Allow guest stage requests' })]);
+    var settingsStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'Settings are loaded from the server.' });
+    settingsCard.appendChild(settingTitle); settingsCard.appendChild(settingCategory); settingsCard.appendChild(settingAudience); settingsCard.appendChild(settingCoverUrl); settingsCard.appendChild(settingGuestLabel);
+    settingsCard.appendChild(button('Save room settings', async function () {
+      await safeAction(function () { return api('/settings', { method: 'PATCH', body: { title: settingTitle.value, category: settingCategory.value, audience: settingAudience.value, allowGuests: settingGuests.checked, coverImageUrl: settingCoverUrl.value } }); }, settingsStatus, 'Room settings saved.');
+    }, 'btn primary block'));
+    settingsCard.appendChild(settingsStatus);
+    async function loadSettings() {
+      var data = await api('/settings'); var s = data.settings || {};
+      if (currentRoomId !== roomId) return;
+      if (!settingTitle.value) settingTitle.value = s.title || '';
+      if (!settingCategory.value) settingCategory.value = s.category || '';
+      settingAudience.value = s.audience || 'public'; settingGuests.checked = s.allowGuests !== false;
+      if (!settingCoverUrl.value) settingCoverUrl.value = s.coverImageUrl || '';
+    }
+
+    // Moderator management (host only); the server confirms account existence and authority.
+    var moderatorCard = card('Moderators — host only');
+    var moderatorInput = el('input', { class: 'input', type: 'text', maxlength: '100', placeholder: 'Creator user ID', style: 'width:100%;margin-bottom:6px' });
+    var moderatorStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'No moderator changes loaded yet.' });
+    var moderatorList = el('div', { style: 'display:grid;gap:6px;margin-top:8px' });
+    moderatorCard.appendChild(moderatorInput);
+    moderatorCard.appendChild(button('Add moderator', async function () {
+      var r = await safeAction(function () { return api('/moderators', { method: 'POST', body: { userId: moderatorInput.value } }); }, moderatorStatus, 'Moderator added.'); if (r) { moderatorInput.value=''; await loadModerators(); }
+    }, 'btn primary'));
+    moderatorCard.appendChild(moderatorStatus); moderatorCard.appendChild(moderatorList);
+    async function loadModerators() {
+      var data = await api('/moderators'); if (currentRoomId !== roomId) return; moderatorList.textContent = '';
+      (data.moderators || []).forEach(function (m) {
+        var row = el('div', { class: 'row wrap', style: 'gap:6px;align-items:center' });
+        row.appendChild(el('span', { style: 'flex:1;overflow-wrap:anywhere', text: (m.profile && (m.profile.displayName || m.profile.username)) || m.user_id }));
+        row.appendChild(button('Remove', async function () { var r=await safeAction(function () { return api('/moderators/' + encodeURIComponent(m.user_id), { method: 'DELETE' }); }, moderatorStatus, 'Moderator removed.'); if(r) await loadModerators(); }));
+        moderatorList.appendChild(row);
+      });
+      if (!(data.moderators || []).length) label(moderatorList, 'No moderators assigned.');
+    }
+
+    function updateAccess() {
+      [recordingCard, settingsCard, moderatorCard].forEach(function (node) { node.style.display = isHost ? '' : 'none'; });
+      [createPollButton, createQaPromptButton].forEach(function (node) { node.style.display = isHost ? '' : 'none'; });
+    }
+    async function refresh() {
+      if (!roomId || currentRoomId !== roomId) return;
+      var jobs = [loadReactions, loadPolls, loadQuestions, loadGiftEvents];
+      if (isHost) jobs.push(loadRecordings, loadAnalytics, loadSettings, loadModerators);
+      await Promise.allSettled(jobs.map(function (fn) { return fn(); }));
+    }
+    return { refresh: refresh, updateAccess: updateAccess };
   }
 
-  CHL.route('/subscriptions', async function(o){
-    if (guard(o,'Creator Memberships','Browse creator tiers and review recorded membership history. No recurring payment is simulated.')) return;
-    if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to review your memberships.',el('a',{href:'#/login',class:'btn primary'},'Sign in'));return;}
-    var owned=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Your subscriptions'}));o.appendChild(owned);owned.appendChild(ui.spinner());
-    try{
-      var sr=await sb.from('subscriptions').select('id,tier_id,status,current_period_end,created_at').eq('subscriber_id',CHL.user.id).order('created_at',{ascending:false}).limit(100);
-      if(sr.error)throw sr.error;owned.innerHTML='';var subs=sr.data||[];
-      if(!subs.length)owned.appendChild(ui.empty('⭐','No subscription records','Checkout becomes available after a real billing provider and cancellation/webhook flow are configured. No payment is taken on this screen.'));
-      else{
-        var tids=[...new Set(subs.map(function(x){return x.tier_id;}))];
-        var tr=await sb.from('subscription_tiers').select('id,name,price,currency,creator_id').in('id',tids);if(tr.error)throw tr.error;
-        var creators=[...new Set((tr.data||[]).map(function(x){return x.creator_id;}))];
-        var pr=await sb.from('profiles').select('id,username,display_name').in('id',creators);if(pr.error)throw pr.error;
-        var tm={},pm={};(tr.data||[]).forEach(function(x){tm[x.id]=x;});(pr.data||[]).forEach(function(x){pm[x.id]=x;});
-        subs.forEach(function(x){var t=tm[x.tier_id]||{},p=pm[t.creator_id]||{};owned.appendChild(el('div',{class:'tile'},[
-          el('div',{class:'meta'},[
-            el('div',{class:'t',text:(t.name||'Tier')+' · '+(p.display_name||p.username||'Creator')}),
-            el('div',{class:'u',text:(t.currency||'USD')+' '+Number(t.price||0).toFixed(2)+' · '+String(x.status).toUpperCase()+(x.current_period_end?' · Ends '+new Date(x.current_period_end).toLocaleDateString():'')})
-          ])
-        ]));});
+  /* Render gift cards with real prices when available. */
+  function renderGifts(giftGrid, giftStatus, roomId) {
+    giftGrid.textContent = '';
+
+    var availableGifts = GIFTS.filter(function (gift) {
+      return gift.active !== false;
+    });
+
+    if (!availableGifts.length) {
+      giftStatus.textContent = 'No active gifts are currently available.';
+      return;
+    }
+
+    availableGifts.forEach(function (gift) {
+      var priceLabel = Number.isFinite(Number(gift.coinPrice)) &&
+        gift.coinPrice !== null
+        ? Number(gift.coinPrice).toLocaleString() + ' coins'
+        : 'Price unavailable';
+
+      var giftTile = el('button', {
+        class: 'gift gift-button',
+        type: 'button',
+        'aria-label': gift.k + ', ' + priceLabel,
+        onclick: function () {
+          if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+            CHL.toast('This gift price is not available yet.');
+            return;
+          }
+          sendGift(roomId, gift);
+        }
+      }, [
+        makeGiftArt(gift),
+        el('div', { text: gift.k }),
+        el('div', {
+          class: 'sub',
+          style: 'font-size:12px;margin-top:4px',
+          text: priceLabel
+        })
+      ]);
+
+      giftGrid.appendChild(giftTile);
+    });
+  }
+
+  function giftAssetKey(name) {
+    return String(name || 'gift').normalize('NFKD').toLowerCase()
+      .replace(/[’']/g, '').replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '').slice(0, 90) || 'gift';
+  }
+
+  function makeGiftArt(gift) {
+    var key = String(gift.assetKey || giftAssetKey(gift.k));
+    if (!/^[a-z0-9-]+$/.test(key)) key = giftAssetKey(gift.k);
+    var url = gift.graphicUrl || '/assets/gifts/art/' + key + '.svg';
+    var image = el('img', {
+      src: url,
+      alt: '',
+      loading: 'lazy',
+      style: 'display:block;width:42px;height:42px;object-fit:contain;margin:0 auto 4px',
+      onerror: function () {
+        var fallback = el('div', { style: 'font-size:24px', text: gift.em || '🎁' });
+        if (image.parentNode) image.parentNode.replaceChild(fallback, image);
       }
-    }catch(e){owned.innerHTML='';owned.appendChild(el('div',{class:'note',text:'Subscriptions unavailable: '+(e.message||'request failed')}));}
-    var catalog=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Available creator tiers'}));o.appendChild(catalog);catalog.appendChild(ui.spinner());
-    try{
-      var r=await sb.from('subscription_tiers').select('id,creator_id,name,price,currency,badge,emoji,perks').eq('active',true).neq('creator_id',CHL.user.id).order('price',{ascending:true}).limit(100);
-      if(r.error)throw r.error;catalog.innerHTML='';var rows=r.data||[];
-      if(!rows.length){catalog.appendChild(ui.empty('⭐','No active tiers available','Creators have not published active membership tiers yet.'));return;}
-      var ids=[...new Set(rows.map(function(x){return x.creator_id;}))];
-      var ps=await sb.from('profiles').select('id,username,display_name').in('id',ids);if(ps.error)throw ps.error;
-      var map={};(ps.data||[]).forEach(function(x){map[x.id]=x;});
-      rows.forEach(function(x){var p=map[x.creator_id]||{};catalog.appendChild(el('div',{class:'tile',style:'min-width:0'},[
-        el('div',{class:'meta',style:'min-width:0'},[
-          el('div',{class:'t',text:(x.emoji||'⭐')+' '+x.name+' · '+x.currency+' '+Number(x.price).toFixed(2)+'/month'}),
-          el('div',{class:'u',text:'By '+(p.display_name||p.username||'Creator')+(x.badge?' · '+x.badge:'')}),
-          el('div',{class:'u',text:(Array.isArray(x.perks)?x.perks:[]).join(' · ')||'No perks listed'})
-        ]),
-        el('a',{href:'#/profile/'+encodeURIComponent(p.username||''),class:'btn small'},'View creator'),
-        el('div',{class:'u',text:'Checkout is unavailable until a billing provider, verified webhooks and cancellation/refund flow are implemented.'})
-      ]));});
-    }catch(e){catalog.innerHTML='';catalog.appendChild(el('div',{class:'note',text:'Membership catalog unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}
-  });
+    });
+    return image;
+  }
 
-  var divisionTier = {
-    D5:'Bronze III', D4:'Bronze II', D3:'Bronze I',
-    D2:'Silver III', D1:'Silver II', C5:'Silver I',
-    C4:'Gold IV', C3:'Gold III', C2:'Gold II', C1:'Gold I',
-    B5:'Platinum IV', B4:'Platinum III', B3:'Platinum II', B2:'Platinum I',
-    B1:'Diamond IV', A3:'Heroic', A2:'Master', A1:'Grandmaster'
-  };
+  /* Fetch active gift names/prices from the database-backed API. */
+  async function loadGiftCatalog(giftGrid, giftStatus, roomId) {
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/gifts', {
+        method: 'GET'
+      });
 
-  CHL.route('/leagues', function(o,r){
-    if (guard(o,'Leagues','Server-managed competition. Results and standings are calculated from recorded matches.')) return;
-    var div=r.params && r.params.length ? r.params[0] : null;
-    o.appendChild(el('div',{class:'h1',style:'font-size:20px',text:div ? ('Division '+div+' · '+(divisionTier[div] || '')) : 'Leagues'}));
-    var box=el('div',{class:'card'},[]); o.appendChild(box);
-    CHL.authenticatedApiRequest('/api/leagues/standings').then(function(d){
-      var rows=(d.standings||[]).filter(function(x){return !div || x.division_code===div;});
-      if(!rows.length){
-        if(!d.season){box.appendChild(ui.empty('🏅','No active season configured','An administrator must create and activate a season in Admin → Leagues. The division rules are configured separately from the season dates.'));}
-        else{box.appendChild(ui.empty('🏅',div?'No teams in '+div+' yet':'No teams enrolled in this season yet','Active season: '+d.season.name+'. Create teams to populate the standings; completed server-recorded matches determine points and positions.'));}
+      if (currentRoomId !== roomId) return;
+
+      var rows = result && Array.isArray(result.gifts)
+        ? result.gifts
+        : [];
+
+      if (!rows.length) {
+        giftGrid.textContent = '';
+        giftStatus.textContent = 'No active gifts are available in the database.';
         return;
       }
-      var grouped={}; rows.forEach(function(x){(grouped[x.division_code] ||= []).push(x);});
-      Object.keys(grouped).sort().forEach(function(code){
-        box.appendChild(el('h3',{text:code+' · '+(divisionTier[code] || 'Division'),style:'margin:18px 0 8px;overflow-wrap:anywhere'}));
-        grouped[code].forEach(function(x){ var t=x.teams||{}; box.appendChild(el('div',{class:'tile'},[
-          el('div',{class:'meta',style:'min-width:0'},[
-            el('div',{class:'t',text:(x.position||'-')+'. '+(t.name||'Team')}),
-            el('div',{class:'u',text:x.played+' MP · '+x.wins+'W '+x.draws+'D '+x.losses+'L · GD '+(x.goals_for-x.goals_against)})
-          ]),
-          el('div',{style:'font-weight:900'},x.points+' pts')
-        ])); });
-      });
-      var matchesBox=el('div',{class:'card',style:'min-width:0;margin-top:16px'});
-      matchesBox.appendChild(el('h3',{text:'Fixtures and results',style:'margin:0 0 8px'}));
-      box.appendChild(matchesBox);
-      CHL.authenticatedApiRequest('/api/leagues/matches'+(div?'?division='+encodeURIComponent(div):'')).then(function(matchData){
-        var matches=matchData&&matchData.matches||[];
-        if(!matches.length){matchesBox.appendChild(ui.empty('⚽','No fixtures published','Fixtures appear after an administrator generates the round-robin schedule. No scores are fabricated.'));return;}
-        matches.forEach(function(m){
-          var h=Array.isArray(m.home_team)?m.home_team[0]:m.home_team;
-          var a=Array.isArray(m.away_team)?m.away_team[0]:m.away_team;
-          var home=h&&h.name||String(m.home_team_id||'').slice(0,8);
-          var away=a&&a.name||String(m.away_team_id||'').slice(0,8);
-          var score=m.home_score==null||m.away_score==null?'—':String(m.home_score)+' : '+String(m.away_score);
-          matchesBox.appendChild(el('div',{class:'tile',style:'margin:8px 0;min-width:0;overflow-wrap:anywhere'},[
-            el('div',{class:'t',text:home+'  '+score+'  '+away}),
-            el('div',{class:'u',text:'Division '+m.division_code+' · Round '+(m.round_number||'—')+' · '+String(m.status||'unknown').toUpperCase()+(m.played_at?' · '+new Date(m.played_at).toLocaleDateString():'')})
-          ]));
+
+      var databaseGifts = rows
+        .filter(function (gift) {
+          return gift && gift.name;
+        })
+        .map(function (gift) {
+          var name = String(gift.name);
+          var price = Number(gift.coinPrice);
+          var assetKey = String(gift.assetKey || giftAssetKey(name));
+
+          return {
+            k: name,
+            em: gift.emoji || '🎁',
+            assetKey: assetKey,
+            graphicUrl: gift.graphicUrl || '/assets/gifts/art/' + assetKey + '.svg',
+            animationUrl: gift.animationUrl || '/assets/gifts/animations/' + assetKey + '.svg',
+            soundUrl: gift.soundUrl || '/assets/gifts/sounds/' + assetKey + '.wav',
+            coinPrice: Number.isFinite(price) && price > 0 ? price : null,
+            active: gift.active !== false
+          };
+        })
+        .filter(function (gift) {
+          return gift.active;
         });
-      }).catch(function(error){matchesBox.appendChild(el('div',{class:'note',text:(error&&error.message)||'Fixtures could not be loaded.'}));});
-    }).catch(function(error){
-      var detail=(error && error.message) || 'The request failed without a response.';
-      var code=(error && error.code) ? ' ['+error.code+']' : '';
-      var status=(error && error.status) ? ' (HTTP '+error.status+')' : '';
-      box.appendChild(ui.empty('⚠️','Standings unavailable','League request failed: '+detail+code+status));
-    });
-    o.appendChild(el('div',{class:'note',text:'Standings are calculated on the server from completed match results. Points, rankings, promotion and relegation are not client-editable.'}));
-  });
 
-  CHL.route('/rankings', function(o){
-    if (guard(o,'Creator Rankings','Leaderboards read from real public creator activity. No seeded scores or purchased placements.')) return;
-    var selected='followers',tabs=el('div',{class:'row wrap',style:'gap:7px;margin-bottom:12px'}),list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(tabs);o.appendChild(list);
-    var defs=[['followers','Followers'],['views','Post views'],['gifts_sent','Coins spent gifting'],['diamonds_received','Diamonds received'],['live_viewers','Live now viewers']];
-    defs.forEach(function(x){tabs.appendChild(el('button',{class:'btn small'+(x[0]===selected?' primary':''),type:'button',text:x[1],onclick:function(){selected=x[0];Array.from(tabs.children).forEach(function(b){b.classList.toggle('primary',b.textContent===x[1]);});load();}}));});
-    async function load(){
-      list.innerHTML='';list.appendChild(ui.spinner());
-      try{
-        var r=await sb.rpc('get_public_creator_rankings',{p_metric:selected,p_limit:30});if(r.error)throw r.error;
-        list.innerHTML='';var rows=(r.data||[]).filter(function(x){return Number(x.score)>0;});
-        if(!rows.length){list.appendChild(ui.empty('🏆','No ranking activity yet','This leaderboard needs real '+(selected==='followers'?'follower':selected==='views'?'view':selected==='gifts_sent'?'gift transaction':selected==='diamonds_received'?'diamond ledger':'LIVE viewer')+' records. No sample scores are inserted.'));return;}
-        rows.forEach(function(x,i){list.appendChild(el('a',{class:'tile',href:'#/profile/'+encodeURIComponent(x.username),style:'text-decoration:none;min-width:0'},[
-          el('div',{class:'rank-number',text:'#'+(i+1)}),
-          el('div',{class:'ava',text:CHL.initials(x.display_name||x.username).toUpperCase()}),
-          el('div',{class:'meta',style:'min-width:0;flex:1'},[
-            el('div',{class:'t',text:x.display_name||x.username}),
-            el('div',{class:'u',text:'@'+x.username})
-          ]),
-          el('div',{style:'font-weight:800;white-space:nowrap'},CHL.fmt(Number(x.score)||0))
-        ]));});
-      }catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Rankings unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}
-    }
-    load();
-  });
-
-  /* ---- public profile /profile/:username ---- */
-  CHL.route('/profile', function(o,r){
-    if (!CHL.configured){ o.appendChild(ui.pageHead('Profile')); o.appendChild(ui.setupNotice()); return; }
-    if (r.params && r.params.length){ renderPublicProfile(o, r.params[0]); return; }
-    if (!CHL.user){ CHL.navigate('#/login'); return; }
-    renderOwnProfile(o);
-  });
-
-  async function renderPublicProfile(o, handle){
-    o.appendChild(ui.spinner());
-    var h=String(handle).replace(/^@/,'');
-    try{
-      var res=await sb.from('profiles').select('id,username,display_name,bio,avatar_url,cover_url,followers_count,following_count,posts_count,privacy').eq('username',h).maybeSingle();
-      if(res.error)throw res.error;
-      o.innerHTML='';var p=res.data;
-      if(!p){o.appendChild(ui.empty('👤','Creator not found','No account exists for @'+h+'.',el('a',{href:'#/discover',class:'btn',style:'margin-top:8px'},'Discover creators')));return;}
-      var who=p.display_name||p.username;var relation=null;var isVerifiedCreator=false;
-      try{var badgeQuery=await sb.from('public_creator_badges').select('badge_type').eq('user_id',p.id).eq('badge_type','verified_creator').maybeSingle();if(!badgeQuery.error&&badgeQuery.data)isVerifiedCreator=true;}catch(_){}
-      if(CHL.user&&CHL.user.id!==p.id){var fr=await sb.from('follows').select('status').eq('follower_id',CHL.user.id).eq('followee_id',p.id).maybeSingle();if(!fr.error)relation=fr.data;}
-      var actions=el('div',{class:'row wrap',style:'gap:8px'});
-      if(CHL.user&&CHL.user.id!==p.id){
-        var followBtn=el('button',{class:'btn primary',type:'button',text:relation?(relation.status==='pending'?'Requested':'Following'):'＋ Follow',onclick:async function(){
-          if(!CHL.user){CHL.navigate('#/login');return;}followBtn.disabled=true;
-          try{
-            if(relation){var d=await sb.from('follows').delete().eq('follower_id',CHL.user.id).eq('followee_id',p.id);if(d.error)throw d.error;relation=null;followBtn.textContent='＋ Follow';CHL.toast('Unfollowed @'+p.username);}
-            else{var privacy=(p.privacy&&p.privacy.account)||'public';var status=privacy==='public'?'accepted':'pending';var ins=await sb.from('follows').insert({follower_id:CHL.user.id,followee_id:p.id,status:status});if(ins.error)throw ins.error;relation={status:status};followBtn.textContent=status==='pending'?'Requested':'Following';CHL.toast(status==='pending'?'Follow request sent':'Following @'+p.username);}
-          }catch(e){CHL.toast(e.message||'Could not update follow.');}finally{followBtn.disabled=false;}
-        }});
-        actions.appendChild(followBtn);
-        actions.appendChild(el('button',{class:'btn',type:'button',onclick:async function(){
-          if(!CHL.user){CHL.navigate('#/login');return;}
-          try{var dm=await sb.rpc('create_or_get_direct_conversation',{p_other_user:p.id});if(dm.error)throw dm.error;CHL.navigate('#/messages/'+dm.data);}
-          catch(e){CHL.toast(e.message||'Could not start a conversation. Confirm migration 0021 and the recipient messaging settings.');}
-        }},'Message'));
-        actions.appendChild(el('a',{href:'#/report/user/'+p.id,class:'btn'},'Report'));
+      if (!databaseGifts.length) {
+        giftGrid.textContent = '';
+        giftStatus.textContent = 'No active gifts are available in the database.';
+        return;
       }
-      var pic=p.avatar_url&&/^https:\/\//.test(p.avatar_url)?el('img',{src:p.avatar_url,alt:'',loading:'lazy',style:'width:72px;height:72px;object-fit:cover;border-radius:50%'}):el('div',{class:'ava',style:'width:72px;height:72px;font-size:26px;display:flex;align-items:center;justify-content:center',text:CHL.initials(who).toUpperCase()});
-      var headCard=el('section',{class:'card profile-header'},[
-        el('div',{class:'row wrap',style:'gap:14px;align-items:center'},[
-          pic,
-          el('div',{style:'flex:1;min-width:150px'},[
-            el('div',{style:'font-size:21px;font-weight:800',text:who+(isVerifiedCreator?' ✓':'' )}),
-            isVerifiedCreator?el('span',{class:'chip',text:'Verified Creator'}):null,
-            el('div',{class:'u',text:'@'+p.username}),
-            p.bio?el('p',{style:'margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere',text:p.bio}):null
-          ]),
-          actions
-        ]),
-        el('div',{class:'row wrap',style:'gap:20px;margin-top:14px'},[
-          el('div',{},[el('b',{text:CHL.fmt(p.posts_count||0)}),el('span',{class:'u',text:' Posts',style:'margin-left:4px'})]),
-          el('div',{},[el('b',{text:CHL.fmt(p.followers_count||0)}),el('span',{class:'u',text:' Followers',style:'margin-left:4px'})]),
-          el('div',{},[el('b',{text:CHL.fmt(p.following_count||0)}),el('span',{class:'u',text:' Following',style:'margin-left:4px'})])
-        ])
-      ]);o.appendChild(headCard);
-      var wall=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:12px;max-width:820px;margin-top:12px'});o.appendChild(el('h3',{class:'section-title',text:'Public posts'}));o.appendChild(wall);wall.appendChild(ui.spinner());
-      var posts=await sb.from('posts').select('id,author_id,kind,caption,media,cover_url,hashtags,sound_id,allow_comments,allow_repost,like_count,comment_count,created_at,author:profiles!posts_author_id_fkey(id,username,display_name)').eq('author_id',p.id).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(30);
-      if(posts.error)throw posts.error;wall.innerHTML='';var rows=posts.data||[];
-      if(!rows.length)wall.appendChild(ui.empty('📝','No public posts yet','This creator has not published any public posts.'));
-      rows.forEach(function(x){wall.appendChild(el('div',{},[CHL.el('a',{href:'#/post/'+x.id,class:'chip',style:'display:inline-flex;margin-bottom:6px'},'Open post'),profilePostPreview(x)]));});
-    }catch(e){o.innerHTML='';o.appendChild(el('div',{class:'note',text:e.message||'Could not load this creator profile.'}));}
+
+      GIFTS = databaseGifts;
+      giftStatus.textContent = 'Gift prices from the database.';
+      renderGifts(giftGrid, giftStatus, roomId);
+    } catch (e) {
+      // Do not show sample gifts or guessed prices when the real catalogue fails.
+      GIFTS = [];
+      renderGifts(giftGrid, giftStatus, roomId);
+      giftStatus.textContent =
+        'Gift catalogue unavailable. Prices are not loaded; try again when the connection is restored.';
+      console.warn(
+        '[Creator Hub LIVE gifts] Catalog load failed:',
+        e.message || e
+      );
+    }
   }
 
-  function profilePostPreview(p){
-    var who=(p.author&&(p.author.display_name||p.author.username))||'Creator';
-    var box=el('article',{class:'card'});
-    box.appendChild(el('div',{class:'u',text:'@'+(p.author&&p.author.username||'creator')+' · '+CHL.ago(p.created_at)}));
-    box.appendChild(el('div',{style:'white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px',text:p.caption||''}));
-    (Array.isArray(p.media)?p.media:[]).filter(function(m){return m&&typeof m.url==='string'&&/^https:\/\//.test(m.url);}).slice(0,2).forEach(function(m){
-      box.appendChild(el(m.type&&m.type.indexOf('video')===0?'video':'img',{src:m.url,controls:m.type&&m.type.indexOf('video')===0?'controls':null,alt:'Post media',loading:'lazy',style:'width:100%;max-height:360px;object-fit:contain;border-radius:10px;margin-top:8px'}));
-    });
-    if(Array.isArray(p.hashtags)&&p.hashtags.length)box.appendChild(el('div',{class:'u',text:p.hashtags.map(function(t){return '#'+t;}).join(' '),style:'margin-top:8px'}));
-    return box;
+  /* Stop the chat polling timer without affecting other LIVE controls. */
+  function stopChatPolling() {
+    if (chatPollTimer) {
+      window.clearInterval(chatPollTimer);
+      chatPollTimer = null;
+    }
+    if (liveToolsPollTimer) {
+      window.clearInterval(liveToolsPollTimer);
+      liveToolsPollTimer = null;
+    }
   }
 
-  CHL.renderOwnProfileRef = null; // own-profile handler lives in pages-wallet; delegate
-  function renderOwnProfile(o){ if (CHL.ownProfile) CHL.ownProfile(o); }
+  /* Resolve a sender's real profile name from the backend chat response. */
+  function getMessageSenderName(message, ownMessage) {
+    var sender = message && message.sender ? message.sender : {};
+    var senderDisplayName = String(sender.display_name || '').trim();
+    var senderUsername = String(sender.username || '').trim();
+
+    if (ownMessage) {
+      var ownProfile = CHL.profile || {};
+      return String(
+        ownProfile.display_name ||
+        ownProfile.username ||
+        senderDisplayName ||
+        senderUsername ||
+        'You'
+      ).trim();
+    }
+
+    return senderDisplayName || senderUsername || 'Creator';
+  }
+
+  /* Load persisted messages so host and viewers see the same chat history. */
+  async function loadChatMessages(roomId, messages) {
+    if (!roomId || currentRoomId !== roomId) return;
+
+    // Avoid overlapping GET requests for the same room.
+    if (chatRequestsInFlight[roomId]) return;
+    chatRequestsInFlight[roomId] = true;
+
+    try {
+      var result = await CHL.authenticatedApiRequest(
+        '/api/live/rooms/' + encodeURIComponent(roomId) + '/chat',
+        { method: 'GET' }
+      );
+
+      if (currentRoomId !== roomId) return;
+
+      var rows = result && Array.isArray(result.messages)
+        ? result.messages
+        : [];
+
+      var wasNearBottom =
+        messages.scrollHeight - messages.scrollTop - messages.clientHeight < 60;
+      var oldScrollTop = messages.scrollTop;
+
+      // Avoid rebuilding the DOM when the server returned the same messages.
+      var newSignature = rows.map(function (message) {
+        return String(message.id || '') + ':' +
+          String(message.body || '') + ':' +
+          String(message.sender_id || '');
+      }).join('|');
+
+      if (messages.getAttribute('data-chat-signature') === newSignature) {
+        return;
+      }
+
+      // Preserve the user's current scroll position unless they were near bottom.
+      messages.textContent = '';
+
+      rows.forEach(function (message) {
+        var senderId = String(message.sender_id || '');
+        var ownMessage = !!CHL.user &&
+          senderId === String(CHL.user.id);
+        var senderName = getMessageSenderName(message, ownMessage);
+
+        var body = String(message.body || '');
+        var timestamp = message.created_at
+          ? new Date(message.created_at)
+          : null;
+        var timeLabel = timestamp && !isNaN(timestamp.getTime())
+          ? ' · ' + timestamp.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          : '';
+
+        messages.appendChild(el('div', {
+          class: 'note',
+          style: 'overflow-wrap:anywhere;word-break:break-word',
+          text: senderName + timeLabel + ': ' + body
+        }));
+      });
+
+      messages.setAttribute('data-chat-signature', newSignature);
+
+      if (wasNearBottom) {
+        messages.scrollTop = messages.scrollHeight;
+      } else {
+        messages.scrollTop = oldScrollTop;
+      }
+    } catch (e) {
+      // A failed refresh must not break video or prevent later polling.
+      console.warn(
+        '[Creator Hub LIVE chat] Refresh failed:',
+        e.message || e
+      );
+    } finally {
+      delete chatRequestsInFlight[roomId];
+    }
+  }
+
+  /* Send to the backend, then refresh the shared message history. */
+  async function sendChatMessage(roomId, input, messages) {
+    var value = String(input.value || '').trim();
+    if (!value) return;
+
+    if (currentRoomId !== roomId) return;
+
+    input.disabled = true;
+
+    try {
+      await CHL.authenticatedApiRequest(
+        '/api/live/rooms/' + encodeURIComponent(roomId) + '/chat',
+        {
+          method: 'POST',
+          body: { body: value }
+        }
+      );
+
+      input.value = '';
+      await loadChatMessages(roomId, messages);
+
+      // Do not force focus: mobile keyboards can move the page and video.
+    } catch (e) {
+      CHL.toast(e.message || 'Message could not be sent.');
+    } finally {
+      input.disabled = false;
+    }
+  }
+
+  async function loadGuests(roomId, guestStatus, guestList, requestButton, inviteInput, inviteButton) {
+    if (!roomId || currentRoomId !== roomId || guestRefreshInFlight[roomId]) return;
+    guestRefreshInFlight[roomId] = true;
+    try {
+      var data = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests');
+      if (currentRoomId !== roomId) return;
+      var guests = Array.isArray(data && data.guests) ? data.guests : [];
+      guestList.textContent = '';
+      var mine = guests.find(function (g) { return CHL.user && String(g.user_id) === String(CHL.user.id); });
+      if (requestButton) {
+        var hasInvitation = !!mine && mine.status === 'invited' && !isHost;
+        requestButton.style.display = isHost || (mine && ['requested','accepted'].indexOf(mine.status) >= 0) ? 'none' : '';
+        requestButton.textContent = hasInvitation ? 'Accept guest invitation' : (mine && mine.status === 'rejected' ? 'Request to join stage again' : 'Request to join stage');
+        requestButton.onclick = hasInvitation
+          ? function () { updateGuestStage(roomId, mine.user_id, 'accept', guestStatus, guestList, requestButton); }
+          : function () { requestGuestStage(roomId, guestStatus, guestList); };
+      }
+      if (inviteInput) inviteInput.style.display = isHost ? '' : 'none';
+      if (inviteButton) inviteButton.style.display = isHost ? '' : 'none';
+      if (!guests.length) guestList.appendChild(el('div', { class: 'sub', text: 'No guest requests or stage guests yet.' }));
+      guests.forEach(function (guest) {
+        var profile = guest.profile || {};
+        var label = profile.display_name || profile.username || 'Creator';
+        var row = el('div', { class: 'note', style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0' });
+        row.appendChild(el('span', { style: 'flex:1;min-width:100px;overflow-wrap:anywhere', text: label + ' · ' + guest.status }));
+        if (isHost && ['requested','invited'].indexOf(guest.status) >= 0) {
+          row.appendChild(el('button', { class: 'btn primary', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'accept', guestStatus, guestList, requestButton); } }, 'Accept'));
+          row.appendChild(el('button', { class: 'btn', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'reject', guestStatus, guestList, requestButton); } }, 'Decline'));
+        } else if (guest.status === 'accepted' && (isHost || (CHL.user && String(guest.user_id) === String(CHL.user.id)))) {
+          row.appendChild(el('button', { class: 'btn', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'remove', guestStatus, guestList, requestButton); } }, isHost ? 'Remove' : 'Leave stage'));
+        }
+        guestList.appendChild(row);
+      });
+      guestStatus.textContent = 'Guest requests and stage membership are synchronized with the server.';
+    } catch (e) {
+      guestStatus.textContent = 'Guest stage unavailable: ' + (e.message || 'backend request failed');
+    } finally { delete guestRefreshInFlight[roomId]; }
+  }
+
+  async function requestGuestStage(roomId, guestStatus, guestList) {
+    var button = guestStatus && guestStatus.parentNode ? guestStatus.parentNode.querySelector('button') : null;
+    if (!CHL.user) { CHL.navigate('#/login'); return; }
+    if (button) button.disabled = true;
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/request', { method: 'POST', body: {} });
+      guestStatus.textContent = result.accepted ? 'You are already approved for the stage.' : 'Guest request sent. The host must approve you before your camera and microphone can publish.';
+      await loadGuests(roomId, guestStatus, guestList, button);
+    } catch (e) { guestStatus.textContent = e.message || 'Guest request failed.'; }
+    finally { if (button) button.disabled = false; }
+  }
+
+  async function updateGuestStage(roomId, userId, action, guestStatus, guestList, requestButton) {
+    try {
+      await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/' + encodeURIComponent(userId) + '/' + action, { method: 'POST', body: {} });
+      await loadGuests(roomId, guestStatus, guestList, requestButton);
+    } catch (e) { CHL.toast(e.message || 'Guest stage update failed.'); }
+  }
+
+  function playGiftSound(url) {
+    if (!url || !/^\/assets\/gifts\/sounds\/[a-z0-9-]+\.wav$/i.test(String(url))) return;
+    try {
+      var audio = new Audio(String(url));
+      audio.volume = 0.45;
+      var playing = audio.play();
+      if (playing && typeof playing.catch === 'function') playing.catch(function () {});
+    } catch (_) {
+      // Audio playback is optional; a blocked sound must not affect the gift transaction.
+    }
+  }
+
+  /* Send a gift through the authenticated wallet API. */
+  function sendGift(roomId, gift) {
+    if (!CHL.user) {
+      CHL.navigate('#/login');
+      return;
+    }
+
+    if (giftRequestsInFlight[roomId]) {
+      CHL.toast('Please wait for the current gift request to finish.');
+      return;
+    }
+
+    if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+      CHL.toast('This gift price is not available.');
+      return;
+    }
+
+    var recipientId = roomHostId;
+
+    if (!recipientId) {
+      CHL.toast('Gift recipient is unavailable.');
+      return;
+    }
+
+    if (String(recipientId) === String(CHL.user.id)) {
+      CHL.toast('You cannot send a gift to yourself.');
+      return;
+    }
+
+    giftRequestsInFlight[roomId] = true;
+
+    CHL.authenticatedApiRequest('/api/wallet/gift', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': CHL.uuid() },
+      body: {
+        liveId: roomId,
+        recipientId: recipientId,
+        gift: gift.k
+      }
+    })
+      .then(function (result) {
+        var chargedGift = result && result.gift ? result.gift : null;
+
+        ui.flyGift(gift.em, gift.animationUrl || gift.graphicUrl);
+        playGiftSound(gift.soundUrl);
+
+        if (chargedGift && Number.isFinite(Number(chargedGift.coinPrice))) {
+          CHL.toast(
+            'Gift sent: ' + gift.k + ' (' +
+            Number(chargedGift.coinPrice).toLocaleString() + ' coins).'
+          );
+        } else {
+          CHL.toast('Gift sent.');
+        }
+
+        ui.refreshCoins();
+      })
+      .catch(function (e) {
+        CHL.toast(e.message || 'Gift failed.');
+      })
+      .finally(function () {
+        delete giftRequestsInFlight[roomId];
+      });
+  }
+
+  /* End the LIVE session through the backend. */
+  async function endLive(roomId) {
+    if (!CHL.user) {
+      CHL.navigate('#/login');
+      return;
+    }
+
+    try {
+      await CHL.authenticatedApiRequest(
+        '/api/live/rooms/' + encodeURIComponent(roomId) + '/end',
+        { method: 'POST' }
+      );
+
+      stopChatPolling();
+      CHL.disconnectLiveKit();
+    } catch (e) {
+      CHL.toast(e.message || 'Unable to end LIVE session.');
+      return;
+    }
+
+    liveStarted = false;
+    currentRoomId = null;
+    CHL.navigate('#/');
+  }
+
+  /* Disconnect and stop polling when navigating away from LIVE. */
+  window.addEventListener('hashchange', function () {
+    if (CHL.current && CHL.current.base !== '/live') {
+      stopChatPolling();
+      currentRoomId = null;
+      roomHostId = null;
+      liveStarted = false;
+      CHL.disconnectLiveKit();
+    }
+  });
 })();
