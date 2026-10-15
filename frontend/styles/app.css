@@ -1086,3 +1086,34 @@ label.field span {
     font-size: 10px;
   }
 }
+
+
+/* Creator Hub Live readability pass: stronger type and reliable contrast. */
+:root {
+  --mut: #b8b8cc;
+}
+body {
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+h1, h2, h3, h4, .h1, .h2, .page-title, .section-title, .card-title,
+.nav a, .sidebar a, .btn, button, .chip, .badge, .live-status, label,
+.gift-name, .gift-price, .username, .display-name {
+  font-weight: 800;
+}
+p, .sub, .muted, .note, .empty-state, .form-hint, .meta, small {
+  color: var(--mut);
+  font-weight: 600;
+}
+input, textarea, select {
+  color: var(--txt);
+  font-weight: 600;
+}
+::placeholder { color: #a6a6bb; opacity: 1; }
+.btn, button, a.chip, .chip { text-shadow: none; }
+:focus-visible { outline: 3px solid #ffd166; outline-offset: 3px; }
+@media (prefers-contrast: more) {
+  :root { --mut: #e0e0ee; --line: #68687d; }
+  .card, .panel, .note, input, textarea, select { border-color: var(--line); }
+}
