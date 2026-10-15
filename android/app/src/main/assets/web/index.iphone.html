@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Creator Hub">
+<meta name="theme-color" content="#14261d">
+<meta name="description" content="Creator Hub Creator Network — create, connect and grow with your community.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon.svg">
+<link rel="stylesheet" href="styles/app.css?v=6.0.2">
+<link rel="stylesheet" href="styles/studio-edition.css?v=6.0.2">
+<title>Creator Hub Creator Network</title>
+<link rel="stylesheet" href="styles/nexus-edition.css?v=6.0.2"/>
+</head>
+<body>
+<div id="app" aria-live="polite"><div class="spin" aria-label="Loading Creator Hub"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js"></script>
+<script src="config.js?v=6.0.2"></script>
+<script src="src/core.js?v=6.0.2"></script>
+<script src="src/ui.js?v=6.0.2"></script>
+<script src="src/pages-auth.js?v=6.0.2"></script>
+<script src="src/pages.js?v=6.0.2"></script>
+<script src="src/pages-admin.js?v=6.0.2"></script>
+<script src="src/pages-creator.js?v=6.0.2"></script>
+<script src="src/pages-teams.js?v=6.0.2"></script>
+<script src="src/pages-extra.js?v=6.0.2"></script>
+<script src="src/pages-room.js?v=6.0.2"></script>
+<script src="src/pages-settings.js?v=6.0.2"></script>
+<script src="src/pages-accessibility.js?v=6.0.2"></script>
+<script src="src/pages-account.js?v=6.0.2"></script>
+<script src="src/pages-community.js?v=6.0.2"></script>
+<script src="src/pages-wallet.js?v=6.0.2"></script>
+<script src="src/livekit.js?v=6.0.2"></script>
+<script src="src/studio-edition.js?v=6.0.2"></script>
+<script>
+try { if (window.CHL && window.CHL.start) window.CHL.start(); }
+catch (e) { var app = document.getElementById('app'); if (app) app.textContent = 'Creator Hub could not start. Check your connection and reload.'; }
+if ('serviceWorker' in navigator && location.protocol !== 'file:') { window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); }); }
+</script>
+</body>
+</html>
