@@ -1,4 +1,4 @@
--- Creator Hub Creator Network — LIVE room chat.
+-- Creator Hub Live — LIVE room chat.
 -- Chat is tied to an existing LIVE session; no synthetic messages are created.
 create table if not exists public.live_chat_messages (
   id uuid primary key default gen_random_uuid(),

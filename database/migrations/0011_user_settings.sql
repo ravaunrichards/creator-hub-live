@@ -1,4 +1,4 @@
--- Creator Hub Creator Network — persistent account-level settings.
+-- Creator Hub Live — persistent account-level settings.
 -- One row per authenticated user; no fabricated defaults beyond safe platform defaults.
 create table if not exists public.user_settings (
   user_id uuid primary key references public.profiles(id) on delete cascade,
