@@ -1,4 +1,4 @@
-/* Creator Hub Live — LiveKit browser integration.
+/* Creator Hub Creator Network — LiveKit browser integration.
  * Browser receives only short-lived participant tokens.
  * LiveKit private API credentials never enter browser code.
  */

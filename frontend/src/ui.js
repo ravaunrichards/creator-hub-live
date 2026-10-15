@@ -1,29 +1,38 @@
-/* Creator Hub Live \u2014 ui: shell (sidebar + mobile tabbar), reusable components. */
+/* Creator Hub Creator Network \u2014 ui: shell (sidebar + mobile tabbar), reusable components. */
 (function(){
   'use strict';
   var CHL = window.CHL; var el = CHL.el, esc = CHL.esc, qs = CHL.qs;
   var ui = CHL.ui = {};
 
   var NAV = [
-    {h:'#/',        ic:'\uD83C\uDFE0', label:'Home',     base:'/'},
-    {h:'#/discover',ic:'\uD83D\uDD0D', label:'Discover', base:'/discover'},
-    {h:'#/for-you', ic:'\u2728',       label:'For You',  base:'/for-you'},
-    {h:'#/create',  ic:'\u2795',       label:'Go LIVE',  base:'/create'},
-    {h:'#/messages',ic:'\uD83D\uDCAC', label:'Messages', base:'/messages'},
-    {h:'#/notifications',ic:'\uD83D\uDD14',label:'Alerts',base:'/notifications'},
-    {h:'#/wallet',  ic:'\uD83D\uDC8E', label:'Wallet',   base:'/wallet'},
-    {h:'#/creator', ic:'\uD83C\uDFAC', label:'Creator',  base:'/creator'},
-    {h:'#/teams',   ic:'\uD83D\uDEE1\uFE0F', label:'Teams', base:'/teams'},
-    {h:'#/leagues', ic:'\uD83C\uDFC6', label:'Leagues',  base:'/leagues'},
-    {h:'#/profile', ic:'\uD83D\uDC64', label:'Profile',  base:'/profile'}
+    {h:'#/', ic:'🏠', label:'Home', base:'/'},
+    {h:'#/discover', ic:'🔎', label:'Discover creators & LIVE', base:'/discover'},
+    {h:'#/for-you', ic:'✨', label:'For You', base:'/for-you'},
+    {h:'#/following', ic:'👥', label:'Following feed', base:'/following'},
+    {h:'#/compose', ic:'✍️', label:'Create post', base:'/compose'},
+    {h:'#/create', ic:'🔴', label:'Go LIVE', base:'/create'},
+    {h:'#/messages', ic:'💬', label:'Messages', base:'/messages'},
+    {h:'#/notifications', ic:'🔔', label:'Notifications', base:'/notifications'},
+    {h:'#/wallet', ic:'💎', label:'Wallet', base:'/wallet'},
+    {h:'#/creator', ic:'🎬', label:'Creator dashboard', base:'/creator'},
+    {h:'#/teams', ic:'🛡️', label:'Teams', base:'/teams'},
+    {h:'#/leagues', ic:'🏆', label:'Team leagues', base:'/leagues'},
+    {h:'#/rankings', ic:'🥇', label:'Creator rankings', base:'/rankings'},
+    {h:'#/gift-rankings', ic:'🎁', label:'Gift rankings', base:'/gift-rankings'},
+    {h:'#/hall-of-fame', ic:'🏅', label:'Hall of Fame', base:'/hall-of-fame'},
+    {h:'#/battles', ic:'⚔️', label:'Creator Battles', base:'/battles'},
+    {h:'#/missions', ic:'🎯', label:'Challenges & missions', base:'/missions'},
+    {h:'#/achievements', ic:'🏵️', label:'Achievements & badges', base:'/achievements'},
+    {h:'#/settings', ic:'⚙️', label:'Settings', base:'/settings'},
+    {h:'#/profile', ic:'👤', label:'My profile', base:'/profile'}
   ];
   // compact nav for the mobile bottom tab bar
   var TAB = [
-    {h:'#/',        ic:'\uD83C\uDFE0', label:'Home',     base:'/'},
-    {h:'#/discover',ic:'\uD83D\uDD0D', label:'Discover', base:'/discover'},
-    {h:'#/create',  ic:'\u2795',       label:'Go LIVE',  base:'/create'},
-    {h:'#/notifications',ic:'\uD83D\uDD14',label:'Inbox',base:'/notifications'},
-    {h:'#/profile', ic:'\uD83D\uDC64', label:'Profile',  base:'/profile'}
+    {h:'#/', ic:'🏠', label:'Home', base:'/'},
+    {h:'#/discover', ic:'🔎', label:'Discover', base:'/discover'},
+    {h:'#/create', ic:'🔴', label:'Go LIVE', base:'/create'},
+    {h:'#/notifications', ic:'🔔', label:'Inbox', base:'/notifications'},
+    {h:'#/profile', ic:'👤', label:'Profile', base:'/profile'}
   ];
 
   function logo(){
@@ -44,14 +53,15 @@
     root.innerHTML = '';
     var side = el('aside',{class:'side'});
     side.appendChild(logo());
-    var nav = el('nav');
+    var nav = el('nav',{class:'side-nav','aria-label':'Main navigation'});
     NAV.forEach(function(n){
       nav.appendChild(el('a',{href:n.h,'data-base':n.base},[ el('span',{class:'ic',text:n.ic}), n.label ]));
     });
     side.appendChild(nav);
     // admin link only for admins
     if (CHL.isAdmin && CHL.isAdmin()){
-      nav.appendChild(el('a',{href:'#/admin','data-base':'/admin'},[ el('span',{class:'ic',text:'\uD83D\uDD12'}), 'Admin' ]));
+      nav.appendChild(el('a',{href:'#/admin','data-base':'/admin'},[ el('span',{class:'ic',text:'🔒'}), 'Admin' ]));
+      nav.appendChild(el('a',{href:'#/admin/community','data-base':'/admin/community'},[ el('span',{class:'ic',text:'🧰'}), 'Mission & verification review' ]));
     }
     side.appendChild(el('div',{class:'spacer'}));
     side.appendChild(meBox());
@@ -162,9 +172,12 @@
   };
 
   // gift fly animation (visual only)
-  ui.flyGift = function(emoji){
+  ui.flyGift = function(emoji, assetUrl){
     var stage = qs('#giftStage'); if (!stage) return;
-    var g = el('div',{class:'flyGift',text:emoji});
+    var safeAsset = assetUrl && (/^https:\/\//i.test(String(assetUrl)) || /^\/assets\/gifts\/(animations|art)\/[a-z0-9-]+\.svg$/i.test(String(assetUrl)));
+    var g = safeAsset
+      ? el('div',{class:'flyGift gift-fly-art'},[el('img',{src:String(assetUrl),alt:'',onerror:function(){g.textContent=emoji||'🎁';g.classList.remove('gift-fly-art');}})])
+      : el('div',{class:'flyGift',text:emoji||'🎁'});
     g.style.left = (35 + Math.random()*30) + '%';
     stage.appendChild(g);
     setTimeout(function(){ if (g.parentNode) g.parentNode.removeChild(g); }, 2300);
