@@ -1,27 +1,45 @@
-# Deployment guide — Creator Hub Creator Network 4.0.0
+# Creator Hub Creator Network — Deployment
 
 ## Architecture
 
-Static website/PWA (`frontend/`) → Node.js backend (`backend/`) → Supabase. LIVE video/signaling uses LiveKit. Coin checkout uses PayPal Orders/Capture and server-side idempotent ledger updates. Creator payout requests are stored for review; this request flow does not itself transfer fiat money.
+Frontend/PWA → Node backend → Supabase
 
-## Manual deployment only
+LIVE media → LiveKit
 
-No production service was changed when preparing this package. Publish `frontend/` as the static-site root and deploy `backend/` as a separate Node.js 20+ service. A static-site publish does not deploy backend code or apply database migrations.
+Payments → PayPal → backend verification → wallet ledger
 
-## Order of operations
+## Required production configuration
 
-1. Back up deployed source/configuration and Supabase.
-2. Run the read-only schema audits and reconcile migrations/policies/functions before applying a database change.
-3. Configure backend environment variables using `backend/.env.example` for names only.
-4. Apply an approved missing database migration (especially 0024) only after reviewing its preflight requirements and effects.
-5. Deploy backend and verify `GET /api/health`, `GET /api/config/public`, and `GET /api/livekit/health`.
-6. Publish `frontend/` as the site root. Verify the actual URL/API base, CORS, storage bucket and browser-safe config.
-7. Complete `VALIDATION-4.0.0.md` and `PRODUCTION-ACCEPTANCE-CHECKLIST.md` before release acceptance.
+Use the variables in `backend/.env.example`. Do not put service-role, LiveKit secret, PayPal secret or signing passwords into browser assets.
 
-## PayPal
+## CORS
 
-Keep `PAYPAL_ENV`, client ID and client secret matched to the same PayPal app/environment. Restart/redeploy the actual backend after environment changes. The backend should fetch OAuth tokens itself. A Postman token is temporary and is not a replacement for backend credentials. Test create-order, PayPal approval, capture, webhook verification and single ledger credit in the target environment.
+Set `FRONTEND_URL` to the actual production web origin(s). Verify OPTIONS/preflight and authenticated requests against the deployed service.
 
-## Rollback
+## LiveKit
 
-Keep the prior frontend and backend source plus environment-variable snapshot. If routes fail, restore the previous known-good release at the service layer. SQL changes are forward migrations and must not be reversed by guessed `DROP` statements; use a reviewed forward fix or restore plan if data/schema changes have committed. Service rollback does not roll back database mutations.
+Set `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in the backend environment. There is no production fallback URL in the repaired backend.
+
+## Android
+
+The repository currently uses Android Gradle Plugin 8.5.2 and compile/target SDK 34. AGP 8.5 requires Gradle 8.7 and JDK 17 according to the Android compatibility documentation. citeturn0search1turn0search0
+
+The supplied snapshot has no Gradle wrapper or Android SDK, so release compilation was not performed here.
+
+## Release signing
+
+Release credentials are read from Gradle properties/environment variables. The keystore is retained for compatibility analysis, but its certificate does not match the supplied APK certificate. Do not replace the signing identity without establishing update compatibility.
+
+## Deployment verification
+
+Required real checks:
+
+1. deploy backend;
+2. `GET /api/health`;
+3. `GET /api/livekit/health`;
+4. authenticated Supabase flow;
+5. LiveKit host camera/microphone publication;
+6. PayPal sandbox/live verification as appropriate;
+7. Android installation and launch.
+
+These external checks are BLOCKED/UNVERIFIED in the supplied archive environment.
