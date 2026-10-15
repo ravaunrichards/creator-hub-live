@@ -31,20 +31,19 @@ const oldHelperStart = '/*\n * Reconcile stale database LIVE rows against LiveKi
 const helperStart = server.indexOf(oldHelperStart);
 const helperEnd = server.indexOf('function validateLiveRoomName', helperStart);
 const hasNewImport = server.includes("from './live-room-lifecycle.js'") || server.includes('from "./live-room-lifecycle.js"');
-const alreadyIntegrated = hasNewImport && !server.includes('created_at') && !server.includes('await closeOrphanedLiveRooms(client)');
+const alreadyIntegrated = hasNewImport && server.includes('await closeOrphanedLiveRooms({') && server.includes('await closeLiveKitRoom(room.room_name');
 if (alreadyIntegrated) {
   console.log('No server integration changes needed; lifecycle module import is already present. Checking required files and tests.');
 } else {
-  if (helperStart < 0 || helperEnd < 0) {
-    console.error('INSTALL FAILED: expected existing LIVE cleanup helper was not found exactly. No files changed.');
+  if (helperStart >= 0 && helperEnd >= 0) {
+    // Remove the old helper that incorrectly selects the nonexistent created_at column.
+    server = server.slice(0, helperStart) + server.slice(helperEnd);
+    // RoomServiceClient was only used by the old inline helper.
+    server = server.replace(/^import \{ RoomServiceClient \} from "livekit-server-sdk";\r?\n/m, '');
+  } else if (server.includes('function closeOrphanedLiveRooms')) {
+    console.error('INSTALL FAILED: partial/unknown LIVE cleanup helper found. No files changed.');
     process.exit(1);
   }
-
-  // Remove the old helper that incorrectly selects the nonexistent created_at column.
-  server = server.slice(0, helperStart) + server.slice(helperEnd);
-
-  // RoomServiceClient was only used by the old inline helper.
-  server = server.replace(/^import \{ RoomServiceClient \} from "livekit-server-sdk";\r?\n/m, '');
 
   const tokenImport = '} from "./livekit-token.js";';
   if (!server.includes(tokenImport)) {
@@ -59,8 +58,12 @@ if (alreadyIntegrated) {
   if (oldListCall.test(server)) {
     server = server.replace(oldListCall, `      try {\n        await closeOrphanedLiveRooms({\n          client,\n          livekitUrl: LIVEKIT_URL,\n          apiKey: process.env.LIVEKIT_API_KEY,\n          apiSecret: process.env.LIVEKIT_API_SECRET,\n        });\n      } catch (cleanupError) {\n        console.warn('[LIVE cleanup] Reconciliation failed safely:', cleanupError?.message || cleanupError);\n      }`);
   } else if (!server.includes('await closeOrphanedLiveRooms({')) {
-    console.error('INSTALL FAILED: LIVE rooms list reconciliation anchor was not found. No files changed.');
-    process.exit(1);
+    const listAnchor = '    // LIVE Rooms - List\n    if (pathname === \"/api/live/rooms\" && method === \"GET\") {\n      const client = db();';
+    if (!server.includes(listAnchor)) {
+      console.error('INSTALL FAILED: LIVE rooms list reconciliation anchor was not found. No files changed.');
+      process.exit(1);
+    }
+    server = server.replace(listAnchor, `${listAnchor}\n      try {\n        await closeOrphanedLiveRooms({\n          client,\n          livekitUrl: LIVEKIT_URL,\n          apiKey: process.env.LIVEKIT_API_KEY,\n          apiSecret: process.env.LIVEKIT_API_SECRET,\n        });\n      } catch (cleanupError) {\n        console.warn('[LIVE cleanup] Reconciliation failed safely:', cleanupError?.message || cleanupError);\n      }`);
   }
 
   const endStart = server.indexOf('if (liveParts.action === "end" && method === "POST") {');
@@ -69,7 +72,13 @@ if (alreadyIntegrated) {
     console.error('INSTALL FAILED: expected LIVE end/leave handlers were not found. No files changed.');
     process.exit(1);
   }
-  const endBlock = server.slice(endStart, leaveStart);
+  let endBlock = server.slice(endStart, leaveStart);
+  if (!endBlock.includes('viewer_count: 0')) {
+    const endUpdateAnchor = '            updated_at: new Date().toISOString(),';
+    if (endBlock.includes(endUpdateAnchor)) {
+      endBlock = endBlock.replace(endUpdateAnchor, `${endUpdateAnchor}\n            viewer_count: 0,`);
+    }
+  }
   const returnText = '        return ok(res, data);';
   if (!endBlock.includes('await closeLiveKitRoom(room.room_name')) {
     const returnIndex = endBlock.lastIndexOf(returnText);
@@ -85,6 +94,10 @@ if (alreadyIntegrated) {
 
 pkg.scripts ||= {};
 pkg.scripts['test:live-room-lifecycle'] = 'node tests/live-room-lifecycle.test.js';
+const baseTest = String(pkg.scripts.test || 'node tests/route-check.js && node tests/backend-syntax.js && node tests/livekit-contract.js');
+if (!baseTest.includes('tests/live-room-lifecycle.test.js')) {
+  pkg.scripts.test = `${baseTest} && node tests/live-room-lifecycle.test.js`;
+}
 const packageUpdated = JSON.stringify(pkg, null, 2) + '\n';
 
 const requiredSources = [

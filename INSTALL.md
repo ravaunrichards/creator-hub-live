@@ -6,11 +6,13 @@ This is one coordinated, manually installed repair package for the existing Crea
 
 - Removes the invalid `created_at` reference from LIVE session cleanup. The deployed `public.live_sessions` schema uses `started_at`, `updated_at`, and `ended_at`; it does not have `created_at`.
 - Reconciles only sessions still marked `status = 'live'` and `ended_at IS NULL`.
-- Marks a session ended only after the five-minute safety period and LiveKit confirms the room no longer exists. A room that still exists with zero participants is not automatically ended, because it may be reconnecting.
+- Uses only deployed columns (`started_at`, `updated_at`, `ended_at`) and removes the invalid `created_at` reference.
+- After the five-minute safety period, keeps rooms with participants live; closes old empty rooms and marks them ended; and marks missing rooms ended.
+- Resets `viewer_count` to zero when a session is confirmed ended.
 - Treats database and LiveKit errors as unknown states, never as proof that a stream has ended.
 - Closes the LiveKit room after an explicit host end succeeds in the database.
 - Adds a standalone cleanup job for scheduled execution so cleanup does not depend only on someone opening Explore LIVE.
-- Adds offline regression tests for missing rooms, empty rooms, transient LiveKit errors, the grace period, and explicit room closure.
+- Adds regression tests for missing rooms, empty rooms, rooms with participants, transient LiveKit errors, the grace period, and explicit room closure.
 
 ## Install into your existing repository
 
