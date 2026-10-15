@@ -91,35 +91,62 @@ export async function closeOrphanedLiveRooms({
       continue;
     }
 
-    // A present room—even with no current participants—may be experiencing a
-    // temporary host reconnect. Never terminate it based on an empty list.
-    const exists = Array.isArray(listedRooms) && listedRooms.some((item) => String(item?.name || '') === roomName);
-    if (exists) continue;
+    if (!Array.isArray(listedRooms)) {
+      safeLog(logger, 'warn', '[LIVE cleanup] LiveKit returned an unknown room list; keeping session live:', room.id);
+      continue;
+    }
+
+    const liveRoom = listedRooms.find((item) => String(item?.name || '') === roomName);
+    let confirmedSafeToEnd = !liveRoom;
+    if (liveRoom) {
+      // The room exists. Do not end a session while anyone is still connected.
+      // After the grace period, an empty room is safe to close and reconcile.
+      const participants = Number(liveRoom.numParticipants);
+      if (!Number.isFinite(participants) || participants > 0) continue;
+      try {
+        await service.deleteRoom(roomName);
+        confirmedSafeToEnd = true;
+      } catch (error) {
+        // A delete error is ambiguous. Confirm the room is absent before ending
+        // the database row; if LiveKit cannot answer, leave the row untouched.
+        try {
+          const afterDelete = await service.listRooms([roomName]);
+          confirmedSafeToEnd = Array.isArray(afterDelete) && !afterDelete.some((item) => String(item?.name || '') === roomName);
+        } catch {
+          confirmedSafeToEnd = false;
+        }
+        if (!confirmedSafeToEnd) {
+          safeLog(logger, 'warn', '[LIVE cleanup] Could not confirm empty room closure; keeping session live:', room.id, error?.message || error);
+          continue;
+        }
+      }
+    }
+    if (!confirmedSafeToEnd) continue;
 
     const endedAt = new Date(now).toISOString();
     let update;
     try {
       update = await client
         .from('live_sessions')
-        .update({ status: 'ended', ended_at: endedAt, updated_at: endedAt })
+        .update({ status: 'ended', ended_at: endedAt, updated_at: endedAt, viewer_count: 0 })
         .eq('id', room.id)
         .eq('status', 'live')
         .is('ended_at', null)
         .select('id')
         .maybeSingle();
     } catch (error) {
-      safeLog(logger, 'error', '[LIVE cleanup] Could not mark missing room ended:', room.id, error?.message || error);
+      safeLog(logger, 'error', '[LIVE cleanup] Could not mark confirmed orphan ended:', room.id, error?.message || error);
       continue;
     }
 
     if (update?.error) {
-      safeLog(logger, 'error', '[LIVE cleanup] Could not mark missing room ended:', room.id, update.error.message || update.error);
+      safeLog(logger, 'error', '[LIVE cleanup] Could not mark confirmed orphan ended:', room.id, update.error.message || update.error);
       continue;
     }
 
     if (update?.data?.id) {
       ended += 1;
-      safeLog(logger, 'info', '[LIVE cleanup] Marked missing LiveKit room ended:', room.id);
+      safeLog(logger, 'info', '[LIVE cleanup] Marked confirmed orphan ended:', room.id);
     }
   }
 
