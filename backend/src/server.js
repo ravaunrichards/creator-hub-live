@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import http from "node:http";
 import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
@@ -6,6 +7,7 @@ import { handleTeamsRoute } from "./teams-routes.js";
 import { handleCreatorLeagueRoute } from "./creator-leagues.js";
 import { handleTeamLeagueRoute } from "./team-leagues.js";
 import { handlePayoutRoute } from "./payout-routes.js";
+import { handleLiveRoomExperience } from "./live-room-experience.js";
 import { normalizePayPalEnvironment, readEnvironmentSetting } from "./paypal-env.js";
 import {
   createLiveKitToken,
@@ -31,8 +33,27 @@ process.on("unhandledRejection", (reason, promise) => {
 // Creator Hub Creator Network - Backend HTTP API
 // ============================================================================
 
-const BACKEND_RELEASE = "4.0.2";
+const BACKEND_RELEASE = "6.0.2";
 const PORT = Number(process.env.PORT || 3000);
+
+// Artwork/audio metadata is static and contains no prices. Current gift prices
+// always come from the database so an old catalogue cannot overwrite pricing.
+const GIFT_ASSET_MANIFEST = JSON.parse(
+  readFileSync(new URL("./gift-asset-manifest.json", import.meta.url), "utf8")
+);
+const GIFT_ASSETS_BY_NAME = new Map(
+  (GIFT_ASSET_MANIFEST.gifts || []).map((gift) => [String(gift.name || "").trim().toLowerCase(), gift])
+);
+function giftAssetKey(name) {
+  const metadata = GIFT_ASSETS_BY_NAME.get(String(name || "").trim().toLowerCase());
+  if (metadata && /^[a-z0-9-]+$/.test(metadata.assetKey)) return metadata.assetKey;
+  return String(name || "gift").normalize("NFKD").toLowerCase()
+    .replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 90) || "gift";
+}
+function giftMediaUrl(value, fallback) {
+  const url = String(value || "").trim();
+  return /^(https:\/\/|\/)/i.test(url) ? url : fallback;
+}
 
 const FRONTEND_URL = String(
   process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || ""
@@ -394,6 +415,21 @@ async function liveRoomById(client, id) {
   }
   if (!data) throw fail(404, "LIVE_ROOM_NOT_FOUND", "LIVE room not found.");
   return data;
+}
+
+async function canPublishLiveRoom(client, room, userId) {
+  if (String(room.host_id) === String(userId)) return true;
+  const { data, error } = await client.from("live_guests")
+    .select("id,status")
+    .eq("live_id", room.id)
+    .eq("user_id", userId)
+    .eq("status", "accepted")
+    .maybeSingle();
+  if (error) {
+    const normalized = normalizeExternalError(error);
+    throw fail(503, "LIVE_GUEST_PERMISSION_LOOKUP_FAILED", normalized.message, { databaseCode: normalized.code || undefined });
+  }
+  return Boolean(data);
 }
 
 function validateLiveRoomName(roomName) {
@@ -772,7 +808,7 @@ const server = http.createServer(async (req, res) => {
       if (roomId) {
         const room = await liveRoomById(client, roomId);
         roomName = String(room.room_name).trim();
-        canPublish = String(room.host_id) === String(user.id);
+        canPublish = await canPublishLiveRoom(client, room, user.id);
       } else if (body.roomName && String(body.roomName).trim()) {
         roomName = String(body.roomName).trim();
         const { data: room, error } = await client
@@ -783,7 +819,7 @@ const server = http.createServer(async (req, res) => {
         if (error) throw error;
         if (!room)
           throw fail(404, "LIVE_ROOM_NOT_FOUND", "LIVE room not found.");
-        canPublish = String(room.host_id) === String(user.id);
+        canPublish = await canPublishLiveRoom(client, room, user.id);
       } else {
         throw fail(400, "INVALID_ROOM", "A valid LIVE room is required.");
       }
@@ -876,14 +912,16 @@ const server = http.createServer(async (req, res) => {
         const room = await liveRoomById(client, liveParts.id);
         if (room.status === "ended")
           throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
-        const canPublish = String(room.host_id) === String(user.id);
+        const isHost = String(room.host_id) === String(user.id);
+        const canPublish = await canPublishLiveRoom(client, room, user.id);
         return ok(res, {
           joined: true,
           roomId: room.id,
           status: room.status,
           roomName: room.room_name,
-          isHost: canPublish,
+          isHost,
           canPublish,
+          guestStageAccess: canPublish && !isHost,
         });
       }
 
@@ -960,6 +998,97 @@ const server = http.createServer(async (req, res) => {
         await requireSupabaseUser(req);
         const room = await liveRoomById(client, liveParts.id);
         return ok(res, { left: true, roomId: room.id, status: room.status });
+      }
+    }
+
+    // LIVE guest-stage workflow. All state changes are authenticated and host-authorized.
+    const guestRoute = pathname.match(/^\/api\/live\/rooms\/([^/]+)\/guests(?:\/([^/]+)\/(accept|reject|remove))?(?:\/(request|invite))?$/);
+    if (guestRoute) {
+      let roomId, targetUserId;
+      try { roomId = decodeURIComponent(guestRoute[1]); targetUserId = guestRoute[2] ? decodeURIComponent(guestRoute[2]) : null; }
+      catch { throw fail(400, "INVALID_ROOM", "The LIVE room or guest ID is malformed."); }
+      const client = db();
+      const room = await liveRoomById(client, roomId);
+      const user = await requireSupabaseUser(req);
+      const isHost = String(room.host_id) === String(user.id);
+      const action = guestRoute[3] || null;
+      const isRequest = guestRoute[4] === "request";
+      const isInvite = guestRoute[4] === "invite";
+
+      if (!targetUserId && !action && !isRequest && method === "GET") {
+        const { data: guests, error } = await client.from("live_guests")
+          .select("id,live_id,user_id,status,slot,mic_on,cam_on,pinned,joined_at")
+          .eq("live_id", room.id).order("joined_at", { ascending: true });
+        if (error) throw error;
+        const ids = [...new Set((guests || []).map(g => g.user_id).filter(Boolean))];
+        let profiles = [];
+        if (ids.length) {
+          const result = await client.from("profiles").select("id,username,display_name,avatar_url").in("id", ids);
+          if (result.error) throw result.error;
+          profiles = result.data || [];
+        }
+        const byId = new Map(profiles.map(p => [String(p.id), p]));
+        return ok(res, { guests: (guests || []).map(g => ({ ...g, profile: byId.get(String(g.user_id)) || null })) });
+      }
+
+      if (isInvite && method === "POST") {
+        if (!isHost) throw fail(403, "HOST_REQUIRED", "Only the LIVE host can invite a creator.");
+        if (String(room.status).toLowerCase() === "ended") throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
+        const body = await readJson(req);
+        const inviteeId = String(body.userId || "").trim();
+        if (!inviteeId || inviteeId === String(user.id)) throw fail(400, "INVALID_GUEST_INVITE", "Enter another creator's user ID.");
+        const profile = await client.from("profiles").select("id").eq("id", inviteeId).maybeSingle();
+        if (profile.error) throw profile.error;
+        if (!profile.data) throw fail(404, "GUEST_PROFILE_NOT_FOUND", "No Creator Hub profile exists for that user ID.");
+        const existing = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", inviteeId).maybeSingle();
+        if (existing.error) throw existing.error;
+        if (existing.data && existing.data.status === "accepted") return ok(res, { invited: false, accepted: true, status: "accepted" });
+        const write = existing.data
+          ? await client.from("live_guests").update({ status: "invited" }).eq("id", existing.data.id).select("id,status,user_id").single()
+          : await client.from("live_guests").insert({ live_id: room.id, user_id: inviteeId, status: "invited" }).select("id,status,user_id").single();
+        if (write.error) throw write.error;
+        return ok(res, { invited: true, guest: write.data });
+      }
+
+      if (isRequest && method === "POST") {
+        if (isHost) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already controls this LIVE stage.");
+        if (String(room.status).toLowerCase() === "ended") throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
+        const existing = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
+        if (existing.error) throw existing.error;
+        if (existing.data && existing.data.status === "accepted") return ok(res, { requested: false, accepted: true, status: "accepted" });
+        const write = existing.data
+          ? await client.from("live_guests").update({ status: "requested" }).eq("id", existing.data.id).select("id,status").single()
+          : await client.from("live_guests").insert({ live_id: room.id, user_id: user.id, status: "requested" }).select("id,status").single();
+        if (write.error) throw write.error;
+        return ok(res, { requested: true, status: write.data.status });
+      }
+
+      if (targetUserId && action === "accept" && method === "POST") {
+        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host may approve a request, or the invited creator may accept their own invitation.");
+        const allowedStatuses = isHost ? ["requested", "invited"] : ["invited"];
+        const result = await client.from("live_guests").update({ status: "accepted", joined_at: new Date().toISOString() })
+          .eq("live_id", room.id).eq("user_id", targetUserId).in("status", allowedStatuses)
+          .select("id,status,user_id").maybeSingle();
+        if (result.error) {
+          const normalized = normalizeExternalError(result.error);
+          throw fail(409, "LIVE_GUEST_ACCEPT_FAILED", normalized.message, { databaseCode: normalized.code || undefined });
+        }
+        if (!result.data) throw fail(404, "LIVE_GUEST_REQUEST_NOT_FOUND", "No pending guest request or invitation exists for this user.");
+        return ok(res, { accepted: true, guest: result.data });
+      }
+
+      if (targetUserId && action === "reject" && method === "POST") {
+        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host or the requesting guest can reject this request.");
+        const result = await client.from("live_guests").update({ status: "rejected" }).eq("live_id", room.id).eq("user_id", targetUserId).in("status", ["requested", "invited"]).select("id,status").maybeSingle();
+        if (result.error) throw result.error;
+        return ok(res, { rejected: Boolean(result.data), status: result.data?.status || "not_pending" });
+      }
+
+      if (targetUserId && action === "remove" && method === "POST") {
+        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host or this guest can leave the stage.");
+        const result = await client.from("live_guests").update({ status: isHost ? "removed" : "left" }).eq("live_id", room.id).eq("user_id", targetUserId).eq("status", "accepted").select("id,status").maybeSingle();
+        if (result.error) throw result.error;
+        return ok(res, { removed: Boolean(result.data), status: result.data?.status || "not_on_stage" });
       }
     }
 
@@ -1296,7 +1425,7 @@ const server = http.createServer(async (req, res) => {
       const client = db();
       const { data, error } = await client
         .from("gifts")
-        .select("id,name,coin_price,diamond_value,active")
+        .select("id,name,category,graphic_url,animation_url,coin_price,diamond_value,active")
         .eq("active", true)
         .order("coin_price", { ascending: true });
       if (error) {
@@ -1306,14 +1435,24 @@ const server = http.createServer(async (req, res) => {
           details: normalized.details,
         });
       }
-      const gifts = (data || []).map((gift) => ({
-        id: gift.id,
-        name: gift.name,
-        coinPrice: gift.coin_price == null ? null : Number(gift.coin_price),
-        diamondValue:
-          gift.diamond_value == null ? null : Number(gift.diamond_value),
-        active: Boolean(gift.active),
-      }));
+      const gifts = (data || []).map((gift) => {
+        const metadata = GIFT_ASSETS_BY_NAME.get(String(gift.name || "").trim().toLowerCase()) || null;
+        const assetKey = giftAssetKey(gift.name);
+        return {
+          id: gift.id,
+          name: gift.name,
+          category: gift.category || (metadata && metadata.category) || "regular",
+          emoji: metadata ? metadata.emoji : null,
+          assetKey,
+          graphicUrl: giftMediaUrl(gift.graphic_url, `/assets/gifts/art/${assetKey}.svg`),
+          animationUrl: giftMediaUrl(gift.animation_url, `/assets/gifts/animations/${assetKey}.svg`),
+          soundUrl: `/assets/gifts/sounds/${assetKey}.wav`,
+          coinPrice: gift.coin_price == null ? null : Number(gift.coin_price),
+          diamondValue:
+            gift.diamond_value == null ? null : Number(gift.diamond_value),
+          active: Boolean(gift.active),
+        };
+      });
       return ok(res, { gifts });
     }
 
@@ -1438,6 +1577,13 @@ const server = http.createServer(async (req, res) => {
       deps: { requireSupabaseUser, db, readJson, ok, send, paypal, paypalReturnUrl: PAYPAL_RETURN_URL, paypalEnv: PAYPAL_ENV }
     });
     if (handledCreatorLeague !== false) return;
+
+    // Extended LIVE-room controls (recordings, polls, Q&A, reactions, analytics,
+    // moderators, schedules and room settings). Core room lifecycle remains above.
+    const handledLiveExperience = await handleLiveRoomExperience({
+      pathname, method, req, res, fail, ok, send, db, requireSupabaseUser, readJson,
+    });
+    if (handledLiveExperience !== false) return;
 
     // 404 Fallback
     return send(res, 404, {
