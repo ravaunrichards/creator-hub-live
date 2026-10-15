@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const css = fs.readFileSync(new URL('./frontend/styles/chl-style-system.css', import.meta.url), 'utf8');
+const js = fs.readFileSync(new URL('./frontend/src/style-system.js', import.meta.url), 'utf8');
+const required = ['glass','neumorphic','clay','aurora','frost','minimal','flat','neo','brutal','swiss','memphis','cyber','skeuo','y2k','pixel','material','fluent','editorial'];
+for (const theme of required) assert.ok(css.includes(`data-chl-style="${theme}"`) || js.includes(`['${theme}'`), `Missing theme contract: ${theme}`);
+for (const selector of ['.live-room-layout','.live-stage','.live-chat-messages','.gift-grid']) assert.ok(css.includes(selector), `Missing responsive selector: ${selector}`);
+assert.ok(js.includes('localStorage.setItem(KEY, selected)'), 'Theme preference must persist locally');
+assert.ok(js.includes('aria-expanded'), 'Picker must expose expanded state');
+assert.ok(css.includes('prefers-reduced-motion'), 'Reduced-motion support missing');
+console.log(`PASS: ${required.length} theme contracts, responsive live-room/gift selectors, preference persistence, picker accessibility and reduced-motion rules.`);
