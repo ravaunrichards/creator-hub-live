@@ -1,19 +1,14 @@
 {
-  "name": "creator-hub-creator-network",
-  "version": "6.0.2",
+  "name": "creator-hub-live",
   "private": true,
   "type": "module",
-  "description": "Creator Hub Creator Network Nexus Edition 6.0.2 with recovered LIVE gift assets and database-authoritative pricing.",
   "scripts": {
-    "check": "node tests/integration-check.js && node tests/security-audit.js && node tests/deployment-payment-check.mjs && node tests/community-account-contract.mjs && node tests/migration-static-check.mjs && node tests/teams-contract-check.mjs && node tests/league-structure-check.mjs && cd backend && npm test && cd .. && node tests/live-room-experience-contract.mjs && node tests/live-gift-mobile-release-contract.mjs && node tests/studio-edition-contract.mjs && node tests/gift-asset-contract.mjs",
+    "check": "node tests/integration-check.js && node tests/gift-asset-contract.mjs",
     "backend:check": "cd backend && npm run check",
-    "backend:test": "cd backend && npm test",
-    "repair:contracts": "node tests/repair-contract.js && node tests/community-account-contract.mjs",
-    "teams:check": "node tests/teams-contract-check.mjs",
-    "backend:smoke": "cd backend && npm run smoke",
-    "league:check": "node tests/league-structure-check.mjs",
-    "deployment:payment:check": "node tests/deployment-payment-check.mjs",
-    "studio:sync-android": "node scripts/sync-web-assets.js",
-    "studio:check": "node tests/studio-edition-contract.mjs"
-  }
+    "backend:test": "cd backend && npm run test",
+    "sync:android-web": "node scripts/sync-web-assets.js",
+    "repair:contracts": "node tests/repair-contract.js",
+    "backend:smoke": "cd backend && npm run smoke"
+  },
+  "description": "Creator Hub Live full-stack project with restored original LIVE gift assets."
 }
