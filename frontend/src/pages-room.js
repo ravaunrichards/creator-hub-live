@@ -401,9 +401,13 @@
         onDisconnected: function () {
           if (currentRoomId !== roomId) return;
 
-          status.textContent = 'DISCONNECTED';
-          status.style.background = 'rgba(0,0,0,.8)';
-          liveStarted = false;
+          // A terminal LiveKit disconnect must not leave the stale LIVE room UI
+          // on screen, even if the database has not yet marked the room ended.
+          rejectEndedRoom(
+            roomId,
+            outlet,
+            'The LIVE connection has closed. Return home to refresh available LIVE rooms.'
+          );
         },
 
         onReconnecting: function () {
