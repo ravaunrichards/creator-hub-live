@@ -1,14 +1,7 @@
 import "dotenv/config";
-import { readFileSync } from "node:fs";
 import http from "node:http";
 import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { handleTeamsRoute } from "./teams-routes.js";
-import { handleCreatorLeagueRoute } from "./creator-leagues.js";
-import { handleTeamLeagueRoute } from "./team-leagues.js";
-import { handlePayoutRoute } from "./payout-routes.js";
-import { handleLiveRoomExperience } from "./live-room-experience.js";
-import { normalizePayPalEnvironment, readEnvironmentSetting } from "./paypal-env.js";
 import {
   createLiveKitToken,
   validateRoomName,
@@ -30,30 +23,10 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 // ============================================================================
-// Creator Hub Creator Network - Backend HTTP API
+// Creator Hub Live - Backend HTTP API
 // ============================================================================
 
-const BACKEND_RELEASE = "6.0.2";
 const PORT = Number(process.env.PORT || 3000);
-
-// Artwork/audio metadata is static and contains no prices. Current gift prices
-// always come from the database so an old catalogue cannot overwrite pricing.
-const GIFT_ASSET_MANIFEST = JSON.parse(
-  readFileSync(new URL("./gift-asset-manifest.json", import.meta.url), "utf8")
-);
-const GIFT_ASSETS_BY_NAME = new Map(
-  (GIFT_ASSET_MANIFEST.gifts || []).map((gift) => [String(gift.name || "").trim().toLowerCase(), gift])
-);
-function giftAssetKey(name) {
-  const metadata = GIFT_ASSETS_BY_NAME.get(String(name || "").trim().toLowerCase());
-  if (metadata && /^[a-z0-9-]+$/.test(metadata.assetKey)) return metadata.assetKey;
-  return String(name || "gift").normalize("NFKD").toLowerCase()
-    .replace(/[’']/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 90) || "gift";
-}
-function giftMediaUrl(value, fallback) {
-  const url = String(value || "").trim();
-  return /^(https:\/\/|\/)/i.test(url) ? url : fallback;
-}
 
 const FRONTEND_URL = String(
   process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || ""
@@ -70,13 +43,9 @@ const SUPABASE_ANON_KEY =
 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-const PAYPAL_ENV_CONFIG = normalizePayPalEnvironment(
-  readEnvironmentSetting(process.env, "PAYPAL_ENV"),
-  readEnvironmentSetting(process.env, "PAYPAL_MODE"),
-  readEnvironmentSetting(process.env, "PAYPAL_ENVIRONMENT")
-);
-const PAYPAL_ENV_RAW = PAYPAL_ENV_CONFIG.raw;
-const PAYPAL_ENV = PAYPAL_ENV_CONFIG.environment;
+const PAYPAL_ENV = String(
+  process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox"
+).toLowerCase();
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
@@ -246,7 +215,7 @@ function applyCors(req, res) {
       "X-Requested-With",
     ].join(", ")
   );
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
 }
 
 async function readRawBody(req) {
@@ -339,20 +308,6 @@ async function requireSupabaseUser(req) {
   }
   if (!data?.user)
     throw fail(401, "AUTH_REQUIRED", "Invalid or expired Supabase session.");
-  const adminDb = db();
-  const profileState = await adminDb.from("profiles").select("account_status").eq("id", data.user.id).maybeSingle();
-  if (profileState.error) {
-    const normalized = normalizeExternalError(profileState.error);
-    throw fail(503, "ACCOUNT_STATUS_LOOKUP_FAILED",
-      normalized.code === "PGRST204" || normalized.code === "PGRST205" || normalized.code === "42703"
-        ? "Account lifecycle schema is not ready. Review and apply database migration 0024 before enabling account lifecycle controls."
-        : normalized.message,
-      { databaseCode: normalized.code || undefined });
-  }
-  if (!profileState.data)
-    throw fail(403, "ACCOUNT_NOT_ACTIVE", "No active Creator Hub profile exists for this account.");
-  if (profileState.data.account_status !== "active")
-    throw fail(403, "ACCOUNT_DEACTIVATED", "This account is deactivated. Contact platform support for reactivation.");
   return data.user;
 }
 
@@ -417,21 +372,6 @@ async function liveRoomById(client, id) {
   return data;
 }
 
-async function canPublishLiveRoom(client, room, userId) {
-  if (String(room.host_id) === String(userId)) return true;
-  const { data, error } = await client.from("live_guests")
-    .select("id,status")
-    .eq("live_id", room.id)
-    .eq("user_id", userId)
-    .eq("status", "accepted")
-    .maybeSingle();
-  if (error) {
-    const normalized = normalizeExternalError(error);
-    throw fail(503, "LIVE_GUEST_PERMISSION_LOOKUP_FAILED", normalized.message, { databaseCode: normalized.code || undefined });
-  }
-  return Boolean(data);
-}
-
 function validateLiveRoomName(roomName) {
   const value = String(roomName || "").trim();
   if (!validateRoomName(value))
@@ -444,13 +384,6 @@ function validateLiveRoomName(roomName) {
 // ============================================================================
 
 async function paypalToken() {
-  if (PAYPAL_ENV === "invalid") {
-    throw fail(
-      500,
-      "PAYPAL_ENV_INVALID",
-      `Invalid PayPal environment setting ${JSON.stringify(PAYPAL_ENV_RAW)}. Set the backend variable PAYPAL_ENV to live or sandbox (production is also accepted). PAYPAL_MODE and PAYPAL_ENVIRONMENT are supported aliases.`
-    );
-  }
   requireServerConfig(["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
   const auth = Buffer.from(
     `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
@@ -464,27 +397,17 @@ async function paypalToken() {
     body: "grant_type=client_credentials",
   });
   const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = null;
-  }
   if (!response.ok) {
-    if (response.status === 401) {
-      throw fail(
-        502,
-        "PAYPAL_OAUTH_AUTH_FAILED",
-        "PayPal rejected the configured client credentials. Confirm PAYPAL_ENV and use a Client ID and Secret from the same PayPal environment."
-      );
-    }
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
       `PayPal OAuth failed (${response.status}).`
     );
   }
-  if (!data) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
@@ -621,7 +544,6 @@ async function coinPackage(client, coins) {
     .from("coin_packages")
     .select("*")
     .eq("coins", coins)
-    .eq("currency", "USD")
     .eq("active", true)
     .maybeSingle();
   if (error) throw error;
@@ -722,58 +644,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // Account lifecycle controls — require a fresh, verified Supabase user and a
-    // literal confirmation phrase. These actions use the backend service role,
-    // never a service key delivered to the browser.
-    if (pathname === "/api/account/deactivate" && method === "POST") {
-      const user = await requireSupabaseUser(req);
-      const body = await readJson(req);
-      if (body.confirm !== "DEACTIVATE") throw fail(400, "CONFIRMATION_REQUIRED", "Send confirm: DEACTIVATE to continue.");
-      const client = db();
-      const updated = await client.from("profiles").update({ account_status: "deactivated", deactivated_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", user.id).select("id").maybeSingle();
-      if (updated.error || !updated.data) {
-        const normalized = normalizeExternalError(updated.error);
-        throw fail(503, "ACCOUNT_DEACTIVATION_FAILED", normalized.message || "The account status could not be updated.", { databaseCode: normalized.code || undefined });
-      }
-      const banned = await client.auth.admin.updateUserById(user.id, { ban_duration: "876000h" });
-      if (banned.error) {
-        await client.from("profiles").update({ account_status: "active", deactivated_at: null, updated_at: new Date().toISOString() }).eq("id", user.id);
-        const normalized = normalizeExternalError(banned.error);
-        throw fail(503, "ACCOUNT_DEACTIVATION_FAILED", normalized.message || "The authentication provider did not confirm deactivation; the database status was rolled back.");
-      }
-      return ok(res, { deactivated: true, accountId: user.id, message: "Account deactivated and future authentication blocked. Existing signed tokens may remain valid until expiry." });
-    }
-    if (pathname === "/api/account" && method === "DELETE") {
-      const user = await requireSupabaseUser(req);
-      const body = await readJson(req);
-      if (body.confirm !== "DELETE") throw fail(400, "CONFIRMATION_REQUIRED", "Send confirm: DELETE to permanently delete this account.");
-      const client = db();
-      const deleted = await client.auth.admin.deleteUser(user.id);
-      if (deleted.error) {
-        const normalized = normalizeExternalError(deleted.error);
-        throw fail(503, "ACCOUNT_DELETION_FAILED", normalized.message || "The authentication provider could not delete this account.");
-      }
-      return ok(res, { deleted: true, accountId: user.id, message: "The authentication account was deleted. Related application records follow the installed database foreign-key deletion rules." });
-    }
-
-    // Teams API — connected to the same authenticated server and service-role client.
-    if (await handleTeamsRoute({
-      pathname, method, req, res, url,
-      fail, ok, db, requireSupabaseUser, readJson, normalizeExternalError
-    })) return;
-
-    // Creator payout history/request and admin payout processing use the existing
-    // diamond withdrawal ledger; no parallel or fictitious `payouts` table.
-    if (await handlePayoutRoute({
-      pathname, method, req, res,
-      fail, ok, db, requireSupabaseUser, profileFor, readJson, normalizeExternalError
-    })) return;
-
     // Infrastructure & Health
     if (pathname === "/api/health" && method === "GET") {
       return ok(res, {
         status: "operational",
-        backendRelease: BACKEND_RELEASE,
         livekit: livekitHealth(),
         time: new Date().toISOString(),
       });
@@ -785,13 +659,12 @@ const server = http.createServer(async (req, res) => {
     // Public Configuration
     if (pathname === "/api/config/public" && method === "GET") {
       return ok(res, {
-        backendRelease: BACKEND_RELEASE,
         frontendUrl: FRONTEND_URL || null,
         livekitUrl: LIVEKIT_URL || null,
         paypalEnvironment: PAYPAL_ENV,
         features: {
           livekit: livekitHealth().configured,
-          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET && PAYPAL_ENV !== "invalid"),
+          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET),
         },
       });
     }
@@ -808,7 +681,7 @@ const server = http.createServer(async (req, res) => {
       if (roomId) {
         const room = await liveRoomById(client, roomId);
         roomName = String(room.room_name).trim();
-        canPublish = await canPublishLiveRoom(client, room, user.id);
+        canPublish = String(room.host_id) === String(user.id);
       } else if (body.roomName && String(body.roomName).trim()) {
         roomName = String(body.roomName).trim();
         const { data: room, error } = await client
@@ -819,7 +692,7 @@ const server = http.createServer(async (req, res) => {
         if (error) throw error;
         if (!room)
           throw fail(404, "LIVE_ROOM_NOT_FOUND", "LIVE room not found.");
-        canPublish = await canPublishLiveRoom(client, room, user.id);
+        canPublish = String(room.host_id) === String(user.id);
       } else {
         throw fail(400, "INVALID_ROOM", "A valid LIVE room is required.");
       }
@@ -912,16 +785,14 @@ const server = http.createServer(async (req, res) => {
         const room = await liveRoomById(client, liveParts.id);
         if (room.status === "ended")
           throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
-        const isHost = String(room.host_id) === String(user.id);
-        const canPublish = await canPublishLiveRoom(client, room, user.id);
+        const canPublish = String(room.host_id) === String(user.id);
         return ok(res, {
           joined: true,
           roomId: room.id,
           status: room.status,
           roomName: room.room_name,
-          isHost,
+          isHost: canPublish,
           canPublish,
-          guestStageAccess: canPublish && !isHost,
         });
       }
 
@@ -1001,97 +872,6 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // LIVE guest-stage workflow. All state changes are authenticated and host-authorized.
-    const guestRoute = pathname.match(/^\/api\/live\/rooms\/([^/]+)\/guests(?:\/([^/]+)\/(accept|reject|remove))?(?:\/(request|invite))?$/);
-    if (guestRoute) {
-      let roomId, targetUserId;
-      try { roomId = decodeURIComponent(guestRoute[1]); targetUserId = guestRoute[2] ? decodeURIComponent(guestRoute[2]) : null; }
-      catch { throw fail(400, "INVALID_ROOM", "The LIVE room or guest ID is malformed."); }
-      const client = db();
-      const room = await liveRoomById(client, roomId);
-      const user = await requireSupabaseUser(req);
-      const isHost = String(room.host_id) === String(user.id);
-      const action = guestRoute[3] || null;
-      const isRequest = guestRoute[4] === "request";
-      const isInvite = guestRoute[4] === "invite";
-
-      if (!targetUserId && !action && !isRequest && method === "GET") {
-        const { data: guests, error } = await client.from("live_guests")
-          .select("id,live_id,user_id,status,slot,mic_on,cam_on,pinned,joined_at")
-          .eq("live_id", room.id).order("joined_at", { ascending: true });
-        if (error) throw error;
-        const ids = [...new Set((guests || []).map(g => g.user_id).filter(Boolean))];
-        let profiles = [];
-        if (ids.length) {
-          const result = await client.from("profiles").select("id,username,display_name,avatar_url").in("id", ids);
-          if (result.error) throw result.error;
-          profiles = result.data || [];
-        }
-        const byId = new Map(profiles.map(p => [String(p.id), p]));
-        return ok(res, { guests: (guests || []).map(g => ({ ...g, profile: byId.get(String(g.user_id)) || null })) });
-      }
-
-      if (isInvite && method === "POST") {
-        if (!isHost) throw fail(403, "HOST_REQUIRED", "Only the LIVE host can invite a creator.");
-        if (String(room.status).toLowerCase() === "ended") throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
-        const body = await readJson(req);
-        const inviteeId = String(body.userId || "").trim();
-        if (!inviteeId || inviteeId === String(user.id)) throw fail(400, "INVALID_GUEST_INVITE", "Enter another creator's user ID.");
-        const profile = await client.from("profiles").select("id").eq("id", inviteeId).maybeSingle();
-        if (profile.error) throw profile.error;
-        if (!profile.data) throw fail(404, "GUEST_PROFILE_NOT_FOUND", "No Creator Hub profile exists for that user ID.");
-        const existing = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", inviteeId).maybeSingle();
-        if (existing.error) throw existing.error;
-        if (existing.data && existing.data.status === "accepted") return ok(res, { invited: false, accepted: true, status: "accepted" });
-        const write = existing.data
-          ? await client.from("live_guests").update({ status: "invited" }).eq("id", existing.data.id).select("id,status,user_id").single()
-          : await client.from("live_guests").insert({ live_id: room.id, user_id: inviteeId, status: "invited" }).select("id,status,user_id").single();
-        if (write.error) throw write.error;
-        return ok(res, { invited: true, guest: write.data });
-      }
-
-      if (isRequest && method === "POST") {
-        if (isHost) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already controls this LIVE stage.");
-        if (String(room.status).toLowerCase() === "ended") throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
-        const existing = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
-        if (existing.error) throw existing.error;
-        if (existing.data && existing.data.status === "accepted") return ok(res, { requested: false, accepted: true, status: "accepted" });
-        const write = existing.data
-          ? await client.from("live_guests").update({ status: "requested" }).eq("id", existing.data.id).select("id,status").single()
-          : await client.from("live_guests").insert({ live_id: room.id, user_id: user.id, status: "requested" }).select("id,status").single();
-        if (write.error) throw write.error;
-        return ok(res, { requested: true, status: write.data.status });
-      }
-
-      if (targetUserId && action === "accept" && method === "POST") {
-        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host may approve a request, or the invited creator may accept their own invitation.");
-        const allowedStatuses = isHost ? ["requested", "invited"] : ["invited"];
-        const result = await client.from("live_guests").update({ status: "accepted", joined_at: new Date().toISOString() })
-          .eq("live_id", room.id).eq("user_id", targetUserId).in("status", allowedStatuses)
-          .select("id,status,user_id").maybeSingle();
-        if (result.error) {
-          const normalized = normalizeExternalError(result.error);
-          throw fail(409, "LIVE_GUEST_ACCEPT_FAILED", normalized.message, { databaseCode: normalized.code || undefined });
-        }
-        if (!result.data) throw fail(404, "LIVE_GUEST_REQUEST_NOT_FOUND", "No pending guest request or invitation exists for this user.");
-        return ok(res, { accepted: true, guest: result.data });
-      }
-
-      if (targetUserId && action === "reject" && method === "POST") {
-        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host or the requesting guest can reject this request.");
-        const result = await client.from("live_guests").update({ status: "rejected" }).eq("live_id", room.id).eq("user_id", targetUserId).in("status", ["requested", "invited"]).select("id,status").maybeSingle();
-        if (result.error) throw result.error;
-        return ok(res, { rejected: Boolean(result.data), status: result.data?.status || "not_pending" });
-      }
-
-      if (targetUserId && action === "remove" && method === "POST") {
-        if (!isHost && String(user.id) !== targetUserId) throw fail(403, "FORBIDDEN", "Only the host or this guest can leave the stage.");
-        const result = await client.from("live_guests").update({ status: isHost ? "removed" : "left" }).eq("live_id", room.id).eq("user_id", targetUserId).eq("status", "accepted").select("id,status").maybeSingle();
-        if (result.error) throw result.error;
-        return ok(res, { removed: Boolean(result.data), status: result.data?.status || "not_on_stage" });
-      }
-    }
-
     // PayPal Payments - Create Order
     if (pathname === "/api/payments/paypal/create-order" && method === "POST") {
       const user = await requireSupabaseUser(req);
@@ -1102,9 +882,6 @@ const server = http.createServer(async (req, res) => {
         throw fail(400, "INVALID_PACKAGE", "A valid coin package is required.");
       }
       const client = db();
-      if (!PAYPAL_RETURN_URL) {
-        throw fail(503, "PAYPAL_RETURN_URL_REQUIRED", "Set FRONTEND_URL on the backend to the deployed website origin. The return URL is sent by the server when it creates the PayPal order; it is not entered in the PayPal app credentials screen.");
-      }
       const pkg = await coinPackage(client, coins);
       const { data: existingPayment, error: existingError } = await client
         .from("payments")
@@ -1120,26 +897,15 @@ const server = http.createServer(async (req, res) => {
             "This idempotency key is already associated with another account."
           );
         }
-        const existingApproveUrl = Array.isArray(existingPayment.metadata?.links)
-          ? existingPayment.metadata.links.find((link) => ["approve", "payer-action"].includes(link.rel))?.href
-          : null;
         return ok(res, {
           orderId: existingPayment.provider_order_id,
-          approveUrl: existingApproveUrl,
           status: existingPayment.status,
           coins: existingPayment.package_coins,
           amount: Number(existingPayment.amount),
         });
       }
 
-      // The canonical coin_packages schema uses `price`, not `price_usd`.
-      // Keep the amount server-authoritative and reject malformed catalog rows
-      // before contacting PayPal (Number(undefined).toFixed() previously sent NaN).
-      const packagePrice = Number(pkg.price);
-      if (!Number.isFinite(packagePrice) || packagePrice <= 0 || !Number.isSafeInteger(Number(pkg.coins))) {
-        throw fail(503, "COIN_PACKAGE_CONFIG_INVALID", "The selected USD coin package has an invalid price or coin count. Review public.coin_packages before enabling checkout.");
-      }
-      const amountUsd = packagePrice.toFixed(2);
+      const amountUsd = Number(pkg.price_usd).toFixed(2);
       const payload = {
         intent: "CAPTURE",
         purchase_units: [
@@ -1151,11 +917,12 @@ const server = http.createServer(async (req, res) => {
         ],
         application_context: {
           user_action: "PAY_NOW",
-          // PayPal return/cancel URLs are supplied per Order API request.
-          // They are not a field in the PayPal Developer App credentials page.
-          // Keep query parameters before the hash for the browser's capture flow.
-          return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
-          cancel_url: `${PAYPAL_RETURN_URL}/?paypal=cancel#/wallet`,
+          ...(PAYPAL_RETURN_URL
+            ? {
+                return_url: `${PAYPAL_RETURN_URL}/wallet?success=true`,
+                cancel_url: `${PAYPAL_RETURN_URL}/wallet?canceled=true`,
+              }
+            : {}),
         },
       };
       const order = await paypal("/v2/checkout/orders", {
@@ -1169,15 +936,6 @@ const server = http.createServer(async (req, res) => {
           502,
           "PAYMENT_PROVIDER_ERROR",
           "PayPal did not return an order ID."
-        );
-      const approveUrl = Array.isArray(order.links)
-        ? order.links.find((link) => ["approve", "payer-action"].includes(link.rel))?.href
-        : null;
-      if (!approveUrl)
-        throw fail(
-          502,
-          "PAYMENT_PROVIDER_ERROR",
-          "PayPal did not return a checkout approval link."
         );
 
       const { error: insertError } = await client.from("payments").insert({
@@ -1198,7 +956,6 @@ const server = http.createServer(async (req, res) => {
       }
       return ok(res, {
         orderId,
-        approveUrl,
         status: "pending",
         coins: pkg.coins,
         amount: Number(amountUsd),
@@ -1274,12 +1031,7 @@ const server = http.createServer(async (req, res) => {
         .maybeSingle();
       if (error) {
         const normalized = normalizeExternalError(error);
-        const missingSchema = ["PGRST204", "PGRST205", "42P01", "42703"].includes(String(normalized.code || ""));
-        throw fail(missingSchema ? 503 : 500, "PAYPAL_INFO_LOOKUP_FAILED",
-          missingSchema
-            ? `PayPal payout settings schema is not ready. Review database/diagnostics/league_schema_preflight.sql and migration 0019_league_operations_and_payouts.sql before changing the database. ${normalized.message || ""}`.trim()
-            : normalized.message,
-          { databaseCode: normalized.code || undefined, databaseMessage: normalized.message || undefined });
+        throw fail(500, "PAYPAL_INFO_LOOKUP_FAILED", normalized.message);
       }
       return ok(res, {
         paypalEmail: data?.paypal_email || null,
@@ -1317,12 +1069,7 @@ const server = http.createServer(async (req, res) => {
         .single();
       if (error) {
         const normalized = normalizeExternalError(error);
-        const missingSchema = ["PGRST204", "PGRST205", "42P01", "42703"].includes(String(normalized.code || ""));
-        throw fail(missingSchema ? 503 : 500, "PAYPAL_INFO_SAVE_FAILED",
-          missingSchema
-            ? `PayPal payout settings schema is not ready. Review database/diagnostics/league_schema_preflight.sql and migration 0019_league_operations_and_payouts.sql before changing the database. ${normalized.message || ""}`.trim()
-            : normalized.message,
-          { databaseCode: normalized.code || undefined, databaseMessage: normalized.message || undefined });
+        throw fail(500, "PAYPAL_INFO_SAVE_FAILED", normalized.message);
       }
       return ok(res, {
         saved: true,
@@ -1425,7 +1172,7 @@ const server = http.createServer(async (req, res) => {
       const client = db();
       const { data, error } = await client
         .from("gifts")
-        .select("id,name,category,graphic_url,animation_url,coin_price,diamond_value,active")
+        .select("id,name,coin_price,diamond_value,active")
         .eq("active", true)
         .order("coin_price", { ascending: true });
       if (error) {
@@ -1435,51 +1182,15 @@ const server = http.createServer(async (req, res) => {
           details: normalized.details,
         });
       }
-      const gifts = (data || []).map((gift) => {
-        const metadata = GIFT_ASSETS_BY_NAME.get(String(gift.name || "").trim().toLowerCase()) || null;
-        const assetKey = giftAssetKey(gift.name);
-        return {
-          id: gift.id,
-          name: gift.name,
-          category: gift.category || (metadata && metadata.category) || "regular",
-          emoji: metadata ? metadata.emoji : null,
-          assetKey,
-          graphicUrl: giftMediaUrl(gift.graphic_url, `/assets/gifts/art/${assetKey}.svg`),
-          animationUrl: giftMediaUrl(gift.animation_url, `/assets/gifts/animations/${assetKey}.svg`),
-          soundUrl: `/assets/gifts/sounds/${assetKey}.wav`,
-          coinPrice: gift.coin_price == null ? null : Number(gift.coin_price),
-          diamondValue:
-            gift.diamond_value == null ? null : Number(gift.diamond_value),
-          active: Boolean(gift.active),
-        };
-      });
+      const gifts = (data || []).map((gift) => ({
+        id: gift.id,
+        name: gift.name,
+        coinPrice: gift.coin_price == null ? null : Number(gift.coin_price),
+        diamondValue:
+          gift.diamond_value == null ? null : Number(gift.diamond_value),
+        active: Boolean(gift.active),
+      }));
       return ok(res, { gifts });
-    }
-
-    // Public, server-read coin package catalogue. Only active USD packages are
-    // offered because the current checkout creates USD-denominated PayPal orders.
-    if (pathname === "/api/wallet/packages" && method === "GET") {
-      const client = db();
-      const { data, error } = await client
-        .from("coin_packages")
-        .select("id,coins,price,currency,sort")
-        .eq("active", true)
-        .eq("currency", "USD")
-        .order("sort", { ascending: true })
-        .order("coins", { ascending: true });
-      if (error) {
-        const normalized = normalizeExternalError(error);
-        throw fail(503, "COIN_PACKAGE_LOOKUP_FAILED", normalized.message, {
-          databaseCode: normalized.code || undefined,
-        });
-      }
-      const packages = (data || []).map((pkg) => ({
-        id: pkg.id,
-        coins: Number(pkg.coins),
-        price: Number(pkg.price),
-        currency: "USD",
-      })).filter((pkg) => Number.isSafeInteger(pkg.coins) && pkg.coins > 0 && Number.isFinite(pkg.price) && pkg.price > 0);
-      return ok(res, { packages });
     }
 
     // Wallet transactions and gifts — server-authoritative only
@@ -1565,25 +1276,6 @@ const server = http.createServer(async (req, res) => {
         lifetimeGiftsSent: wallet.lifetime_gifts_sent,
       });
     }
-
-    // Existing team division/season standings API. Kept separate from creator-created leagues.
-    if (await handleTeamLeagueRoute({
-      pathname, method, req, res, fail, ok, db, requireSupabaseUser, profileFor, readJson, normalizeExternalError
-    })) return;
-
-    // Creator-specific league API. Kept separate from the existing team division/standings system.
-    const handledCreatorLeague = await handleCreatorLeagueRoute({
-      req, res, pathname, method,
-      deps: { requireSupabaseUser, db, readJson, ok, send, paypal, paypalReturnUrl: PAYPAL_RETURN_URL, paypalEnv: PAYPAL_ENV }
-    });
-    if (handledCreatorLeague !== false) return;
-
-    // Extended LIVE-room controls (recordings, polls, Q&A, reactions, analytics,
-    // moderators, schedules and room settings). Core room lifecycle remains above.
-    const handledLiveExperience = await handleLiveRoomExperience({
-      pathname, method, req, res, fail, ok, send, db, requireSupabaseUser, readJson,
-    });
-    if (handledLiveExperience !== false) return;
 
     // 404 Fallback
     return send(res, 404, {
