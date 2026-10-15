@@ -1,0 +1,22 @@
+{
+  "product": "CREATOR HUB CREATOR NETWORK",
+  "edition": "Nexus Edition",
+  "version": "6.0.2",
+  "source_base": "Existing Nexus Edition 6.0.0 source, reconciled current migrations, and recovered repository assets",
+  "scope": "Full source recovery; 90 gift art SVGs, 90 animated SVGs, 90 distinct WAV effects, six badges, multi-guest artwork, reconciled LIVE room API/UI, private recording controls, synchronized Android web assets",
+  "apk_status": "Historical APKs preserved; Nexus 6.0.2 APK not rebuilt/signed because Android SDK/Gradle toolchain is unavailable in the packaging environment",
+  "deployment_status": "Manual-install source package; local automated source checks and mocked Chromium smoke pass; environment-specific staging acceptance remains required",
+  "migration_chain_count": 26,
+  "generated_paths": [
+    "frontend/index.html",
+    "frontend/index.iphone.html",
+    "frontend/styles/nexus-edition.css",
+    "frontend/src/studio-edition.js",
+    "frontend/src/pages-room.js",
+    "frontend/assets/gifts/asset-manifest.json",
+    "backend/src/live-room-experience.js",
+    "database/migrations/0026_nexus_live_room_experience.sql",
+    "android/app/src/main/assets/web"
+  ],
+  "completion_status": "Local source recovery complete and automated checks passing; production/service/device validation remains outstanding"
+}
