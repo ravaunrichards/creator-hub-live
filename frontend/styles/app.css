@@ -513,6 +513,9 @@ label.field span {
   border-radius: 14px;
   padding: 12px 6px;
   text-align: center;
+  color: var(--text);
+  font: inherit;
+  width: 100%;
   cursor: pointer;
   transition: transform 0.12s, border-color 0.12s;
   overflow-wrap: anywhere;
@@ -526,6 +529,24 @@ label.field span {
 .gift .em {
   font-size: 30px;
 }
+
+.gift .gift-art {
+  display: block;
+  width: 100%;
+  max-width: 108px;
+  aspect-ratio: 6 / 5;
+  object-fit: contain;
+  margin: 0 auto 7px;
+  border-radius: 9px;
+}
+.gift:disabled { opacity: .65; cursor: not-allowed; transform: none; }
+.gift-animation-overlay {
+  position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center;
+  pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,.36), transparent 70%);
+  animation: gift-overlay-in .18s ease-out both;
+}
+.gift-animation-overlay img { width: min(76vw, 440px); max-height: 72vh; object-fit: contain; filter: drop-shadow(0 16px 34px rgba(0,0,0,.42)); }
+@keyframes gift-overlay-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
 
 .gift .px {
   font-size: 12px;
@@ -545,16 +566,6 @@ label.field span {
   pointer-events: none;
   z-index: 200;
   overflow: hidden;
-}
-
-.flyGift.gift-fly-art { font-size: 0; }
-.flyGift.gift-fly-art img {
-  display: block;
-  width: min(42vw, 220px);
-  height: auto;
-  max-height: 35vh;
-  object-fit: contain;
-  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .38));
 }
 
 .flyGift {
@@ -1039,9 +1050,11 @@ label.field span {
     transform: none;
   }
 
-  .main:has(.live-room-layout) .live-gift-card .gift > div:first-child {
-    font-size: 18px !important;
-    line-height: 1.2;
+  .main:has(.live-room-layout) .live-gift-card .gift .gift-art {
+    width: 100%; max-width: 72px; margin-bottom: 3px;
+  }
+  .main:has(.live-room-layout) .live-gift-card .gift .nm {
+    display: block; font-size: 11px; line-height: 1.2; font-weight: 800; color: var(--text);
   }
 
   .main:has(.live-room-layout) .live-gift-card .gift .sub {
@@ -1073,134 +1086,3 @@ label.field span {
     font-size: 10px;
   }
 }
-
-/* Creator Hub Creator Network — cross-device layout safeguards. */
-html, body, #app { max-width: 100%; min-width: 0; }
-body { overflow-x: clip; }
-*, *::before, *::after { box-sizing: border-box; }
-img, video, canvas, svg { max-width: 100%; }
-button, input, select, textarea { font: inherit; }
-input, select, textarea { max-width: 100%; }
-.main, .content, .page, .card, .tile, .grid, .row, .meta, .field { min-width: 0; }
-.card, .tile, .note, .meta, .u, .t, p, a, button, label { overflow-wrap: anywhere; }
-.grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-.row { flex-wrap: wrap; }
-.btn { max-width: 100%; white-space: normal; touch-action: manipulation; }
-.field { flex: 1 1 220px; }
-.field input, .field select, .field textarea, .input { width: 100%; min-width: 0; }
-
-@media (max-width: 860px) {
-  .main { width: 100%; max-width: 100%; padding-left: 12px; padding-right: 12px; }
-  .hero { padding: 18px; }
-  .hero h1 { font-size: clamp(22px, 6vw, 30px); }
-  .grid, .grid.live, .grid.stat { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
-  .card, .tile { max-width: 100%; }
-  .row.between { align-items: flex-start; }
-  .field { flex: 1 1 100%; }
-  .field input, .field select, .field textarea, .input { min-height: 42px; }
-  table { display: block; max-width: 100%; overflow-x: auto; }
-}
-
-@media (max-width: 480px) {
-  .main { padding-left: 8px; padding-right: 8px; }
-  .hero { border-radius: 14px; padding: 14px; }
-  .card { padding: 12px; border-radius: 12px; }
-  .grid, .grid.live, .grid.stat { grid-template-columns: minmax(0, 1fr); }
-  .btn, button.btn { min-height: 42px; }
-  .row > .btn, .row > button { flex: 1 1 auto; }
-  .field { flex-basis: 100%; }
-}
-
-/* Creator Hub Creator Network 3.4 — compact, accessible, responsive extensions. */
-html { font-size: calc(16px * var(--user-scale, 1)); }
-html[data-chcn-theme="light"] { --bg:#f4f6fb; --bg2:#ffffff; --card:#ffffff; --line:#dce1eb; --txt:#171925; --mut:#586074; --brand:#d91d5d; --brand2:#5a49d8; }
-html.high-contrast { --line:color-mix(in srgb, var(--txt) 45%, var(--bg)); --mut:color-mix(in srgb, var(--txt) 78%, var(--bg)); }
-html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
-.side { overflow:hidden; }
-.side-nav { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding-right:2px; }
-.side nav a { padding:8px 10px; gap:9px; font-size:13px; }
-.side .spacer { flex:0 0 6px; }
-.main { width:min(100%, 1320px); padding:18px clamp(12px, 2vw, 24px) calc(76px + env(safe-area-inset-bottom, 0px)); }
-.h1 { font-size:clamp(21px, 2vw, 27px); line-height:1.2; }
-.sub { margin-bottom:14px; font-size:14px; }
-.card { padding:clamp(12px, 1.35vw, 17px); border-radius:14px; }
-.section-title { font-size:16px; margin:18px 0 9px; }
-.settings-group { margin:16px 0 20px; }
-.settings-grid, .tool-grid, .course-grid, .phrase-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr)); gap:10px; }
-.settings-card, .tool-card, .course-card { display:flex; flex-direction:column; align-items:flex-start; gap:7px; min-height:0; }
-.settings-card .u:last-child, .tool-card .u:last-child { color:var(--brand); font-weight:700; }
-.tool-icon { font-size:24px; line-height:1.2; }
-.form-stack { display:flex; flex-direction:column; gap:10px; }
-.form-stack .field { margin:0; width:100%; }
-.social-post { max-width:100%; overflow:hidden; }
-.social-post img, .social-post video { display:block; margin:7px auto; }
-.user-result { display:block; }
-.game-menu .btn { flex:0 1 auto; }
-.game-board { min-width:0; }
-.game-tile { min-width:0; min-height:48px; aspect-ratio:1; border:1px solid var(--line); border-radius:9px; background:var(--card); color:var(--txt); font-size:clamp(17px, 4vw, 25px); font-weight:750; display:flex; align-items:center; justify-content:center; padding:4px; cursor:pointer; }
-.game-tile:focus-visible, .sol-card:focus-visible { outline:3px solid var(--brand2); outline-offset:2px; }
-.game-tile:disabled { opacity:1; }
-.mine-tile.revealed { background:var(--bg2); }
-.solitaire-top { margin:10px 0; }
-.sol-pile { display:flex; flex-direction:column; gap:5px; min-width:52px; }
-.sol-card { min-width:0; width:100%; min-height:58px; padding:6px 3px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--txt); font-weight:750; font-size:13px; cursor:pointer; }
-.sol-card.selected { outline:3px solid var(--brand2); }
-.sol-card.sol-empty { border-style:dashed; opacity:.7; }
-.sol-column { min-width:0; }
-.sol-column .sol-card { min-height:44px; }
-.quiz-question { border:1px solid var(--line); border-radius:12px; padding:12px; min-width:0; }
-.quiz-question legend { padding:0 4px; font-weight:700; }
-.progress { width:100%; }
-.legal-copy h3 { margin:18px 0 5px; font-size:16px; }
-.legal-copy p { line-height:1.65; }
-
-@media (max-width:1100px) and (min-width:861px) {
-  .side { width:198px; flex-basis:198px; padding:12px 9px; }
-  .main { padding:16px 14px 80px; }
-  .side nav a { font-size:12px; padding:7px 8px; }
-}
-@media (max-width:860px) {
-  .main { padding:10px 12px calc(86px + env(safe-area-inset-bottom, 0px)); }
-  .mtop { margin-bottom:10px; }
-  .tabbar { padding:4px 3px calc(4px + env(safe-area-inset-bottom, 0px)); }
-  .tabbar a { min-height:48px; padding:5px 1px; font-size:10px; gap:1px; }
-  .tabbar a .ic { font-size:19px; line-height:1.3; }
-  .grid, .grid.live, .grid.stat, .settings-grid, .tool-grid, .course-grid, .phrase-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:9px; }
-  .card { padding:13px; }
-  .form-stack .btn { width:100%; }
-  .game-board { width:100%; }
-  .game-tile { min-height:0; }
-}
-@media (max-width:480px) {
-  .main { padding:7px 8px calc(84px + env(safe-area-inset-bottom, 0px)); }
-  .h1 { font-size:21px; }
-  .sub { font-size:13px; margin-bottom:10px; }
-  .card { padding:11px; border-radius:12px; }
-  .grid, .grid.live, .grid.stat, .settings-grid, .tool-grid, .course-grid, .phrase-grid { grid-template-columns:minmax(0,1fr); gap:8px; }
-  .row { gap:7px; }
-  .row > .btn, .row > button { flex:1 1 calc(50% - 8px); }
-  .game-menu .btn { flex:1 1 calc(50% - 8px); padding:9px 8px; }
-  .game-tile { min-height:36px; font-size:clamp(15px,5vw,22px); }
-  .solitaire-tableau { gap:3px !important; }
-  .sol-card { min-height:42px; font-size:11px; }
-  .sol-column .sol-card { min-height:37px; }
-  .profile-header .row { gap:9px; }
-  .tabbar a { font-size:9px; }
-}
-@media print {
-  body { background:#fff; color:#111; }
-  .side, .tabbar, .mtop, #giftStage, .btn, button, a.chip { display:none !important; }
-  .main { max-width:100%; padding:0; }
-  .certificate { color:#111 !important; background:#fff !important; border:2px solid #a78b34 !important; box-shadow:none !important; }
-}
-
-/* 4.2.0 coordinated LIVE/mobile controls */
-[hidden] { display: none !important; }
-.gift-button { appearance: none; width: 100%; font: inherit; color: inherit; cursor: pointer; text-align: center; border: 1px solid var(--line, rgba(255,255,255,.12)); background: var(--card, rgba(255,255,255,.04)); border-radius: 12px; padding: 12px 8px; min-width: 0; }
-.gift-button:focus-visible, .live-guest-card button:focus-visible { outline: 3px solid var(--accent, #f4c542); outline-offset: 2px; }
-.gift-button:disabled, .live-guest-card button:disabled { opacity: .55; cursor: wait; }
-.live-room-layout, .live-room-side, .live-video-card, .live-chat-card, .live-gift-card, .live-guest-card { min-width: 0; max-width: 100%; }
-.live-stage { aspect-ratio: 16 / 9; max-height: min(68vh, 720px); }
-.live-guest-list .note { overflow-wrap: anywhere; }
-@media (max-width: 860px) { .live-room-layout { grid-template-columns: minmax(0,1fr) !important; } .live-stage { max-height: 55vh; } .live-controls .btn { min-height: 42px; } .gift-grid { grid-template-columns: repeat(auto-fit,minmax(76px,1fr)); } }
-@media (max-width: 380px) { .live-stage { aspect-ratio: 4 / 3; } .live-controls { gap: 6px !important; } .live-controls .btn { padding-inline: 9px; } }
