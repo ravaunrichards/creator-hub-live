@@ -57,16 +57,31 @@ async function run() {
     assert.deepEqual(result, { scanned: 1, ended: 1 });
     assert.equal(updates.length, 1);
     assert.equal(updates[0].status, 'ended');
+    assert.equal(updates[0].viewer_count, 0);
     assert.equal(updates[0].ended_at, new Date(now).toISOString());
+  }
+  {
+    const { db, updates } = mockDb([row()]);
+    let deleted = '';
+    const result = await closeOrphanedLiveRooms({
+      client: db, livekitUrl: 'wss://example.livekit.cloud', apiKey: 'key', apiSecret: 'secret', now,
+      logger: quiet, roomService: {
+        async listRooms() { return [{ name: 'chl_room_123', numParticipants: 0 }]; },
+        async deleteRoom(name) { deleted = name; },
+      },
+    });
+    assert.deepEqual(result, { scanned: 1, ended: 1 });
+    assert.equal(deleted, 'chl_room_123', 'old empty rooms should be closed before reconciliation');
+    assert.equal(updates[0].status, 'ended');
   }
   {
     const { db, updates } = mockDb([row()]);
     const result = await closeOrphanedLiveRooms({
       client: db, livekitUrl: 'wss://example.livekit.cloud', apiKey: 'key', apiSecret: 'secret', now,
-      logger: quiet, roomService: { async listRooms() { return [{ name: 'chl_room_123', numParticipants: 0 }]; } },
+      logger: quiet, roomService: { async listRooms() { return [{ name: 'chl_room_123', numParticipants: 2 }]; } },
     });
     assert.deepEqual(result, { scanned: 1, ended: 0 });
-    assert.equal(updates.length, 0, 'a room still present in LiveKit must not be ended just because it has zero participants');
+    assert.equal(updates.length, 0, 'a room with participants must remain live');
   }
   {
     const { db, updates } = mockDb([row()]);
@@ -75,25 +90,18 @@ async function run() {
       logger: quiet, roomService: { async listRooms() { throw new Error('temporary outage'); } },
     });
     assert.deepEqual(result, { scanned: 1, ended: 0 });
-    assert.equal(updates.length, 0, 'LiveKit errors must never close a session');
+    assert.equal(updates.length, 0, 'LiveKit errors must never end a session');
   }
   {
     const { db, updates } = mockDb([row({ started_at: '2026-10-15T19:58:00.000Z' })]);
+    let listed = false;
     const result = await closeOrphanedLiveRooms({
       client: db, livekitUrl: 'wss://example.livekit.cloud', apiKey: 'key', apiSecret: 'secret', now,
-      logger: quiet, roomService: { async listRooms() { return []; } },
+      logger: quiet, roomService: { async listRooms() { listed = true; return []; } },
     });
     assert.deepEqual(result, { scanned: 1, ended: 0 });
-    assert.equal(updates.length, 0, 'rooms inside the five-minute safety window must be left alone');
-  }
-  {
-    const { db, updates } = mockDb([row()]);
-    const result = await closeOrphanedLiveRooms({
-      client: db, livekitUrl: 'wss://example.livekit.cloud', apiKey: 'key', apiSecret: 'secret', now,
-      logger: quiet, roomService: { async listRooms() { return []; } },
-    });
-    assert.equal(result.ended, 1);
-    assert.equal(updates[0].status, 'ended');
+    assert.equal(listed, false, 'rooms inside the five-minute safety window must be left alone');
+    assert.equal(updates.length, 0);
   }
   {
     let deleted = '';
@@ -104,8 +112,9 @@ async function run() {
     assert.deepEqual(result, { closed: true });
     assert.equal(deleted, 'chl_room_123');
   }
-  console.log('PASS — missing LiveKit rooms are marked ended after grace period');
-  console.log('PASS — existing empty rooms are not ended on guesswork');
+  console.log('PASS — missing rooms are marked ended after grace period');
+  console.log('PASS — old empty rooms are closed and reconciled');
+  console.log('PASS — rooms with participants remain live');
   console.log('PASS — transient LiveKit failures never end sessions');
   console.log('PASS — rooms inside grace period are preserved');
   console.log('PASS — explicit end can close the LiveKit room');
