@@ -1,8 +1,10 @@
-// Copy this shape to config.js only when a deployment needs an external API base.
-// The checked-in config.js already contains browser-safe Supabase/LiveKit settings.
-window.__CREATOR_HUB_API_BASE__ = '';
+// Copy this template only into a deployment that needs fresh browser-safe settings.
+// Never put a Supabase service-role key, PayPal secret, or LiveKit API secret here.
+window.CREATOR_HUB_API_BASE = 'https://YOUR-BACKEND.example.com';
 window.CHL_CONFIG = {
-  API_BASE: '',
+  BRAND: 'Creator Hub Creator Network',
+  API_BASE: 'https://YOUR-BACKEND.example.com',
   SUPABASE_URL: 'https://YOUR-PROJECT.supabase.co',
-  SUPABASE_PUBLISHABLE_KEY: 'YOUR_SUPABASE_PUBLISHABLE_KEY'
+  SUPABASE_PUBLISHABLE_KEY: 'YOUR_SUPABASE_PUBLISHABLE_KEY',
+  version: '5.0.0'
 };

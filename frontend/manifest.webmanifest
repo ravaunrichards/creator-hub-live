@@ -1,12 +1,17 @@
 {
-  "name": "Creator Hub Live",
-  "short_name": "CHL",
-  "description": "Create. Connect. Go LIVE.",
+  "name": "Creator Hub Creator Network",
+  "short_name": "Creator Hub",
+  "description": "Nexus Edition: a futuristic creator command centre for community, LIVE, publishing, teams and growth.",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#0b0b12",
-  "theme_color": "#0b0b12",
+  "background_color": "#14261d",
+  "theme_color": "#14261d",
   "icons": [
-    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
