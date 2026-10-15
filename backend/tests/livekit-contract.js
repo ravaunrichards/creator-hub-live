@@ -32,13 +32,11 @@ for (const [name, tracks, camera, microphone] of cases) {
 
 assert(SERVER.includes("await verifyHostPublishing("), 'LIVE start endpoint does not verify host publication before update.');
 const verifyIndex = SERVER.indexOf('await verifyHostPublishing(');
-const updateMatch = /\.update\(\{\s*status:\s*['\"]live['\"]/g;
-const updateIndices = Array.from(SERVER.matchAll(updateMatch), (match) => match.index);
-const updateIndex = updateIndices.find((index) => index > verifyIndex) ?? -1;
-assert(verifyIndex >= 0 && updateIndex > verifyIndex, 'LIVE status update appears before host publication verification.');
-assert(/const LIVEKIT_URL = String\(\s*process\.env\.LIVEKIT_URL\s*\|\|\s*['\"]{2}/.test(SERVER), 'Server still has a silent hard-coded LIVEKIT_URL fallback.');
-assert(/canPublishSources:\s*canPublish\s*\?\s*\[1,\s*2\]\s*:\s*\[\]/.test(TOKEN), 'Host token must restrict publishing to LiveKit camera (1) and microphone (2) sources.');
-assert(ROOM_PAGE.includes('joinResult && joinResult.roomName') && ROOM_PAGE.includes('room.room_name'), 'Frontend does not use the backend-authoritative LiveKit room name.');
+const updateOffset = SERVER.slice(verifyIndex).search(/\.update\(\{\s*status:\s*['\"]live['\"]/);
+assert(verifyIndex >= 0 && updateOffset > 0, 'LIVE status update appears before host publication verification.');
+assert(/const LIVEKIT_URL = String\(\s*process\.env\.LIVEKIT_URL \|\| ['\"]['\"]/.test(SERVER), 'Server still has a silent hard-coded LIVEKIT_URL fallback.');
+assert(TOKEN.includes('canPublishSources: canPublish ? [1, 2] : []') || TOKEN.includes("canPublishSources: canPublish ? ['camera', 'microphone'] : []"), 'Host token is not restricted to camera/microphone publishing sources.');
+assert(/joinResult\s*&&\s*joinResult\.roomName/.test(ROOM_PAGE) && ROOM_PAGE.includes('room.room_name'), 'Frontend does not use the backend-authoritative LiveKit room name.');
 assert(!/var roomName = roomId;/.test(ROOM_PAGE), 'Frontend still substitutes the database room UUID as the LiveKit room name.');
 
 console.log('PASS — LIVE start authorization ordering');
