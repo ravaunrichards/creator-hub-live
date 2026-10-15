@@ -5,7 +5,7 @@
 
 -- Wallets: one coin wallet + one diamond wallet per user.
 create table if not exists public.wallets (
-  user_id uuid key references public.profiles(id) on delete cascade,
+  user_id uuid primary key references public.profiles(id) on delete cascade,
   coin_balance   bigint not null default 0 check (coin_balance >= 0),
   diamond_balance bigint not null default 0 check (diamond_balance >= 0),
   updated_at timestamptz not null default now()
@@ -97,6 +97,7 @@ create table if not exists public.gift_transactions (
   live_id uuid,
   coin_cost bigint not null,
   diamond_value bigint not null,
+  idempotency_key text unique,
   created_at timestamptz not null default now()
 );
 
@@ -209,3 +210,7 @@ revoke all on function public.credit_coins(uuid,bigint,text,text,text,text,text)
 revoke all on function public.send_gift(uuid,uuid,uuid,uuid,text) from public,anon,authenticated;
 revoke all on function public.debit_coins(uuid,bigint,text,text,text,text) from public,anon,authenticated;
 revoke all on function public.request_diamond_withdrawal(uuid,bigint,text) from public,anon,authenticated;
+grant execute on function public.credit_coins(uuid,bigint,text,text,text,text,text) to service_role;
+grant execute on function public.debit_coins(uuid,bigint,text,text,text,text) to service_role;
+grant execute on function public.send_gift(uuid,uuid,uuid,uuid,text) to service_role;
+grant execute on function public.request_diamond_withdrawal(uuid,bigint,text) to service_role;
