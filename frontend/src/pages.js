@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network \u2014 pages: route handlers. Real Supabase reads/writes.
+/* Creator Hub Live \u2014 pages: route handlers. Real Supabase reads/writes.
    Honest empty states; never fabricated data. */
 (function(){
   'use strict';
@@ -23,16 +23,6 @@
     ]);
     outlet.appendChild(hero);
     if (needSetup(outlet)) return;
-
-    var shortcuts = el('div',{class:'grid settings-grid',style:'margin:14px 0 18px'},[
-      el('a',{class:'card settings-card',href:'#/compose'},[el('strong',{text:'Create a post'}),el('span',{class:'u',text:'Share an update with your audience.'})]),
-      el('a',{class:'card settings-card',href:'#/battles'},[el('strong',{text:'Creator Battles'}),el('span',{class:'u',text:'Send and manage real invitations.'})]),
-      el('a',{class:'card settings-card',href:'#/gift-rankings'},[el('strong',{text:'Gift Rankings'}),el('span',{class:'u',text:'View daily, weekly and monthly gift records.'})]),
-      el('a',{class:'card settings-card',href:'#/teams'},[el('strong',{text:'Teams & Leagues'}),el('span',{class:'u',text:'Open teams, fixtures and standings.'})]),
-      el('a',{class:'card settings-card',href:'#/creator/analytics'},[el('strong',{text:'Creator statistics'}),el('span',{class:'u',text:'Review activity recorded for your account.'})]),
-      el('a',{class:'card settings-card',href:'#/hall-of-fame'},[el('strong',{text:'Hall of Fame'}),el('span',{class:'u',text:'Explore leaders from public platform records.'})])
-    ]);
-    outlet.appendChild(shortcuts);
 
     outlet.appendChild(el('div',{class:'row between',style:'margin:4px 0 12px'},[
       el('div',{class:'h1',style:'font-size:20px',text:'Live now'}),

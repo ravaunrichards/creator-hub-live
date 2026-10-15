@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network \u2014 login / register (real Supabase email auth). */
+/* Creator Hub Live \u2014 login / register (real Supabase email auth). */
 (function(){
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
@@ -25,16 +25,16 @@
     f.appendChild(CHL._field('Email','email','you@example.com','email'));
     f.appendChild(CHL._field('Password','password','\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022','password'));
     f.appendChild(el('button',{class:'btn primary block',type:'submit'},'Log in'));
-    outlet.appendChild(authShell('Welcome back','Log in to connect with creators, post content and go LIVE.', f,
+    outlet.appendChild(authShell('Welcome back','Log in to go live and send gifts.', f,
       el('div',{style:'text-align:center;margin-top:14px;color:var(--mut)'},[ 'New here? ', el('a',{href:'#/register',style:'color:var(--brand2);font-weight:700'},'Create an account') ])));
   });
 
   function doLogin(f){
     var btn=f.querySelector('button'); btn.disabled=true; btn.textContent='Logging in\u2026';
-    sb.auth.signInWithPassword({email:f.email.value.trim(),password:f.password.value}).then(async function(r){
-      if (r.error) throw r.error;
-      await CHL.refreshAuth(); CHL.navigate('#/');
-    }).catch(function(error){ btn.disabled=false; btn.textContent='Log in'; CHL.toast((error&&error.message)||'Sign-in failed. Check your connection and try again.'); });
+    sb.auth.signInWithPassword({email:f.email.value.trim(),password:f.password.value}).then(function(r){
+      if (r.error){ btn.disabled=false; btn.textContent='Log in'; CHL.toast(r.error.message); return; }
+      CHL.refreshAuth().then(function(){ CHL.navigate('#/'); });
+    });
   }
 
   CHL.route('/register', function(outlet){
@@ -42,30 +42,22 @@
     var f = el('form',{onsubmit:function(e){ e.preventDefault(); doRegister(f); }});
     f.appendChild(CHL._field('Username','username','your_handle'));
     f.appendChild(CHL._field('Email','email','you@example.com','email'));
-    f.appendChild(CHL._field('Password','password','At least 10 characters','password'));
+    f.appendChild(CHL._field('Password','password','At least 6 characters','password'));
     f.appendChild(el('button',{class:'btn primary block',type:'submit'},'Create account'));
-    outlet.appendChild(authShell('Join Creator Hub Creator Network','Create. Connect. Go LIVE.', f,
+    outlet.appendChild(authShell('Join Creator Hub Live','Create. Connect. Go LIVE.', f,
       el('div',{style:'text-align:center;margin-top:14px;color:var(--mut)'},[ 'Already have an account? ', el('a',{href:'#/login',style:'color:var(--brand2);font-weight:700'},'Log in') ])));
   });
 
-  async function doRegister(f){
+  function doRegister(f){
     var username=f.username.value.trim(), email=f.email.value.trim(), pw=f.password.value;
-    if (!/^[A-Za-z0-9_.]{3,30}$/.test(username)){ CHL.toast('Username must be 3–30 letters, numbers, dots or underscores.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ CHL.toast('Enter a valid email address.'); return; }
-    if (pw.length<10){ CHL.toast('Use at least 10 characters for your password.'); return; }
-    var btn=f.querySelector('button'); btn.disabled=true; btn.textContent='Checking username…';
-    try {
-      var existing=await sb.from('profiles').select('id').eq('username',username).maybeSingle();
-      if(existing.error) throw existing.error;
-      if(existing.data) throw new Error('That username is already taken. Choose another.');
-      btn.textContent='Creating…';
-      var r=await sb.auth.signUp({email:email,password:pw,options:{data:{username:username,display_name:username}}});
-      if(r.error) throw r.error;
-      if(r.data && r.data.session){ await CHL.refreshAuth(); CHL.toast('Account created successfully.'); CHL.navigate('#/'); }
-      else { CHL.toast('Account created. Check your email for confirmation, then sign in.'); CHL.navigate('#/login'); }
-    } catch(error) {
-      CHL.toast((error&&error.message)||'Account creation failed. Please try again.');
-    } finally { btn.disabled=false; btn.textContent='Create account'; }
+    if (!username || !/^[a-z0-9_]{3,20}$/i.test(username)){ CHL.toast('Username: 3-20 letters/numbers/_'); return; }
+    if (pw.length<6){ CHL.toast('Password too short'); return; }
+    var btn=f.querySelector('button'); btn.disabled=true; btn.textContent='Creating\u2026';
+    sb.auth.signUp({email:email,password:pw,options:{data:{username:username,display_name:username}}}).then(function(r){
+      if (r.error){ btn.disabled=false; btn.textContent='Create account'; CHL.toast(r.error.message); return; }
+      CHL.toast('Account created! Check email if confirmation is required.');
+      CHL.refreshAuth().then(function(){ CHL.navigate('#/'); });
+    });
   }
 
   CHL.route('/404', function(outlet){

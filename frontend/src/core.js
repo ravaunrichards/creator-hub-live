@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network — central browser integration layer. */
+/* Creator Hub Live — central browser integration layer. */
 (function () {
   'use strict';
 
@@ -12,7 +12,7 @@
   CHL.brand =
     (cfg.app && cfg.app.name) ||
     cfg.BRAND ||
-    'Creator Hub Creator Network';
+    'Creator Hub Live';
 
   CHL.apiBase = String(
     apiCfg.baseUrl ||
@@ -731,20 +731,13 @@
             attrs[k]
           );
 
-        } else if (attrs[k] != null) {
-          // HTML boolean attributes must use DOM boolean properties. Setting
-          // checked="false" or disabled="false" as strings still enables
-          // the attribute, which can break forms and game controls.
-          var booleanProps = ['checked','selected','disabled','required','multiple','readOnly','autofocus','hidden','controls','autoplay','loop','muted','open'];
-          if (booleanProps.indexOf(k) !== -1) {
-            n[k] = !!attrs[k];
-          } else if (k === 'value' && 'value' in n) {
-            n.value = attrs[k];
-          } else if (k === 'htmlFor') {
-            n.htmlFor = attrs[k];
-          } else {
-            n.setAttribute(k, attrs[k]);
-          }
+        } else if (
+          attrs[k] != null
+        ) {
+          n.setAttribute(
+            k,
+            attrs[k]
+          );
         }
       }
     }
@@ -1027,7 +1020,7 @@
         var p =
           await sb
             .from('profiles')
-            .select('id,username,display_name,bio,avatar_url,cover_url,country,language,links,creator_category,is_creator,gifter_level,league,privacy,followers_count,following_count,posts_count,created_at,updated_at,account_status')
+            .select('*')
             .eq(
               'id',
               u.id
@@ -1039,19 +1032,6 @@
           p.data
             ? p.data
             : null;
-        if (CHL.profile) {
-          try {
-            var adminState = await sb.rpc('is_admin');
-            CHL.profile.is_admin = !!(adminState && !adminState.error && adminState.data === true);
-          } catch (_) { CHL.profile.is_admin = false; }
-        }
-        if (CHL.profile && CHL.profile.account_status === 'deactivated') {
-          try { await sb.auth.signOut({ scope: 'local' }); } catch (_) {}
-          CHL.user = null;
-          CHL.profile = null;
-          CHL.toast('This account is deactivated. Contact platform support for reactivation.');
-          return null;
-        }
 
       } catch (_) {
         CHL.profile =
@@ -1222,7 +1202,7 @@
             CHL.cfg &&
             CHL.cfg.version
           ) ||
-          '3.2.0',
+          '3.3.0',
 
         backendStatus:
           CHL.backendStatus(),
