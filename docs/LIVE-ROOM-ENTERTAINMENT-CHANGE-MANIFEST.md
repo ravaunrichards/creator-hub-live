@@ -44,3 +44,15 @@ This manifest is included in the full ZIP. Android web files were synchronized f
 - Verify the actual installed `livekit-server-sdk` version supports the permission/mute calls as used here.
 - Test front/rear camera switch, hardware zoom, local echo monitoring, guest acceptance/permission change, host track mute, leave-stage, remote audio and multiple guests on real devices with valid credentials.
 - Reactions/polls/challenges are ephemeral data-channel features, not durable or tamper-proof records. Gift animation events are cosmetic only and never alter wallet balances. No verified gift-based battle score or supporter leaderboard is implemented in this package.
+
+
+## Additional local-only change — PayPal diamond payout workflow
+
+- Added migration `database/migrations/0026_secure_diamond_payout_workflow.sql` for saved PayPal destination details, creator payout requests, RLS, atomic diamond reservation/refund RPCs, admin amount confirmation, payment-reference uniqueness, and audit records.
+- Added authenticated creator payout request/history APIs and admin-only queue/review APIs in `backend/src/server.js`.
+- Added creator withdrawal form/history in `frontend/src/pages-wallet.js` and admin approve/reject/refund/mark-paid controls in `frontend/src/pages-admin.js`.
+- Synchronized website payout UI to the Android embedded web assets.
+- Added `tests/payout-workflow-contract.mjs` and added it to the root check suite.
+- Added endpoint documentation in `docs/API.md` and operational steps in `docs/PAYOUT-WORKFLOW.md`.
+- Fiat conversion remains intentionally unconfigured. The admin confirms the actual amount/currency; a paid state requires a PayPal transaction reference. PayPal transfer execution is manual, not automatically initiated by this release.
+- No GitHub repository or live service was edited. The ZIP is based on the assembled source archive available in this session; it has not been proven byte-for-byte identical to current GitHub `main`. Reconcile the source baseline and production migration ledger before replacing/deploying.
