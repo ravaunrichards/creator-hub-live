@@ -351,6 +351,13 @@ function liveKitRoomService() {
   return new RoomServiceClient(serviceUrl, apiKey, apiSecret);
 }
 
+function isLiveKitParticipantNotFound(error) {
+  const code = String(error && (error.codeName || error.code || error.status || error.statusCode) || "").toLowerCase();
+  const message = String(error && error.message || "").toLowerCase();
+  return code === "404" || code === "5" || code === "not_found" || code === "notfound" || code.indexOf("not_found") >= 0 || code.indexOf("notfound") >= 0 ||
+    /(?:participant|identity|room).*(?:not found|does not exist|not connected)|not found.*(?:participant|identity|room)/.test(message);
+}
+
 async function liveGuestSettingsForHost(client, hostId) {
   const { data, error } = await client.from("user_settings").select("live").eq("user_id", hostId).maybeSingle();
   if (error) throw error;
@@ -358,7 +365,9 @@ async function liveGuestSettingsForHost(client, hostId) {
   const guestPermissions = saved.guest_permissions === "host_only" ? "host_only" : "allowed";
   const configuredLimit = Number(saved.max_guests);
   const maxGuests = Number.isSafeInteger(configuredLimit) && configuredLimit >= 0 && configuredLimit <= 8 ? configuredLimit : 8;
-  return { guestPermissions, maxGuests };
+  const guestLayoutEnabled = saved.guest_layout_enabled !== false && maxGuests > 0;
+  const guestLayoutOrientation = saved.guest_layout_orientation === "vertical" ? "vertical" : "horizontal";
+  return { guestPermissions, maxGuests, guestLayoutEnabled, guestLayoutOrientation };
 }
 
 function liveGuestParts(pathname) {
@@ -893,7 +902,7 @@ const server = http.createServer(async (req, res) => {
           .eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
         if (error) throw error;
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        return ok(res, { guest: data || null, guestPermissions: guestSettings.guestPermissions, maxGuests: guestSettings.maxGuests });
+        return ok(res, { guest: data || null, guestPermissions: guestSettings.guestPermissions, maxGuests: guestSettings.maxGuests, guestLayoutEnabled: guestSettings.guestLayoutEnabled, guestLayoutOrientation: guestSettings.guestLayoutOrientation });
       }
 
       if (!guestParts.action && method === "GET") {
@@ -915,12 +924,43 @@ const server = http.createServer(async (req, res) => {
         return ok(res, { guests: (data || []).map((guest) => ({ ...guest, profile: byId.get(String(guest.user_id)) || null })), guestSettings });
       }
 
+      if (guestParts.action === "layout" && method === "POST") {
+        if (!hostOwnsRoom) throw fail(403, "FORBIDDEN", "Only the host can configure the guest layout.");
+        const body = await readJson(req);
+        const enabled = body.enabled === true;
+        const rawLimit = body.maxGuests;
+        const maxGuests = Number(rawLimit);
+        const orientation = body.orientation === "vertical" ? "vertical" : body.orientation === "horizontal" ? "horizontal" : null;
+        if (typeof rawLimit === "undefined" || !Number.isSafeInteger(maxGuests) || maxGuests < 0 || maxGuests > 8) throw fail(400, "INVALID_GUEST_CAPACITY", "Guest capacity must be a whole number from 0 to 8.");
+        if (!orientation) throw fail(400, "INVALID_GUEST_ORIENTATION", "Guest orientation must be horizontal or vertical.");
+        if (enabled && maxGuests === 0) throw fail(400, "INVALID_GUEST_LAYOUT", "Select at least one guest slot to enable the guest layout.");
+        const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
+        if (activeError) throw activeError;
+        const activeCount = (activeRows || []).length;
+        if (activeCount > maxGuests) throw fail(409, "GUESTS_EXCEED_NEW_CAPACITY", "Remove guest participants safely before lowering the guest capacity below the active participant count.", { activeCount, maxGuests });
+        if (!enabled && activeCount > 0) throw fail(409, "GUESTS_STILL_CONNECTED", "Disconnect all guests before turning off the guest layout.", { activeCount });
+        if (!enabled) {
+          const { error: closeRequestsError } = await client.from("live_guests")
+            .update({ status: "rejected", updated_at: new Date().toISOString() })
+            .eq("live_id", room.id).in("status", ["requested", "invited"]);
+          if (closeRequestsError) throw closeRequestsError;
+        }
+        const { data: current, error: currentError } = await client.from("user_settings").select("live").eq("user_id", room.host_id).maybeSingle();
+        if (currentError) throw currentError;
+        const savedLive = current && current.live && typeof current.live === "object" ? current.live : {};
+        const nextLive = { ...savedLive, max_guests: maxGuests, guest_layout_enabled: enabled, guest_layout_orientation: orientation };
+        const { data: savedRow, error: saveError } = await client.from("user_settings").upsert({ user_id: room.host_id, live: nextLive, updated_at: new Date().toISOString() }, { onConflict: "user_id" }).select("user_id,live").single();
+        if (saveError) throw saveError;
+        if (!savedRow || String(savedRow.user_id) !== String(room.host_id)) throw fail(500, "GUEST_LAYOUT_SAVE_UNCONFIRMED", "The server did not confirm the guest layout settings were saved.");
+        return ok(res, { guestSettings: { guestPermissions: savedLive.guest_permissions === "host_only" ? "host_only" : "allowed", maxGuests, guestLayoutEnabled: enabled && maxGuests > 0, guestLayoutOrientation: orientation }, saved: true });
+      }
+
       if (guestParts.action === "request" && method === "POST") {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guest stage requests are disabled.");
         if (room.status !== "live") throw fail(409, "LIVE_NOT_STARTED", "Guest requests open when the host starts the LIVE session.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already owns this stage.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        if (guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "This host has disabled guest slots and is staying full-screen.");
+        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host has not selected a guest layout. The guest stage is currently closed.");
         if (guestSettings.guestPermissions === "host_only") throw fail(403, "GUEST_REQUESTS_CLOSED", "This host is accepting invited guests only.");
         const { data: existing, error: existingError } = await client.from("live_guests")
           .select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
@@ -958,6 +998,7 @@ const server = http.createServer(async (req, res) => {
         if (blocks.some((result) => result.error)) throw blocks.find((result) => result.error).error;
         if (blocks.some((result) => result.data)) throw fail(403, "GUEST_INVITE_BLOCKED", "This account cannot be invited to the stage.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting invitations.");
         const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeError) throw activeError;
         const { data: existing, error: existingError } = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", target.id).maybeSingle();
@@ -991,6 +1032,7 @@ const server = http.createServer(async (req, res) => {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_ACCEPT_INVITATION", "The host cannot accept an invitation to their own room.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting invitations.");
         const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeError) throw activeError;
         if ((activeRows || []).filter((g) => String(g.user_id) !== String(user.id)).length >= guestSettings.maxGuests) throw fail(409, "GUEST_STAGE_FULL", "The stage has reached the host's configured guest limit.");
@@ -1015,6 +1057,7 @@ const server = http.createServer(async (req, res) => {
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId) throw fail(400, "INVALID_GUEST", "A guest user ID is required.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting guests.");
         const { data: activeGuestRows, error: activeGuestError } = await client.from("live_guests")
           .select("id,user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeGuestError) throw activeGuestError;
@@ -1081,28 +1124,50 @@ const server = http.createServer(async (req, res) => {
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId || targetId === String(room.host_id)) throw fail(400, "INVALID_GUEST", "A valid guest user ID is required.");
         const { data: existingGuest, error: existingGuestError } = await client.from("live_guests")
-          .select("id,user_id,status,mic_on,cam_on").eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted").maybeSingle();
+          .select("id,user_id,status,mic_on,cam_on").eq("live_id", room.id).eq("user_id", targetId).in("status", ["accepted", "removed"]).maybeSingle();
         if (existingGuestError) throw existingGuestError;
         if (!existingGuest) throw fail(404, "GUEST_NOT_FOUND", "The accepted guest was not found.");
-        // Mark the guest removed first so the guest's permission-change handler cannot
-        // race and re-grant publishing while it refreshes its room grant.
-        const { data, error } = await client.from("live_guests").update({ status: "removed", mic_on: false, cam_on: false })
-          .eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted")
-          .select("id,user_id,status").maybeSingle();
-        if (error) throw error;
-        if (!data) throw fail(409, "GUEST_STATE_CHANGED", "The guest stage state changed before removal completed.");
-        // Revoke publishing but keep subscription enabled so the person returns to viewer mode.
+        const roomService = liveKitRoomService();
+        // Revoke stage publishing first, but keep the accepted queue row until a real
+        // disconnect is verified. If LiveKit is temporarily unavailable, the host can retry.
+        let removedFromRoom = false;
+        let permissionError = null;
         try {
-          await liveKitRoomService().updateParticipant(room.room_name, targetId, {
+          await roomService.updateParticipant(room.room_name, targetId, {
             permission: { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] }
           });
         } catch (e) {
-          const { error: rollbackError } = await client.from("live_guests").update({ status: "accepted", mic_on: existingGuest.mic_on, cam_on: existingGuest.cam_on })
-            .eq("live_id", room.id).eq("user_id", targetId).eq("status", "removed");
-          if (rollbackError) console.error("[LIVE guest] removal rollback failed:", rollbackError.message || rollbackError);
-          throw fail(503, "GUEST_STAGE_PERMISSION_UPDATE_FAILED", "Could not return this guest to viewer mode. Please retry.", { details: e && e.message });
+          permissionError = e;
+          try {
+            await roomService.getParticipant(room.room_name, targetId);
+          } catch (verifyError) {
+            if (isLiveKitParticipantNotFound(verifyError)) removedFromRoom = true;
+            else throw fail(503, "GUEST_PERMISSION_REVOKE_UNVERIFIED", "LiveKit could not verify this participant or revoke publishing permission. The guest remains in the queue; retry Remove.", { details: { permissionError: permissionError && permissionError.message, verifyError: verifyError && verifyError.message } });
+          }
+          if (!removedFromRoom) throw fail(503, "GUEST_PERMISSION_REVOKE_FAILED", "LiveKit could not revoke the guest's publishing permission. The guest remains in the queue; retry Remove.", { details: permissionError && permissionError.message });
         }
-        return ok(res, { guest: data, removedFromRoom: false, returnedToViewer: true });
+        if (!removedFromRoom) {
+          try {
+            await roomService.removeParticipant(room.room_name, targetId);
+            removedFromRoom = true;
+          } catch (e) {
+            try {
+              await roomService.getParticipant(room.room_name, targetId);
+            } catch (verifyError) {
+              if (isLiveKitParticipantNotFound(verifyError)) removedFromRoom = true;
+              else throw fail(503, "GUEST_DISCONNECT_UNVERIFIED", "LiveKit could not verify the actual disconnect. The guest remains in the queue with publishing revoked; retry Remove.", { details: { removeError: e && e.message, verifyError: verifyError && verifyError.message } });
+            }
+            if (!removedFromRoom) throw fail(503, "GUEST_DISCONNECT_FAILED", "LiveKit could not disconnect the guest. Publishing has been revoked and the guest remains in the queue; retry Remove.", { details: e && e.message });
+          }
+        }
+        if (!removedFromRoom) throw fail(503, "GUEST_DISCONNECT_FAILED", "LiveKit did not confirm the guest disconnect. Retry Remove.");
+        const { data: guestRow, error: guestUpdateError } = await client.from("live_guests")
+          .update({ status: "removed", mic_on: false, cam_on: false, updated_at: new Date().toISOString() })
+          .eq("live_id", room.id).eq("user_id", targetId).in("status", ["accepted", "removed"])
+          .select("id,user_id,status").maybeSingle();
+        if (guestUpdateError) throw guestUpdateError;
+        if (!guestRow) throw fail(500, "GUEST_REMOVAL_SAVE_UNCONFIRMED", "LiveKit disconnected the guest, but the database did not confirm the removal. Retry Remove to reconcile the participant state.");
+        return ok(res, { guest: guestRow, removedFromRoom: true, returnedToViewer: false });
       }
 
       if (guestParts.action === "leave" && method === "POST") {
