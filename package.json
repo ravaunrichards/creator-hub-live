@@ -1,10 +1,14 @@
 {
-  "name": "creator-hub-live-foryou-engine-test",
+  "name": "creator-hub-live",
   "private": true,
-  "version": "6.0.3",
   "type": "module",
   "scripts": {
-    "test": "node tests/for-you-engine-contract.mjs",
-    "check": "node --check frontend/src/swipe-feed.js && node --check android/app/src/main/assets/web/src/swipe-feed.js && npm test"
-  }
+    "check": "node tests/integration-check.js && node tests/gift-asset-contract.mjs && node tests/live-room-entertainment-contract.mjs",
+    "backend:check": "cd backend && npm run check",
+    "backend:test": "cd backend && npm run test",
+    "sync:android-web": "node scripts/sync-web-assets.js",
+    "repair:contracts": "node tests/repair-contract.js",
+    "backend:smoke": "cd backend && npm run smoke"
+  },
+  "description": "Creator Hub Live full-stack project with restored original LIVE gift assets."
 }
