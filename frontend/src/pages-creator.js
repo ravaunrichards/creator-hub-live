@@ -70,7 +70,7 @@
       query('followers',sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',uid).eq('status','accepted')),
       query('following',sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',uid).eq('status','accepted')),
       query('published posts',sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',uid).eq('is_draft',false).eq('is_test',false)),
-      query('post records',sb.from('posts').select('id,caption,kind,view_count,like_count,comment_count,created_at,is_draft,is_test,audience').eq('author_id',uid).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(500)),
+      query('post records',sb.from('posts').select('id,caption,kind,view_count,like_count,created_at,is_draft,is_test,audience').eq('author_id',uid).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(500)),
       query('LIVE sessions',sb.from('live_sessions').select('id,title,status,viewer_count,started_at,ended_at',{count:'exact'}).eq('host_id',uid).order('started_at',{ascending:false}).limit(500)),
       query('gift transactions',sb.from('gift_transactions').select('id,coin_cost,diamond_value,created_at,live_id').eq('recipient_id',uid).order('created_at',{ascending:false}).limit(1000)),
       query('wallet',CHL.authenticatedApiRequest('/api/wallet'))
@@ -120,15 +120,14 @@
       var recentGifts=gifts.filter(function(row){return inRange(row,'created_at',days);});
       var periodViews=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.view_count)||0);},0);
       var periodLikes=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.like_count)||0);},0);
-      var periodComments=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.comment_count)||0);},0);
-      var engagement=periodViews>0?((periodLikes+periodComments)/periodViews*100):null;
+      var likeRate=periodViews>0?(periodLikes/periodViews*100):null;
       var diamonds=recentGifts.reduce(function(sum,row){return sum+Math.max(0,Number(row.diamond_value)||0);},0);
       var coins=recentGifts.reduce(function(sum,row){return sum+Math.max(0,Number(row.coin_cost)||0);},0);
-      var content=card('Content analytics','Current view/like/comment counters for posts published in the selected period. Historical daily snapshots are not available in the current data contract.');
+      var content=card('Content analytics','View and like counts for posts published in the selected period. LIVE chat comments and message text are not collected into analytics.');
       var stats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px'});
-      stats.appendChild(ui.statCard(value(periodViews),'Recorded views')); stats.appendChild(ui.statCard(value(periodLikes),'Likes')); stats.appendChild(ui.statCard(value(periodComments),'Comments')); stats.appendChild(ui.statCard(engagement===null?'—':engagement.toFixed(2)+'%','Engagement rate'));
+      stats.appendChild(ui.statCard(value(periodViews),'Recorded views')); stats.appendChild(ui.statCard(value(periodLikes),'Likes')); stats.appendChild(ui.statCard(likeRate===null?'—':likeRate.toFixed(2)+'%','Like rate'));
       content.appendChild(stats);
-      content.appendChild(el('p',{class:'sub',style:'margin-top:8px',text:'Post metrics use real current post counters for posts published within the selected range, not historical day-by-day snapshots. Engagement rate = (likes + comments) ÷ views; it is unavailable when recorded views are zero.'}));
+      content.appendChild(el('p',{class:'sub',style:'margin-top:8px',text:'These are real current post counters, not historical day-by-day snapshots. Like rate = likes ÷ views; it is unavailable when recorded views are zero. Message bodies and LIVE chat comments are not used as analytics data.'}));
       var ranking=recentPosts.slice().sort(function(a,b){return (Number(b.view_count)||0)-(Number(a.view_count)||0);}).slice(0,5);
       var top=card('Top-performing posts','Ranked by recorded views within the selected period.'); drawBars(top,ranking,function(row){return row.caption||row.kind||'Untitled post';},function(row){return row.view_count;});
 
@@ -149,7 +148,8 @@
       var gift=card('Gift & earnings activity','Values are drawn from recorded gift transactions. Diamond-to-fiat conversion is not configured; no fiat estimate is fabricated.');
       var giftStats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px'});
       giftStats.appendChild(ui.statCard(value(diamonds),'Diamonds from gifts')); giftStats.appendChild(ui.statCard(value(coins),'Coins spent by senders on gifts to you'));
-      giftStats.appendChild(ui.statCard(wallet&&wallet.diamondBalance!==undefined?value(wallet.diamondBalance):'Unavailable','Current diamond balance')); gift.appendChild(giftStats);
+      var currentDiamondBalance = wallet && wallet.diamondBalance !== undefined && wallet.diamondBalance !== null && Number.isFinite(Number(wallet.diamondBalance)) ? Number(wallet.diamondBalance) : 0;
+      giftStats.appendChild(ui.statCard(value(currentDiamondBalance),'Current diamond balance')); gift.appendChild(giftStats);
       gift.appendChild(el('p',{class:'sub',style:'margin-top:10px',text:'PayPal payout amounts remain administrator-confirmed until an official conversion rule is configured.'}));
     }
     range.addEventListener('change',renderPeriod);
@@ -187,7 +187,7 @@
       var d=(r&&r.data&&r.data.diamond_balance)||0; stat.innerHTML='';
       stat.appendChild(ui.statCard(CHL.fmt(d),'Diamonds')); stat.appendChild(ui.statCard('$0.00','Available')); stat.appendChild(ui.statCard('$0.00','Pending'));
     }).catch(function(){});
-    o.appendChild(el('div',{class:'note',html:'Payouts are configured securely by the owner (PayPal / bank). Account numbers are stored masked, e.g. <code>****459</code>, and never exposed in the browser.'}));
+    o.appendChild(el('div',{class:'note',html:'PayPal is the only payout method. Save your PayPal email in Payment Settings; an authorized administrator confirms the payout amount and currency before sending the payout.'}));
   });
   CHL.route('/creator/subscriptions', function(o){
     if (guard(o,'Your Subscribers','Manage subscription tiers and subscriber-only perks.')) return;
@@ -270,19 +270,49 @@
     renderOwnProfile(o);
   });
 
-  function renderPublicProfile(o, handle){
-    o.appendChild(ui.spinner());
-    var h = String(handle).replace(/^@/,'');
-    sb.from('profiles').select('id,username,display_name,bio').eq('username',h).maybeSingle()
-      .then(function(res){ o.innerHTML=''; var p=res&&res.data;
-        if(!p){ o.appendChild(ui.empty('\uD83D\uDC64','Creator not found','No account exists for @'+h+'.', el('a',{href:'#/discover',class:'btn',style:'margin-top:8px'},'Discover creators'))); return; }
-        var who=p.display_name||p.username;
-        o.appendChild(el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;flex-wrap:wrap'},[
-          el('div',{class:'ava',style:'width:72px;height:72px;font-size:28px',text:CHL.initials(who).toUpperCase()}),
-          el('div',{style:'flex:1;min-width:180px'},[ el('div',{style:'font-size:20px;font-weight:800',text:who}), el('div',{style:'color:var(--mut)',text:'@'+p.username}), p.bio?el('div',{style:'margin-top:6px',text:p.bio}):null ]),
-          el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){ CHL.navigate('#/login'); return;} CHL.toast('Followed @'+p.username); }},'\u2795 Follow')
-        ]));
-      }).catch(function(e){ o.innerHTML=''; o.appendChild(el('div',{class:'note',text:e.message})); });
+  async function renderPublicProfile(o, handle){
+    o.appendChild(ui.pageHead('Creator profile','View profile details, follow status, and published posts.'));
+    var h=String(handle).replace(/^@/,'');
+    var content=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:12px'});o.appendChild(content);content.appendChild(ui.spinner());
+    try{
+      var result=await sb.from('profiles').select('id,username,display_name,bio,avatar_url,cover_url,privacy').eq('username',h).maybeSingle();
+      if(result.error)throw result.error;
+      var p=result.data;content.innerHTML='';
+      if(!p){content.appendChild(ui.empty('👤','Creator not found','No account exists for @'+h+'.',el('a',{href:'#/discover',class:'btn',style:'margin-top:8px'},'Discover creators')));return;}
+      if(CHL.user&&String(CHL.user.id)===String(p.id)){renderOwnProfile(content);return;}
+      var who=p.display_name||p.username||'Creator';
+      var requestList=[
+        sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',p.id).eq('status','accepted'),
+        sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',p.id).eq('status','accepted')
+      ];
+      if(CHL.user)requestList.push(sb.from('follows').select('follower_id,status').eq('follower_id',CHL.user.id).eq('followee_id',p.id).maybeSingle());
+      var counts=await Promise.all(requestList);var followerCount=counts[0].count||0;var followingCount=counts[1].count||0;var viewerRelation=CHL.user&&counts[2]&&counts[2].data;var following=!!(viewerRelation&&viewerRelation.status==='accepted');var requested=!!(viewerRelation&&viewerRelation.status==='pending');
+      var [settingsResult]=await Promise.all([sb.from('user_settings').select('privacy').eq('user_id',p.id).maybeSingle()]);
+      var privacy=(settingsResult&&settingsResult.data&&settingsResult.data.privacy)||p.privacy||{};
+      var top=el('section',{class:'card'});var row=el('div',{style:'display:flex;gap:16px;align-items:center;flex-wrap:wrap'});
+      if(p.avatar_url)row.appendChild(el('img',{src:p.avatar_url,alt:who+' profile image',style:'width:72px;height:72px;border-radius:50%;object-fit:cover'}));
+      else row.appendChild(el('div',{class:'ava',style:'width:72px;height:72px;font-size:28px',text:CHL.initials(who).toUpperCase()}));
+      var detail=el('div',{style:'flex:1;min-width:180px'});detail.appendChild(el('div',{style:'font-size:20px;font-weight:800',text:who}));detail.appendChild(el('div',{style:'color:var(--mut)',text:'@'+p.username}));if(p.bio)detail.appendChild(el('div',{style:'margin-top:6px;overflow-wrap:anywhere',text:p.bio}));
+      var countsRow=el('div',{class:'row wrap',style:'gap:16px;margin-top:10px'});var followerText=el('span',{text:CHL.fmt(followerCount)+' followers'});countsRow.appendChild(followerText);countsRow.appendChild(el('span',{text:CHL.fmt(followingCount)+' following'}));detail.appendChild(countsRow);row.appendChild(detail);top.appendChild(row);
+      var actions=el('div',{class:'row wrap',style:'gap:8px;margin-top:16px'});
+      if(CHL.user){
+        var privateProfile=privacy.account==='private';var followButton=el('button',{class:'btn primary',type:'button',text:requested?'Requested · Cancel':(following?'Following · Unfollow':(privateProfile?'Request to follow':'Follow'))});
+        followButton.addEventListener('click',async function(){followButton.disabled=true;try{
+          if(following||requested){var wasFollowing=following;var removed=await sb.from('follows').delete().eq('follower_id',CHL.user.id).eq('followee_id',p.id);if(removed.error)throw removed.error;following=false;requested=false;if(wasFollowing)followerCount=Math.max(0,followerCount-1);followButton.textContent=privateProfile?'Request to follow':'Follow';}
+          else{var added=await sb.from('follows').insert({follower_id:CHL.user.id,followee_id:p.id,status:privateProfile?'pending':'accepted'});if(added.error)throw added.error;following=!privateProfile;requested=privateProfile;if(following)followerCount+=1;followButton.textContent=privateProfile?'Requested · Cancel':'Following · Unfollow';}
+          followerText.textContent=CHL.fmt(followerCount)+' followers';CHL.toast(requested?'Follow request sent.':(following?'You are now following @'+p.username:(privateProfile?'Follow request cancelled.':'You unfollowed @'+p.username)));
+        }catch(error){CHL.toast(error.message||'Could not update your follow.');}finally{followButton.disabled=false;}});actions.appendChild(followButton);
+        var messageButton=el('button',{class:'btn',type:'button',text:'Message'});messageButton.addEventListener('click',async function(){messageButton.disabled=true;messageButton.textContent='Opening…';try{var conversation=await CHL.authenticatedApiRequest('/api/messages/conversations',{method:'POST',body:{recipientId:p.id}});if(!conversation||!conversation.conversationId)throw new Error('The conversation could not be opened.');CHL.navigate('#/messages/'+conversation.conversationId);}catch(error){CHL.toast(error.message||'Could not start a conversation.');messageButton.disabled=false;messageButton.textContent='Message';}});actions.appendChild(messageButton);
+      }else actions.appendChild(el('a',{class:'btn primary',href:'#/login'},'Log in to follow or message'));
+      top.appendChild(actions);content.appendChild(top);
+      var isFollower=following;
+      if((privacy.account==='private'||privacy.account==='followers')&&!isFollower&&(!CHL.user||String(CHL.user.id)!==String(p.id))){content.appendChild(el('div',{class:'card'},[el('div',{style:'font-weight:800',text:privacy.account==='private'?'Private profile':'Followers-only profile'}),el('p',{class:'sub',text:privacy.account==='private'?'Follow this creator and wait for approval to view profile content.':'Follow this creator to view follower-only profile content.'})]));return;}
+      var postsPanel=el('section',{class:'card'});postsPanel.appendChild(el('div',{style:'font-size:17px;font-weight:850;margin-bottom:10px',text:'Published posts'}));postsPanel.appendChild(ui.spinner());content.appendChild(postsPanel);
+      var postsResult=await sb.from('posts').select('id,caption,kind,created_at,view_count,like_count').eq('author_id',p.id).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(12);
+      if(postsResult.error)throw postsResult.error;postsPanel.innerHTML='';postsPanel.appendChild(el('div',{style:'font-size:17px;font-weight:850;margin-bottom:10px',text:'Published posts'}));
+      var posts=postsResult.data||[];if(!posts.length){postsPanel.appendChild(ui.empty('📝','No published posts yet','Published public posts will appear here.'));return;}
+      posts.forEach(function(post){var card=el('article',{class:'card',style:'margin:8px 0;cursor:pointer',onclick:function(){CHL.navigate('#/post/'+post.id);}});card.appendChild(el('div',{style:'font-weight:750',text:post.caption||post.kind||'Post'}));card.appendChild(el('div',{class:'sub',style:'font-size:12px;margin-top:5px',text:CHL.ago(post.created_at)+' · '+CHL.fmt(post.view_count||0)+' views · '+CHL.fmt(post.like_count||0)+' likes'}));postsPanel.appendChild(card);});
+    }catch(e){content.innerHTML='';content.appendChild(el('div',{class:'note',text:e.message||'Could not load this profile.'}));}
   }
   CHL.renderOwnProfileRef = null; // own-profile handler lives in pages-wallet; delegate
   function renderOwnProfile(o){ if (CHL.ownProfile) CHL.ownProfile(o); }

@@ -2,10 +2,6 @@
 (function () {
   'use strict';
   var CHL = window.CHL, el = CHL.el, ui = CHL.ui;
-  // Quantities are presentation shortcuts only. The visible price is loaded
-  // from the backend and checkout recalculates it independently.
-  var PACKAGES = [{ coins: 100 }, { coins: 500 }, { coins: 1000 }, { coins: 2500 }, { coins: 5000 }, { coins: 10000 }];
-
   CHL.route('/wallet', async function (outlet) {
     outlet.appendChild(ui.pageHead('Wallet', 'Buy coins, send gifts, cash out diamonds.'));
     if (!CHL.user) { CHL.navigate('#/login'); return; }
@@ -16,36 +12,19 @@
       stat.innerHTML = ''; stat.appendChild(ui.statCard(CHL.fmt(w.coinBalance), 'Coins')); stat.appendChild(ui.statCard(CHL.fmt(w.diamondBalance), 'Diamonds')); stat.appendChild(ui.statCard(CHL.fmt(w.lifetimeGiftsSent), 'Lifetime gifts')); ui.refreshCoins();
     } catch (e) { outlet.appendChild(el('div', { class: 'note', text: e.code === 'BACKEND_UNAVAILABLE' ? 'WALLET_UNAVAILABLE: the wallet backend is unreachable.' : (e.message || 'Wallet unavailable.') })); }
 
-    outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Buy coins' }));
-    var grid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fill,minmax(150px,1fr))' });
-    PACKAGES.forEach(function (p) {
-      var price = el('div', { class: 'sub', style: 'min-height:20px;margin:3px 0 9px', text: 'Checking price…' });
-      var buyButton = el('button', { class: 'btn primary block', type:'button', disabled:true, text:'Loading price…', onclick: function () { buy(p); } });
-      var card = el('div', { class: 'card', style: 'text-align:center' }, [el('div', { style: 'font-size:30px', text: '🪙' }),el('div', { style: 'font-size:22px;font-weight:800', text: CHL.fmt(p.coins) }),el('div', { style: 'color:var(--mut);font-size:12px', text: 'coins' }),price,buyButton]);
-      grid.appendChild(card);
-      CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(p.coins)).then(function (quote) {
-        if (!card.isConnected) return;
-        var formatted = quote.currency + ' $' + Number(quote.amountUsd).toFixed(2);
-        price.textContent = quote.custom ? 'Server rate · ' + formatted : 'Package price · ' + formatted;
-        buyButton.textContent = 'Buy ' + formatted; buyButton.disabled = false;
-      }).catch(function () { price.textContent = 'Price unavailable'; buyButton.textContent = 'Unavailable'; buyButton.disabled = true; });
-    });
-    outlet.appendChild(grid);
-
-    // Optional custom quantity is quoted by the backend; the browser never
-    // calculates or submits a payment amount.
-    var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:14px' });
-    customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your own coin amount' }));
-    customPanel.appendChild(el('p', { class: 'sub', text: 'Enter a whole-number quantity. The server returns the price that PayPal checkout will use.' }));
+    outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Recharge wallet' }));
+    var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:8px' });
+    customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your coin amount' }));
+    customPanel.appendChild(el('p', { class: 'sub', text: 'Enter any whole-number amount from 1 to 50,000 coins. The secure server calculates the price and PayPal is the checkout provider.' }));
     var customForm = el('form', { class: 'row wrap', style: 'align-items:end;gap:10px' });
     var customLabel = el('label', { class: 'field', style: 'flex:1;min-width:180px' }, [el('span', { text: 'Coin quantity (1–50,000)' })]);
-    var customInput = el('input', { class: 'input', type: 'number', min: '1', max: '50000', step: '1', required: 'required', placeholder: 'e.g. 1750', inputmode: 'numeric', 'aria-label': 'Custom coin quantity' });
+    var customInput = el('input', { class: 'input', type: 'number', name: 'coins', min: '1', max: '50000', step: '1', required: 'required', placeholder: 'e.g. 1750', inputmode: 'numeric', 'aria-label': 'Custom coin quantity' });
     customLabel.appendChild(customInput); customForm.appendChild(customLabel);
-    var customPrice = el('div', { class: 'card', style: 'min-width:140px;padding:10px 12px' }, [el('div', { class: 'sub', text: 'Server quote' }), el('strong', { text: 'Enter coins' })]);
+    var customPrice = el('div', { class: 'card', style: 'min-width:140px;padding:10px 12px' }, [el('div', { class: 'sub', text: 'Server quote (USD)' }), el('strong', { text: 'Enter coins' })]);
     var customPriceValue = customPrice.querySelector('strong');
-    var customBuy = el('button', { class: 'btn primary', type: 'submit', disabled: true, text: 'Buy custom amount' });
+    var customBuy = el('button', { class: 'btn primary', type: 'submit', disabled: true, text: 'Continue to PayPal' });
     customForm.appendChild(customPrice); customForm.appendChild(customBuy); customPanel.appendChild(customForm);
-    var customNote = el('div', { class: 'note', 'aria-live': 'polite', text: 'Quotes are refreshed as you change the quantity. Checkout validates the amount again on the server.' });
+    var customNote = el('div', { class: 'note', 'aria-live': 'polite', text: 'The amount is quoted again by the server when checkout starts. Coins are credited only after verified PayPal payment.' });
     customPanel.appendChild(customNote); outlet.appendChild(customPanel);
     var quoteTimer = null; var currentQuote = null; var quoteSequence = 0;
     async function refreshCustomQuote() {
@@ -56,18 +35,18 @@
         var quote = await CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(value));
         if (seq !== quoteSequence || Number(customInput.value) !== value) return;
         currentQuote = quote; customPriceValue.textContent = quote.currency + ' $' + Number(quote.amountUsd).toFixed(2);
-        customNote.textContent = quote.custom ? 'Custom quantity priced using the server-configured reference package. Final price is revalidated at checkout.' : 'This quantity matches an active coin package.';
+        customNote.textContent = quote.custom ? 'The server-priced custom amount will be checked again during PayPal checkout.' : 'This amount uses its active server-managed coin price.';
         customBuy.disabled = false;
       } catch (error) {
         if (seq !== quoteSequence) return;
         customPriceValue.textContent = 'Unavailable';
-        customNote.textContent = error.message || 'A custom coin price is not configured. You can still choose an available package above.';
+        customNote.textContent = error.message || 'A secure quote is unavailable. Try again when the wallet service is reachable.';
       }
     }
     customInput.addEventListener('input', function () { if (quoteTimer) window.clearTimeout(quoteTimer); quoteTimer = window.setTimeout(refreshCustomQuote, 350); });
-    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value, usd: Number(currentQuote.amountUsd), custom: !!currentQuote.custom }); });
+    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value }); });
 
-    outlet.appendChild(el('div', { class: 'note', text: 'Secure checkout is server-authoritative. The browser never supplies the PayPal amount or credits the wallet.' }));
+    outlet.appendChild(el('div', { class: 'note', text: 'PayPal is the only wallet recharge provider. The browser never supplies the payable amount or credits coins directly.' }));
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
     renderDiamondPayouts(outlet);
     handlePaypalReturn();
@@ -125,10 +104,13 @@
   }
 
   async function handlePaypalReturn() {
-    var q = new URLSearchParams(location.search || ''); var orderId = q.get('token');
-    if (q.get('paypal') !== 'success' || !orderId || !CHL.user) return;
+    var q = new URLSearchParams(location.search || ''); var orderId = q.get('token'); var returnState = q.get('paypal');
+    if (!returnState) return;
     history.replaceState(null, '', location.pathname + location.hash);
-    try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
+    if (returnState === 'cancelled') { CHL.toast('PayPal checkout was cancelled. No coins were credited.'); return; }
+    if (returnState !== 'success') return;
+    if (!orderId || !CHL.user) { CHL.toast('The PayPal return could not be verified. Open Wallet and check your transaction history.'); return; }
+    try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited || d.captured ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
     catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
   }
   async function buy(p) {

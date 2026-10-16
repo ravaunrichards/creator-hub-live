@@ -47,8 +47,36 @@
 
   CHL.route('/settings/notifications', async function(o){ if(head(o,'Notification settings','Choose what you get notified about.')) return; var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card); try{var s=await loadSettings(); card.innerHTML=''; var f=el('form',{onsubmit:async function(e){e.preventDefault();var n={follows:f.follows.checked,gifts:f.gifts.checked,live:f.live.checked,mentions:f.mentions.checked,messages:f.messages.checked};try{await saveSettings({privacy:s.privacy,notifications:n,live:s.live});}catch(err){CHL.toast(err.message||'Could not save settings.');}}}); f.appendChild(check('follows','New followers',s.notifications.follows)); f.appendChild(check('gifts','Gifts',s.notifications.gifts)); f.appendChild(check('live','LIVE alerts',s.notifications.live)); f.appendChild(check('mentions','Mentions',s.notifications.mentions)); f.appendChild(check('messages','Messages',s.notifications.messages)); f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save notification settings')); card.appendChild(f);}catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}});
 
-  CHL.route('/settings/payments', function(o){ if(head(o,'Payment settings','Manage your PayPal payout information.')) return; if(!CHL.user){o.appendChild(ui.empty('💳','Sign in required','Sign in to view your payment settings.',el('a',{href:'#/login',class:'btn primary'},'Log in')));return;} var card=el('div',{class:'card'},[el('div',{style:'font-weight:700;margin-bottom:6px',text:'PayPal payout account'}),el('div',{class:'note',text:'Your actual payout information is loaded from the secure backend. No example or fabricated account is displayed.'})]); o.appendChild(card); fetchPaypalInfo(card); });
-  async function fetchPaypalInfo(card){ try{var r=await CHL.authenticatedApiRequest('/api/payments/paypal/info'); card.appendChild(el('div',{style:'margin-top:12px',text:r&&r.paypalEmail?'PayPal account: '+r.paypalEmail:'No PayPal payout account is configured yet.'}));}catch(e){card.appendChild(el('div',{class:'note',style:'margin-top:12px',text:e.message||'Payment settings unavailable.'}));} }
+  CHL.route('/settings/payments', function(o){
+    if(head(o,'Payment settings','PayPal is the only recharge and payout method.')) return;
+    if(!CHL.user){o.appendChild(ui.empty('💳','Sign in required','Sign in to manage your PayPal payout email.',el('a',{href:'#/login',class:'btn primary'},'Log in')));return;}
+    var card=el('div',{class:'card',style:'max-width:620px'},[el('div',{style:'font-weight:800;margin-bottom:6px',text:'PayPal payout account'}),el('p',{class:'sub',text:'Save the email address connected to your PayPal account. It is used for diamond payout requests; a submitted request is not paid automatically.'}),ui.spinner()]);
+    o.appendChild(card); fetchPaypalInfo(card);
+  });
+  async function fetchPaypalInfo(card){
+    try{
+      var info=await CHL.authenticatedApiRequest('/api/payments/paypal/info');
+      card.innerHTML='';
+      card.appendChild(el('div',{style:'font-weight:800;margin-bottom:6px',text:'PayPal payout account'}));
+      card.appendChild(el('p',{class:'sub',text:'This is the PayPal email used for diamond payout requests. Coin recharge uses secure PayPal checkout and does not require this payout email.'}));
+      var f=el('form',{style:'max-width:500px'});
+      var label=el('label',{class:'field'},[el('span',{text:'PayPal email address'})]);
+      var input=el('input',{class:'input',type:'email',name:'paypalEmail',required:'required',autocomplete:'email',maxlength:'254',placeholder:'name@example.com'});
+      input.value=info.paypalEmail||'';label.appendChild(input);f.appendChild(label);
+      var status=el('div',{class:'note','aria-live':'polite',text:info.paypalEmail?(info.isVerified?'Current PayPal email is marked verified.':'Current PayPal email is saved but not marked verified.'):'No PayPal payout email has been saved yet.'});f.appendChild(status);
+      var saveButton=el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save PayPal email');f.appendChild(saveButton);
+      f.addEventListener('submit',async function(event){
+        event.preventDefault();var email=String(input.value||'').trim().toLowerCase();
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){CHL.toast('Enter a valid PayPal email address.');return;}
+        saveButton.disabled=true;saveButton.textContent='Saving…';status.textContent='';
+        try{var result=await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'PUT',body:{paypalEmail:email}});input.value=result.paypalEmail||email;status.textContent=result.isVerified?'PayPal email saved and marked verified.':'PayPal email saved. Verification is not confirmed.';CHL.toast('PayPal payout email saved.');}
+        catch(error){status.textContent=error.message||'Could not save the PayPal email.';CHL.toast(status.textContent);}
+        finally{saveButton.disabled=false;saveButton.textContent='Save PayPal email';}
+      });
+      card.appendChild(f);
+      card.appendChild(el('div',{class:'note',style:'margin-top:12px',text:'Payout requests remain subject to review. An authorized administrator confirms the fiat amount and currency and sends the PayPal payout separately.'}));
+    }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Payment settings unavailable.'}));}
+  }
 
   CHL.route('/settings/live', async function(o){ if(head(o,'LIVE settings','Defaults for your broadcasts.')) return; var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card); try{var s=await loadSettings();card.innerHTML='';var f=el('form',{onsubmit:async function(e){e.preventDefault();var v={privacy:s.privacy,notifications:s.notifications,live:{audience:f.audience.value,guest_permissions:f.guest_permissions.value}};try{await saveSettings(v);}catch(err){CHL.toast(err.message||'Could not save settings.');}}});f.appendChild(selectField('Default audience','audience',['public','followers','private'],s.live.audience));f.appendChild(selectField('Guest permissions','guest_permissions',['allowed','host_only'],s.live.guest_permissions));f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save LIVE settings'));card.appendChild(f);}catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}});
 
