@@ -1210,7 +1210,7 @@
             CHL.cfg &&
             CHL.cfg.version
           ) ||
-          '3.2.0',
+          '3.2.1',
 
         backendStatus:
           CHL.backendStatus(),
@@ -1455,7 +1455,6 @@
   var AUTH_REQUIRED = [
     '/wallet',
     '/create',
-    '/profile',
     '/messages',
     '/notifications',
     '/settings',

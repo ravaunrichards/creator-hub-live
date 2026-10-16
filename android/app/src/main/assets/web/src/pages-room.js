@@ -30,6 +30,9 @@
   var liveZoomControls = null;
   var livePollDisplay = null;
   var liveChallengeDisplay = null;
+  var liveMediaRequestPanel = null;
+  var pendingGuestMediaRequest = null;
+  var pendingHostMediaRequests = Object.create(null);
   var pollRefreshTimer = null;
   var chatRequestsInFlight = Object.create(null);
   var giftRequestsInFlight = Object.create(null);
@@ -47,6 +50,9 @@
     if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
     participantTiles.clear();
     activePoll = null;
+    liveMediaRequestPanel = null;
+    pendingGuestMediaRequest = null;
+    pendingHostMediaRequests = Object.create(null);
 
     var roomId = String((r && r.id) || '').trim();
 
@@ -246,9 +252,12 @@
     guestQueueContainer = el('div', { class: 'live-guest-queue' });
     guestCard.appendChild(guestQueueContainer);
     side.appendChild(guestCard);
+    liveMediaRequestPanel = el('section', { class:'card live-media-request-panel', style:'display:none;margin-top:12px' });
+    side.appendChild(liveMediaRequestPanel);
     // The viewer's request button is deliberately near the top of the LIVE
     // side rail instead of below entertainment controls or the chat panel.
     side.insertBefore(guestCard, funPanel);
+    side.insertBefore(liveMediaRequestPanel, funPanel);
 
     /* Chat panel. Its messages scroll independently of the video/page. */
     var chat = el('div', {
@@ -536,7 +545,13 @@
           if (participant && participant.permissions && participant.permissions.canPublish) ensureParticipantTile(participant, false);
         },
         onParticipantPermissionsChanged: function (participant) {
-          if (!participant || !CHL.user || String(participant.identity) !== String(CHL.user.id)) return;
+          if (!participant) return;
+          if (isHost && String(participant.identity) !== String(CHL.user && CHL.user.id) && participant.permissions && participant.permissions.canPublish === false) {
+            removeParticipantTile(participant);
+            refreshGuestQueue(roomId, guestQueueContainer, true, guestAction, guestStatus);
+            return;
+          }
+          if (!CHL.user || String(participant.identity) !== String(CHL.user.id)) return;
           CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/join', { method: 'POST' }).then(async function (result) {
             canPublishMedia = !!(result && result.canPublish);
             controls.style.display = canPublishMedia ? '' : 'none';
@@ -666,7 +681,10 @@
     var tile = participantTiles.get(key);
     if (tile) { tile.participant = participant || tile.participant; return tile; }
     var media = el('div', { class: 'live-participant-media' });
-    var name = (participant && participant.name) || (local ? 'You' : 'Account name unavailable');
+    var participantMetadata = {}; try { participantMetadata = participant && participant.metadata ? JSON.parse(participant.metadata) : {}; } catch (_) {}
+    var resolvedName = String((participant && participant.name) || participantMetadata.displayName || participantMetadata.username || '').trim();
+    if (/^(host|viewer|participant|creator|guest|account name unavailable)$/i.test(resolvedName)) resolvedName = '';
+    var name = resolvedName || (local ? 'You' : 'Loading profile…');
     var title = el('span', { class: 'live-participant-name', text: String(name).slice(0, 80) });
     var state = el('span', { class: 'live-participant-state', text: local ? 'YOU' : 'CONNECTED' });
     var footer = el('div', { class: 'live-participant-footer' }, [title, state]);
@@ -686,14 +704,24 @@
         var hostControls = el('div', { class: 'live-participant-host-controls' });
         var mute = el('button', { class: 'btn', type: 'button', text: 'Mute guest', onclick: function () { controlGuestTrack(tile, 'audio'); } });
         var stopVideo = el('button', { class: 'btn', type: 'button', text: 'Stop video', onclick: function () { controlGuestTrack(tile, 'video'); } });
+        var requestMic = el('button', { class: 'btn', type: 'button', text: 'Request mic', onclick: function () { var requestId=CHL.uuid(); pendingHostMediaRequests[requestId]={targetId:tile.key,media:'audio',sentAt:Date.now()}; broadcastLiveEvent('guest-media-request',{targetId:tile.key,media:'audio',requestId:requestId}).then(function(sent){if(!sent)delete pendingHostMediaRequests[requestId];CHL.toast(sent?'Microphone request sent to guest.':'Could not send the microphone request.');}); } });
+        var requestCamera = el('button', { class: 'btn', type: 'button', text: 'Request camera', style:currentMediaMode==='video'?'':'display:none', onclick: function () { var requestId=CHL.uuid(); pendingHostMediaRequests[requestId]={targetId:tile.key,media:'video',sentAt:Date.now()}; broadcastLiveEvent('guest-media-request',{targetId:tile.key,media:'video',requestId:requestId}).then(function(sent){if(!sent)delete pendingHostMediaRequests[requestId];CHL.toast(sent?'Camera request sent to guest.':'Could not send the camera request.');}); } });
         var remove = el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: function () { removeGuest(tile); } });
-        hostControls.appendChild(mute); hostControls.appendChild(stopVideo); hostControls.appendChild(remove); tileElement.appendChild(hostControls);
+        hostControls.appendChild(mute); hostControls.appendChild(stopVideo); hostControls.appendChild(requestMic); hostControls.appendChild(requestCamera); hostControls.appendChild(remove); tileElement.appendChild(hostControls);
         tile.hostMuteButton = mute; tile.hostVideoButton = stopVideo;
       }
     }
     participantTiles.set(key, tile);
     var empty = liveStageGrid && liveStageGrid.querySelector('.live-stage-empty'); if (empty) empty.remove();
     if (liveStageGrid) liveStageGrid.appendChild(tileElement);
+    if (!local && !resolvedName && CHL.sb) {
+      CHL.sb.from('profiles').select('display_name,username').eq('id', key).maybeSingle().then(function (result) {
+        if (!result || result.error || !result.data || !tileElement.isConnected) return;
+        var profileName = String(result.data.display_name || result.data.username || '').trim();
+        if (profileName) { tile.name.textContent = profileName.slice(0, 80); tile.spotlightButton.setAttribute('aria-label', 'Spotlight ' + profileName); }
+        else tile.name.textContent = 'Guest';
+      }).catch(function () { if (tileElement.isConnected && tile.name.textContent === 'Loading profile…') tile.name.textContent = 'Guest'; });
+    }
     return tile;
   }
 
@@ -888,6 +916,19 @@
     tick(); activeChallengeTimer = window.setInterval(tick, 1000);
   }
 
+  function showGuestMediaRequest(request) {
+    if (!liveMediaRequestPanel || !CHL.user || !currentRoomId) return;
+    pendingGuestMediaRequest = { requestId: String(request.requestId || ''), media: String(request.media), targetId: String(request.targetId || '') };
+    var panel = liveMediaRequestPanel; panel.textContent = ''; panel.style.display = '';
+    panel.appendChild(el('div',{style:'font-weight:850;font-size:16px',text:'Host media request'}));
+    panel.appendChild(el('p',{class:'sub',text:'The host is asking you to turn on your '+(request.media==='video'?'camera':'microphone')+'. You choose whether to allow it.'}));
+    var actions=el('div',{class:'row wrap',style:'gap:8px'});
+    var accept=el('button',{class:'btn primary',type:'button',text:'Accept'});var decline=el('button',{class:'btn',type:'button',text:'Decline'});
+    accept.addEventListener('click',async function(){accept.disabled=true;decline.disabled=true;try{if(request.media==='video'){if(currentMediaMode!=='video')throw new Error('Camera requests are unavailable in this audio-only LIVE.');await CHL.publishCamera();}else await CHL.publishMicrophone();await broadcastLiveEvent('guest-media-response',{targetId:roomHostId,guestId:CHL.user.id,media:request.media,requestId:request.requestId,accepted:true});panel.style.display='none';panel.textContent='';CHL.toast('Media enabled. The host has been notified.');syncMediaButtons();}catch(error){CHL.toast(error.message||'Could not enable requested media.');accept.disabled=false;decline.disabled=false;}});
+    decline.addEventListener('click',async function(){accept.disabled=true;decline.disabled=true;try{await broadcastLiveEvent('guest-media-response',{targetId:roomHostId,guestId:CHL.user.id,media:request.media,requestId:request.requestId,accepted:false});panel.style.display='none';panel.textContent='';CHL.toast('Request declined.');}catch(error){CHL.toast(error.message||'Could not send your response.');accept.disabled=false;decline.disabled=false;}});
+    actions.appendChild(accept);actions.appendChild(decline);panel.appendChild(actions);
+  }
+
   function handleLiveData(payload, participant, pollContainer, challengeContainer) {
     try {
       if (payload instanceof ArrayBuffer) payload = new Uint8Array(payload);
@@ -896,6 +937,18 @@
       if (!payload || payload.version !== 1 || String(payload.roomId) !== String(currentRoomId)) return;
       var senderId = String(participant && participant.identity || '');
       var data = payload.data || {};
+      if (payload.type === 'guest-media-request' && senderId === String(roomHostId) && !isHost && String(data.targetId || '') === String(CHL.user && CHL.user.id) && ['audio','video'].indexOf(String(data.media)) >= 0) showGuestMediaRequest(data);
+      if (payload.type === 'guest-media-response' && isHost && String(data.targetId || '') === String(CHL.user && CHL.user.id) && data.requestId) {
+        var issuedRequest = pendingHostMediaRequests[String(data.requestId)];
+        if (!issuedRequest || String(issuedRequest.targetId) !== senderId || issuedRequest.media !== data.media) return;
+        delete pendingHostMediaRequests[String(data.requestId)];
+        var guestTile = participantTiles.get(senderId);
+        if (data.accepted && guestTile) {
+          if (data.media === 'audio' && guestTile.mutedByHost && guestTile.audioSid) controlGuestTrack(guestTile, 'audio');
+          if (data.media === 'video' && guestTile.videoMutedByHost && guestTile.videoSid) controlGuestTrack(guestTile, 'video');
+        }
+        CHL.toast((guestTile && guestTile.name && guestTile.name.textContent || 'Guest') + (data.accepted ? ' accepted the ' : ' declined the ') + (data.media === 'video' ? 'camera' : 'microphone') + ' request.');
+      }
       if (payload.type === 'reaction' && ['❤️','👏','🔥','😂','🎉','😍'].indexOf(data.emoji) >= 0) floatReaction(data.emoji, senderId);
       if (payload.type === 'sound' && senderId === String(roomHostId) && SOUND_CUES[data.key]) playSoundCue(data.key);
       if (payload.type === 'gift' && senderId !== String(CHL.user && CHL.user.id)) {
@@ -962,14 +1015,41 @@
       var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests', { method: 'GET' });
       container.textContent = '';
       var guestSettings = result && result.guestSettings || {};
-      var limit = Number(guestSettings.maxGuests) || 8;
+      var limit = Number.isSafeInteger(Number(guestSettings.maxGuests)) ? Math.max(0, Math.min(8, Number(guestSettings.maxGuests))) : 8;
       var guests = result && Array.isArray(result.guests) ? result.guests : [];
-      var modeText = guestSettings.guestPermissions === 'host_only' ? 'Viewer requests are closed; use username invitations.' : 'Viewer requests are open.';
-      container.appendChild(el('p', { class:'sub', text: modeText + ' Guest limit: ' + limit + '. Accepted guests: ' + guests.filter(function(g){return g.status === 'accepted';}).length + '/' + limit + '.' }));
+      var modeText = limit === 0 ? 'Guest stage is disabled; the host remains full-screen.' : (guestSettings.guestPermissions === 'host_only' ? 'Viewer requests are closed; use username invitations.' : 'Viewer requests are open.');
+      var acceptedCount = guests.filter(function(g){return g.status === 'accepted';}).length;
+      container.appendChild(el('p', { class:'sub', text: modeText + ' Guest limit: ' + limit + '. Accepted guests: ' + acceptedCount + '/' + limit + '.' }));
+      var slotRow = el('div', { class:'row wrap', style:'gap:8px;align-items:center;margin:8px 0 12px' });
+      slotRow.appendChild(el('label', { class:'sub', text:'Guest slots (0–8)', style:'font-weight:800' }));
+      var slotSelect = el('select', { class:'input', style:'max-width:220px', 'aria-label':'Maximum guest slots' });
+      for (var slotN = 0; slotN <= 8; slotN++) slotSelect.appendChild(el('option', { value:String(slotN), text:slotN === 0 ? '0 — Host only' : String(slotN) + ' guest' + (slotN === 1 ? '' : 's') }));
+      slotSelect.value = String(limit);
+      slotSelect.addEventListener('change', async function () {
+        var nextLimit = Number(slotSelect.value);
+        if (!Number.isSafeInteger(nextLimit) || nextLimit < 0 || nextLimit > 8) { slotSelect.value = String(limit); return; }
+        if (nextLimit < acceptedCount) { CHL.toast('Remove guests from the stage before reducing the limit below ' + acceptedCount + '.'); slotSelect.value = String(limit); return; }
+        slotSelect.disabled = true;
+        try {
+          var saved = await CHL.sb.from('user_settings').select('live').eq('user_id', CHL.user.id).maybeSingle();
+          if (saved.error) throw saved.error;
+          var liveSettings = saved.data && saved.data.live && typeof saved.data.live === 'object' ? saved.data.live : {};
+          liveSettings.max_guests = nextLimit;
+          var write = saved.data
+            ? await CHL.sb.from('user_settings').update({ live: liveSettings }).eq('user_id', CHL.user.id)
+            : await CHL.sb.from('user_settings').insert({ user_id: CHL.user.id, live: liveSettings });
+          if (write.error) throw write.error;
+          CHL.toast(nextLimit === 0 ? 'Guest stage disabled. You remain full-screen.' : 'Guest slot limit updated to ' + nextLimit + '.');
+          refreshGuestQueue(roomId, container, host, guestButton, guestStatus);
+        } catch (error) { CHL.toast(error.message || 'Could not update guest slots.'); slotSelect.value = String(limit); }
+        finally { slotSelect.disabled = false; }
+      });
+      slotRow.appendChild(slotSelect); container.appendChild(slotRow);
       if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests or invitations yet.' })); return; }
       guests.forEach(function (guest) {
-        var profile = guest.profile || {}; var label = profile.display_name || profile.username || 'Account name unavailable';
-        var row = el('div', { class: 'live-guest-queue-row' }); row.appendChild(el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) })); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
+        var profile = guest.profile || {}; var label = profile.display_name || profile.username || 'Loading profile…';
+        var row = el('div', { class: 'live-guest-queue-row' }); var guestName = el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) }); row.appendChild(guestName); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
+        if (!profile.display_name && !profile.username && CHL.sb) CHL.sb.from('profiles').select('display_name,username').eq('id',guest.user_id).maybeSingle().then(function(result){if(result&&!result.error&&result.data){guestName.textContent=String(result.data.display_name||result.data.username||'Guest').slice(0,80);}else guestName.textContent='Guest';}).catch(function(){guestName.textContent='Guest';});
         if (guest.status === 'requested') {
           row.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Accept', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/accept', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest accepted.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not accept guest.'); } } }));
           row.appendChild(el('button', { class: 'btn', type: 'button', text: 'Reject', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/reject', { method: 'POST', body: { userId: guest.user_id } }); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not reject guest.'); } } }));
@@ -1152,8 +1232,8 @@
   /* Resolve a sender's real profile name from the backend chat response. */
   function getMessageSenderName(message, ownMessage) {
     var sender = message && message.sender ? message.sender : {};
-    var senderDisplayName = String(sender.display_name || '').trim();
-    var senderUsername = String(sender.username || '').trim();
+    var senderDisplayName = String(sender.display_name || (message && message.display_name) || '').trim();
+    var senderUsername = String(sender.username || (message && message.username) || '').trim();
 
     if (ownMessage) {
       var ownProfile = CHL.profile || {};
@@ -1166,7 +1246,7 @@
       ).trim();
     }
 
-    return senderDisplayName || senderUsername || 'Account name unavailable';
+    return senderDisplayName || senderUsername || String(message && message.senderName || '').trim() || 'Creator';
   }
 
   /* Load persisted messages so host and viewers see the same chat history. */

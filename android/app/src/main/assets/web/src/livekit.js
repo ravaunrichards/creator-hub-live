@@ -344,6 +344,18 @@
 
     bind(
       room,
+      'DataReceived',
+      function (payload, participant, kind, topic) {
+        try {
+          if (options.onDataReceived) options.onDataReceived(payload, participant, kind, topic);
+        } catch (error) {
+          if (window.console) console.warn('[Creator Hub] Live data handler failed.', error);
+        }
+      }
+    );
+
+    bind(
+      room,
       'TrackUnsubscribed',
       function (
         track,
@@ -394,6 +406,19 @@
 
     bind(
       room,
+      'ParticipantPermissionsChanged',
+      function (previousPermissions, participant) {
+        try {
+          var changedParticipant = participant && participant.identity ? participant : (previousPermissions && previousPermissions.identity ? previousPermissions : null);
+          if (changedParticipant && options.onParticipantPermissionsChanged) options.onParticipantPermissionsChanged(changedParticipant, previousPermissions);
+        } catch (error) {
+          if (window.console) console.warn('[Creator Hub] Participant permission handler failed.', error);
+        }
+      }
+    );
+
+    bind(
+      room,
       'ParticipantDisconnected',
       function (participant) {
         try {
@@ -405,34 +430,6 @@
             );
           }
         } catch (_) {}
-      }
-    );
-
-    /*
-     * Room data messages: ephemeral reactions, polls, soundboard cues and
-     * successful gift celebrations. The backend grants data publishing to
-     * authenticated room participants; media publishing remains separately
-     * authorized by the backend.
-     */
-    bind(
-      room,
-      'DataReceived',
-      function (payload, participant, kind, topic) {
-        try {
-          if (options.onDataReceived) {
-            options.onDataReceived(payload, participant, kind, topic);
-          }
-        } catch (error) {
-          if (window.console) console.error('[Creator Hub] LIVE data handler failed.', error);
-        }
-      }
-    );
-
-    bind(
-      room,
-      'ParticipantPermissionsChanged',
-      function (participant) {
-        try { if (options.onParticipantPermissionsChanged) options.onParticipantPermissionsChanged(participant); } catch (_) {}
       }
     );
 
@@ -741,81 +738,6 @@
     );
   };
 
-  /* Publish a small, bounded ephemeral room event. Never use data messages
-   * for wallet balances, gift prices, permissions, or authoritative scores. */
-  CHL.publishLiveData = async function (message) {
-    if (!activeRoom || !activeRoom.localParticipant) {
-      throw createLiveKitError('Not connected to LIVE.', 'LIVEKIT_NOT_CONNECTED');
-    }
-    var payload = new TextEncoder().encode(JSON.stringify(message || {}));
-    if (payload.byteLength > 4096) {
-      throw createLiveKitError('LIVE event is too large.', 'LIVE_DATA_TOO_LARGE');
-    }
-    return activeRoom.localParticipant.publishData(payload, { reliable: true, topic: 'chl-live' });
-  };
-
-  CHL.switchCamera = async function () {
-    if (!activeRoom || !activeRoom.localParticipant) {
-      throw createLiveKitError('Not connected to LIVE.', 'LIVEKIT_NOT_CONNECTED');
-    }
-    var room = activeRoom;
-    var publication = null;
-    room.localParticipant.trackPublications.forEach(function (item) {
-      if (item && item.track && (getTrackType(item.track) === 'camera' || getTrackType(item.track) === 'video') && (!publication || getTrackType(item.track) === 'camera')) publication = item;
-    });
-    if (!publication || !publication.track) {
-      throw createLiveKitError('Turn your camera on before switching cameras.', 'CAMERA_DISABLED');
-    }
-    var currentTrack = publication.track;
-    var mediaTrack = currentTrack.mediaStreamTrack;
-    var settings = mediaTrack && mediaTrack.getSettings ? mediaTrack.getSettings() : {};
-    var devices = await navigator.mediaDevices.enumerateDevices();
-    var cameras = devices.filter(function (device) { return device.kind === 'videoinput'; });
-    if (cameras.length < 2) {
-      throw createLiveKitError('This device does not expose a second camera.', 'SECOND_CAMERA_UNAVAILABLE');
-    }
-    var currentId = settings.deviceId || '';
-    var index = cameras.findIndex(function (device) { return device.deviceId === currentId; });
-    var next;
-    if (index >= 0) {
-      next = cameras[(index + 1) % cameras.length];
-    } else {
-      var facing = String(settings.facingMode || '').toLowerCase();
-      if (facing === 'user') next = cameras.find(function (device) { return /rear|back|environment/i.test(device.label || ''); });
-      else if (facing === 'environment') next = cameras.find(function (device) { return /front|user|selfie/i.test(device.label || ''); });
-      if (!next) next = cameras[1] || cameras[0];
-    }
-    if (typeof room.switchActiveDevice === 'function') {
-      await room.switchActiveDevice('videoinput', next.deviceId, true);
-    } else {
-      throw createLiveKitError('Camera switching is not supported by the loaded LiveKit SDK.', 'CAMERA_SWITCH_UNSUPPORTED');
-    }
-    return { deviceId: next.deviceId, label: next.label || 'Camera' };
-  };
-
-  CHL.setCameraZoom = async function (level) {
-    if (!activeRoom || !activeRoom.localParticipant) {
-      throw createLiveKitError('Not connected to LIVE.', 'LIVEKIT_NOT_CONNECTED');
-    }
-    var camera = null;
-    activeRoom.localParticipant.trackPublications.forEach(function (item) {
-      if (item && item.track && (getTrackType(item.track) === 'camera' || getTrackType(item.track) === 'video') && (!camera || getTrackType(item.track) === 'camera')) camera = item.track;
-    });
-    var mediaTrack = camera && camera.mediaStreamTrack;
-    if (!mediaTrack || typeof mediaTrack.getCapabilities !== 'function') {
-      throw createLiveKitError('Camera zoom is not exposed by this device/browser.', 'ZOOM_UNSUPPORTED');
-    }
-    var capabilities = mediaTrack.getCapabilities();
-    if (!capabilities.zoom) {
-      throw createLiveKitError('Hardware camera zoom is not supported on this camera.', 'ZOOM_UNSUPPORTED');
-    }
-    var min = Number(capabilities.zoom.min || 1);
-    var max = Number(capabilities.zoom.max || 1);
-    var requested = Math.max(min, Math.min(max, Number(level) || min));
-    await mediaTrack.applyConstraints({ advanced: [{ zoom: requested }] });
-    return { zoom: requested, min: min, max: max };
-  };
-
   /*
    * Screen sharing
    */
@@ -882,19 +804,17 @@
     }
 
     try {
-      /* Local audio must never be attached to a normal playback element:
-       * that routes the host's microphone back into the host's speakers. */
-      if (getTrackType(track) === 'microphone' || getTrackType(track) === 'audio') {
-        return null;
-      }
       var element = track.attach();
+
       if (element) {
         element.autoplay = true;
         element.playsInline = true;
-        element.muted = true;
-        element.classList.add('live-local-video');
-        container.appendChild(element);
+
+        container.appendChild(
+          element
+        );
       }
+
       return element;
     } catch (error) {
       if (window.console) {
@@ -983,6 +903,22 @@
       }
     };
 
+  /* Reliable room data carries LIVE reactions, polls, gifts and guest media requests. */
+  CHL.publishLiveData = async function (payload) {
+    if (!activeRoom || !activeRoom.localParticipant || !CHL.isLiveKitConnected()) {
+      throw createLiveKitError('Connect to the LIVE room before sending a room event.', 'LIVEKIT_NOT_CONNECTED');
+    }
+    if (!payload || payload.version !== 1 || !payload.roomId || typeof payload.type !== 'string') {
+      throw createLiveKitError('The LIVE room event is invalid.', 'LIVEKIT_INVALID_DATA');
+    }
+    var encoded;
+    try { encoded = new TextEncoder().encode(JSON.stringify(payload)); }
+    catch (error) { throw createLiveKitError('The LIVE room event could not be encoded.', 'LIVEKIT_DATA_ENCODING_FAILED', error); }
+    if (encoded.byteLength > 12000) throw createLiveKitError('The LIVE room event is too large.', 'LIVEKIT_DATA_TOO_LARGE');
+    await activeRoom.localParticipant.publishData(encoded, { reliable: true });
+    return true;
+  };
+
   /*
    * Determine whether the local participant
    * has a published camera.
@@ -1070,19 +1006,41 @@
   /*
    * Convenience participant handlers.
    */
-  CHL.handleParticipantConnected = function (participant) {
-    try {
-      var publicName = String(participant && participant.name || '').trim() || 'Account name unavailable';
-      if (CHL.toast) CHL.toast(publicName + ' joined.');
-    } catch (_) {}
-  };
+  CHL.handleParticipantConnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
 
-  CHL.handleParticipantDisconnected = function (participant) {
-    try {
-      var publicName = String(participant && participant.name || '').trim() || 'Account name unavailable';
-      if (CHL.toast) CHL.toast(publicName + ' exited.');
-    } catch (_) {}
-  };
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant joined: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleParticipantDisconnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant left: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
 
   CHL.handleActiveSpeaker =
     function (speakers) {
