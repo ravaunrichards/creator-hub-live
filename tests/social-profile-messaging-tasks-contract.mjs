@@ -35,7 +35,7 @@ assert(server.includes('pathname === "/api/social/follows"') && server.includes(
 assert(extra.includes("sb.from('reports').insert") && creator.includes("#/report/user/"), 'Profile reporting is not connected to the moderation queue.');
 assert(wallet.includes('Follow requests') && wallet.includes("/api/social/follow-requests/"), 'Private follow requests cannot be accepted or declined.');
 assert(server.includes('MESSAGE_EDIT_WINDOW_EXPIRED') && server.includes('unsent: true'), 'Message edit and unsend authorization is missing.');
-assert(server.includes('returnedToViewer: true') && server.includes('canPublish: false, canSubscribe: true') && room.includes('onParticipantPermissionsChanged'), 'Removing a guest does not safely return them to viewer mode.');
+assert(server.includes('roomService.removeParticipant(room.room_name, targetId)') && server.includes('removedFromRoom: true') && server.includes('GUEST_DISCONNECT_UNVERIFIED') && room.includes('onParticipantDisconnected'), 'Host removal must confirm a real LiveKit disconnect.');
 assert((extra.match(/CHL\.route\('\/hashtag'/g)||[]).length===1 && (extra.match(/CHL\.route\('\/sound'/g)||[]).length===1, 'Duplicate hashtag or sound route registrations were introduced.');
 assert(server.includes('pathname === "/api/creator/tasks"') && server.includes('CREATOR_TASKS') && server.includes('completed_at'), 'Server-authoritative rotating task cycle is missing.');
 assert(server.includes('COMMENTS_FOLLOWERS_ONLY') && server.includes('COMMENTS_DISABLED'), 'Post comment API does not enforce creator permissions.');
@@ -43,9 +43,9 @@ assert(migration.includes('add column if not exists edited_at') && migration.inc
 assert(migration.includes('drop policy if exists posts_read') && migration.includes("in ('followers', 'private')") && migration.includes("audience <> 'private'"), 'Database post visibility does not enforce profile privacy.');
 assert(giftMigration.includes('greatest(1, floor(coin_price::numeric / 2)::bigint)') && giftMigration.includes('coin_price'), 'Active gift payouts are not reproducible without changing coin prices.');
 assert(livekitToken.includes('participantName = null') && livekitToken.includes('name: displayName'), "LiveKit tokens do not carry the creator real profile name.");
-assert(settings.includes("[0,1,2,3,4,5,6,7,8]"), 'LIVE settings cannot configure zero guest slots.');
+assert(settings.includes("[1,2,3,4,5,6,7,8]") && settings.includes('guest_layout_enabled'), 'LIVE settings must preserve a safe one-to-eight guest capacity and persistent layout preference.');
 assert(server.includes('configuredLimit >= 0 && configuredLimit <= 8') && server.includes('GUEST_STAGE_DISABLED'), 'Backend does not enforce the host-only zero-guest mode.');
-assert(room.includes('Guest slots (0–8)') && room.includes('nextLimit === 0'), 'LIVE room has no adjustable guest-slot control.');
+assert(room.includes('live-guest-layout-controls') && room.includes('guestLayoutCapacitySelect') && room.includes('guestLayoutOrientationSelect') && room.includes('live-guest-slot') && room.includes('guest-layout-update'), 'LIVE room guest layout controls do not support selected capacity and orientation.');
 assert(livekit.includes("'DataReceived'") && livekit.includes('CHL.publishLiveData') && livekit.includes('publishData(encoded, { reliable: true })'), 'LIVE data events are not wired to LiveKit reliable data transport.');
 assert(livekit.includes("'ParticipantPermissionsChanged'"), 'LIVE participant permission changes are not propagated to room controls.');
 assert(room.includes('guest-media-request') && room.includes('guest-media-response') && room.includes('Request camera') && room.includes('Request mic'), 'Host/guest media request and consent workflow is missing.');

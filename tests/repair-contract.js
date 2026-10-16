@@ -13,6 +13,7 @@ const ACTIVITY = fs.readFileSync(path.join(ROOT, 'android', 'app', 'src', 'main'
 const MIGRATION = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0009_live_pending_state.sql'), 'utf8');
 const RLS = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0010_rls_hardening.sql'), 'utf8');
 const SETTINGS = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0011_user_settings.sql'), 'utf8');
+const PROFILE_SETTINGS = fs.readFileSync(path.join(WEB, 'src', 'pages-settings.js'), 'utf8');
 const CHAT = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0012_live_chat_messages.sql'), 'utf8');
 
 function assert(ok, message) { if (!ok) throw new Error(message); }
@@ -43,9 +44,16 @@ assert(LIVE_LIST.includes(".eq('status','live').is('ended_at', null)"), 'Live di
 assert(SERVER.includes('.is("ended_at", null)'), 'Backend live-room API can include ended sessions.');
 assert(LIVE_LIST.includes('window.setInterval(refresh, 10000)'), 'Live discovery does not refresh ended broadcasts automatically.');
 assert(LIVE_CSS.includes('font-weight: 800') && LIVE_CSS.includes('prefers-contrast: more'), 'Readable bold typography and high-contrast support are missing.');
-assert(LIVE_SW.includes('chl-web-v3-3-2'), 'Service worker cache was not invalidated after UI repairs.');
+assert(LIVE_SW.includes('chl-web-v3-3-3'), 'Service worker cache was not invalidated after UI repairs.');
 assert(SERVER.includes('"/api/wallet/gift"'), 'Server-authoritative gift endpoint is missing.');
 assert(SERVER.includes('"/api/wallet/transactions"'), 'Wallet transaction endpoint is missing.');
+assert(SERVER.includes('guest_layout_enabled') && SERVER.includes('guest_layout_orientation'), 'Guest layout settings are not persisted in the existing user settings record.');
+assert(SERVER.includes('guestParts.action === "layout"') && SERVER.includes('GUESTS_STILL_CONNECTED'), 'Host layout changes do not validate active guest disconnects.');
+assert(SERVER.includes('roomService.removeParticipant(room.room_name, targetId)') && SERVER.includes('removedFromRoom: true'), 'Host removal does not require a confirmed LiveKit disconnect.');
+assert(ROOM.includes('live-host-grid') && ROOM.includes('live-guest-grid') && ROOM.includes('live-guest-slot'), 'Host and guest layouts are not separated or empty selectable slots are missing.');
+assert(ROOM.includes('guest-layout-update') && ROOM.includes('guestLayoutOrientation'), 'Live guest layout orientation is not synchronized to the room.');
+assert(PROFILE_SETTINGS.includes('The server did not confirm a saved profile row') && PROFILE_SETTINGS.includes("maybeSingle()"), 'Profile save can report success without confirming an updated profile row.');
+assert(fs.readFileSync(path.join(WEB, 'src', 'ui.js'), 'utf8').includes('chl-mobile-menu-trigger') && fs.readFileSync(path.join(WEB, 'src', 'ui.js'), 'utf8').includes('aria-controls'), 'Accessible mobile navigation trigger is missing.');
 
 function list(dir) {
   const out = [];
