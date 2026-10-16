@@ -1,0 +1,16 @@
+Creator Hub Live package verification
+====================================
+
+Package assembly date: 2026-10-16 UTC
+Repository reference: https://github.com/ravaunrichards/creator-hub-live
+Observed current main commit: 53d4ee434d0d7d15e1d64b3bc0aa8e3d60da7e3f
+Observed current main root package version: 6.0.3
+Assembled source snapshot frontend version: 3.2.0
+
+Validation run against this assembled package:
+- npm run sync:android-web: PASS
+- npm run check: PASS (360 integration checks; gift asset contract passed)
+- npm run backend:check: PASS (65 browser routes; 69 routes checked; secret-pattern scan passed; 18 endpoint strings verified)
+- npm run backend:test: PASS (route checks, backend syntax, LiveKit contract scenarios)
+
+Important: this archive is assembled from the saved full-project snapshot and saved targeted replacement archives available in this workspace. It is NOT an exact export of the observed latest GitHub main commit. The current GitHub root package's `6.0.3` test harness is a different, much smaller package contract; it was inspected but not copied over this full-project package because doing so would misrepresent its scripts and source. Production services and the live database were not modified or tested.

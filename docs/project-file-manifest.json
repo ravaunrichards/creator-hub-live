@@ -1,7 +1,7 @@
 {
   "project": "Creator Hub Live",
   "git_metadata_present": false,
-  "file_count": 661,
+  "file_count": 652,
   "files": [
     ".gitignore",
     "RESTORE-NOTES.md",
@@ -300,11 +300,8 @@
     "android/app/src/main/assets/web/src/pages-settings.js",
     "android/app/src/main/assets/web/src/pages-wallet.js",
     "android/app/src/main/assets/web/src/pages.js",
-    "android/app/src/main/assets/web/src/style-system.js",
-    "android/app/src/main/assets/web/src/swipe-feed.js",
     "android/app/src/main/assets/web/src/ui.js",
     "android/app/src/main/assets/web/styles/app.css",
-    "android/app/src/main/assets/web/styles/platform-responsive.css",
     "android/app/src/main/assets/web/sw.js",
     "android/app/src/main/java/com/creatorhub/app/MainActivity.java",
     "android/app/src/main/res/drawable/ic_launcher_background.xml",
@@ -341,12 +338,10 @@
     "docs/BUILD-VALIDATION.md",
     "docs/BUILD_REPORT.md",
     "docs/CHL-PACKAGE-RECONCILIATION.md",
-    "docs/CROSS-PLATFORM-UI-UX-3.3.0.md",
     "docs/DATABASE.md",
     "docs/DEPLOYMENT.md",
     "docs/KNOWN_LIMITATIONS.md",
     "docs/LIVEKIT_FIX.md",
-    "docs/QA-UIUX-3.3.0.md",
     "docs/README.md",
     "docs/RELEASES.md",
     "docs/SECURITY.md",
@@ -650,11 +645,8 @@
     "frontend/src/pages-settings.js",
     "frontend/src/pages-wallet.js",
     "frontend/src/pages.js",
-    "frontend/src/style-system.js",
-    "frontend/src/swipe-feed.js",
     "frontend/src/ui.js",
     "frontend/styles/app.css",
-    "frontend/styles/platform-responsive.css",
     "frontend/sw.js",
     "package.json",
     "releases/creator-hub-live-release-alt.apk",
@@ -662,8 +654,7 @@
     "scripts/sync-web-assets.js",
     "tests/gift-asset-contract.mjs",
     "tests/integration-check.js",
-    "tests/repair-contract.js",
-    "tests/ui-ux-contract.mjs"
+    "tests/repair-contract.js"
   ],
-  "note": "Manifest generated for the offline Creator Hub Live 3.3.0 package; it is not a snapshot of the latest GitHub main branch."
+  "note": "Manifest generated for this offline CHL package; it is not a snapshot of the current GitHub main branch."
 }
