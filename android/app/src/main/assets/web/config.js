@@ -1,27 +1,27 @@
-// Creator Hub Creator Network — browser-safe runtime configuration.
+// Creator Hub Live — browser-safe runtime configuration.
 // Private service credentials belong only in the deployed backend environment.
 (function () {
   'use strict';
   
-  // ✔️ FIXED: Pointed directly to your active live Render backend API instance
+  // Public API endpoint; private credentials stay on the backend.
   var configuredBase = 'https://creator-hub-live-02c1.onrender.com';
   
   var CreatorHubConfig = {
     app: {
-      name: 'Creator Hub Creator Network',
+      name: 'Creator Hub Live',
       project: 'creator-hub-live',
       environment: 'production',
       currency: 'JMD',
       locale: 'en-JM'
     },
     supabase: {
-      // ✔️ FIXED: Pointed directly to your active production Supabase container ID
+      // Public project URL and publishable client key.
       url: 'https://txibryhznycmuqufnxvh.supabase.co',
       restUrl: 'https://txibryhznycmuqufnxvh.supabase.co/rest/v1/',
       publishableKey: 'sb_publishable_ewC8MT1HSsDLA5EyDV-PIg_vrZecqUY'
     },
     livekit: {
-      // 📹 Pointed to your active live LiveKit project stream keys
+      // Public connection URL; signing secrets stay on the backend.
       projectId: 'p_4ia809byg35',
       url: 'wss://creator-hub-live-9susyfri.livekit.cloud',
       websocketUrl: 'wss://creator-hub-live-9susyfri.livekit.cloud',
@@ -35,12 +35,16 @@
     },
     wallet: { currency: 'JMD' },
     storage: {
-      // ✔️ FIXED: Synced assets repository target link to matching database project
+      // Storage endpoint; no private credentials are stored here.
       url: 'https://txibryhznycmuqufnxvh.supabase.co',
-      bucket: 'creator-content'
+      bucket: ''
     },
-    features: { livekit: true, paypal: true, storage: true },
-    version: '6.0.2'
+    maps: {
+      provider: 'OpenStreetMap',
+      tileUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+    },
+    features: { livekit: true, paypal: true, maps: true, storage: true },
+    version: '3.2.0'
   };
 
   // Backward-compatible legacy shape used by the existing pages.
@@ -53,9 +57,7 @@
   CreatorHubConfig.LIVEKIT_URL = CreatorHubConfig.livekit.url;
   CreatorHubConfig.LIVEKIT_WEBSOCKET_URL = CreatorHubConfig.livekit.websocketUrl;
   CreatorHubConfig.LIVEKIT_API_KEY = 'API_KEY_IS_NOT_REQUIRED_IN_BROWSER_REQUESTS';
-  CreatorHubConfig.PAYPAL_ENVIRONMENT = 'server-configured'; // authoritative environment is reported by /api/config/public
-  // Optional creator link; do not let a missing optional setting stop app startup.
-  CreatorHubConfig.TIKTOK_USERNAME = (CreatorHubConfig.social && CreatorHubConfig.social.tiktokUsername) || '';
+  CreatorHubConfig.PAYPAL_ENVIRONMENT = 'sandbox';
   CreatorHubConfig.BRAND = CreatorHubConfig.app.name;
   CreatorHubConfig.APP_NAME = CreatorHubConfig.app.name;
   CreatorHubConfig.ENVIRONMENT = CreatorHubConfig.app.environment;
