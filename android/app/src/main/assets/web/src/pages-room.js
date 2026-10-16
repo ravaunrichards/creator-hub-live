@@ -13,6 +13,7 @@
   var currentRoomId = null;
   var isHost = false;
   var canPublishMedia = false;
+  var currentMediaMode = 'video';
   var liveStarted = false;
   var chatPollTimer = null;
   var guestPollTimer = null;
@@ -57,22 +58,20 @@
     }
 
     currentRoomId = roomId;
+    currentMediaMode = 'video';
     roomHostId = null;
     isHost = false;
     canPublishMedia = false;
     liveStarted = false;
 
-    outlet.appendChild(
-      el('div', { class: 'row between' }, [
-        el('div', {}, [
-          el('div', { class: 'h1', text: 'LIVE' }),
-          el('p', {
-            class: 'sub',
-            text: 'Secure LiveKit video session'
-          })
-        ])
-      ])
-    );
+    var roomHeading = el('div', { class: 'h1', text: 'LIVE' });
+    var roomSubtitle = el('p', { class: 'sub', text: 'Connecting to the secure LIVE session…' });
+    var shareLiveButton = el('button', { class: 'btn', type: 'button', text: 'Share LIVE', onclick: function () { shareCurrentLive(roomId); } });
+    var roomHeader = el('div', { class: 'row between wrap', style: 'gap:10px;margin-bottom:10px;align-items:center' }, [
+      el('div', { style: 'min-width:0' }, [roomHeading, roomSubtitle]),
+      el('div', { class: 'row wrap', style: 'gap:8px' }, [shareLiveButton])
+    ]);
+    outlet.appendChild(roomHeader);
 
     var layout = el('div', {
       class: 'grid live-room-layout',
@@ -101,6 +100,13 @@
         'position:relative;' +
         'overflow:hidden'
     });
+
+    var audioStyleId = 'chl-audio-live-room-style';
+    if (!document.getElementById(audioStyleId)) {
+      var audioStyle = el('style', { id: audioStyleId });
+      audioStyle.textContent = '.live-audio-only-stage{background:radial-gradient(circle at 50% 25%,#2b2458 0,#131522 48%,#090a10 100%);min-height:300px}.live-audio-only-stage .live-stage-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));align-items:center;justify-items:center;padding:24px;gap:14px}.live-audio-only-stage .live-participant-tile{max-width:220px;background:rgba(26,27,47,.94);border:1px solid rgba(164,146,255,.32);border-radius:22px;padding:18px;text-align:center}.live-audio-only-stage .live-participant-media{min-height:70px;display:flex;align-items:center;justify-content:center;border-radius:50%;width:74px;height:74px;margin:0 auto 10px;background:radial-gradient(circle at 30% 20%,#a897ff,#493a9c 60%,#221a52)}.live-audio-only-stage .live-camera-off{font-size:11px;text-align:center;padding:4px}.live-audio-only-stage .live-participant-tile.is-speaking{box-shadow:0 0 0 3px #55e7c1,0 0 30px #55e7c177}.live-screen-only-stage{min-height:280px;background:#070912}.live-screen-only-stage .live-stage-grid{grid-template-columns:minmax(0,1fr)}.live-screen-only-stage .live-participant-tile{max-width:100%;width:100%}';
+      document.head.appendChild(audioStyle);
+    }
 
     var status = el('div', {
       class: 'live-status',
@@ -157,8 +163,11 @@
     liveCameraButton = cameraButton;
     liveZoomControls = zoomControls;
     var shareButton = el('button', { class: 'btn', type: 'button', onclick: function () {
-      CHL.startScreenShare().catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); });
+      CHL.startScreenShare().then(function () { CHL.toast('Screen sharing started. End sharing from the browser’s sharing control or end the LIVE session.'); }).catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); });
     } }, 'Share screen');
+    var screenStartButton = el('button', { class: 'btn primary', type: 'button', style: 'display:none', text: 'Choose screen and Go LIVE', onclick: function () {
+      startScreenBroadcast(roomId, status, screenStartButton);
+    } });
     var leaveStageButton = el('button', { class: 'btn danger', type: 'button', text: 'Leave stage', style: 'display:none', onclick: async function () {
       try {
         await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/leave', { method: 'POST', body: {} });
@@ -171,7 +180,7 @@
     } });
     var endButton = el('button', { class: 'btn danger', type: 'button', onclick: function () { endLive(roomId); } }, 'End LIVE');
     endButton.style.display = 'none';
-    [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
+    [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, screenStartButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
     video.appendChild(controls);
 
     var funPanel = el('section', { class: 'card live-fun-panel', 'aria-label': 'LIVE entertainment tools' });
@@ -353,14 +362,27 @@
 
       roomHostId = room.host_id || null;
       isHost = !!CHL.user && !!roomHostId && String(CHL.user.id) === String(roomHostId);
+      currentMediaMode = ['video', 'audio', 'screen'].indexOf(String(room.media_mode || 'video')) >= 0 ? String(room.media_mode || 'video') : 'video';
       canPublishMedia = isHost;
+      roomHeading.textContent = currentMediaMode === 'audio' ? 'Audio-Only LIVE' : currentMediaMode === 'screen' ? 'Screen-Sharing LIVE' : 'Video LIVE';
+      roomSubtitle.textContent = currentMediaMode === 'audio' ? 'Voice room · camera is not requested' : currentMediaMode === 'screen' ? 'Screen broadcast · camera and microphone are not required' : 'Camera and microphone broadcast';
+      stage.classList.toggle('live-audio-only-stage', currentMediaMode === 'audio');
+      stage.classList.toggle('live-screen-only-stage', currentMediaMode === 'screen');
+      cameraButton.style.display = currentMediaMode === 'video' ? '' : 'none';
+      micButton.style.display = currentMediaMode === 'screen' ? 'none' : '';
+      flipButton.style.display = currentMediaMode === 'video' ? '' : 'none';
+      zoomControls.style.display = currentMediaMode === 'video' ? '' : 'none';
+      shareButton.style.display = currentMediaMode === 'video' ? '' : 'none';
+      monitorButton.style.display = currentMediaMode === 'screen' ? 'none' : '';
+      screenStartButton.style.display = currentMediaMode === 'screen' && isHost ? '' : 'none';
+      guestCard.style.display = currentMediaMode === 'screen' ? 'none' : '';
 
       if (room.status === 'live') {
         status.textContent = 'LIVE';
         status.style.background = 'rgba(180,0,40,.85)';
       } else {
         status.textContent = isHost
-          ? 'READY TO GO LIVE'
+          ? (currentMediaMode === 'screen' ? 'READY TO SHARE SCREEN' : 'READY TO GO LIVE')
           : 'WAITING FOR HOST';
       }
 
@@ -379,6 +401,7 @@
       controls.style.display = canPublishMedia ? '' : 'none';
       endButton.style.display = isHost ? '' : 'none';
       leaveStageButton.style.display = canPublishMedia && !isHost ? '' : 'none';
+      screenStartButton.style.display = currentMediaMode === 'screen' && isHost ? '' : 'none';
       pollLaunch.disabled = !isHost;
       challengeStart.disabled = !isHost;
       soundCueButtons.forEach(function (button) { button.disabled = !isHost; });
@@ -411,32 +434,37 @@
           if (currentRoomId !== roomId) return;
 
           status.textContent = isHost
-            ? 'CONNECTED — STARTING MEDIA'
+            ? (currentMediaMode === 'screen' ? 'CONNECTED — READY TO SHARE' : 'CONNECTED — STARTING MEDIA')
             : 'CONNECTED';
           status.style.background = 'rgba(0,0,0,.75)';
 
-          // Only host or server-accepted guests receive media publishing rights.
+          // Each mode publishes only its selected media. Screen capture starts
+          // from the visible button below so the browser receives a user gesture.
           if (canPublishMedia) {
             try {
-              await CHL.publishCamera();
-              await CHL.publishMicrophone();
+              if (currentMediaMode === 'video') {
+                await CHL.publishCamera();
+                await CHL.publishMicrophone();
+              } else if (currentMediaMode === 'audio') {
+                await CHL.publishMicrophone();
+              }
             } catch (e) {
               status.textContent = 'MEDIA PERMISSION FAILED';
-              CHL.toast(e.message || 'Camera/microphone permission denied.');
+              CHL.toast(e.message || 'Required media permission was denied.');
               throw e;
             }
           }
-          if (isHost) {
+          if (isHost && currentMediaMode !== 'screen') {
             var startResult = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/start', { method: 'POST' });
             if (!startResult || (startResult.status && startResult.status !== 'live')) throw new Error('The server did not confirm that LIVE started.');
             liveStarted = true;
-            status.textContent = 'LIVE';
+            status.textContent = currentMediaMode === 'audio' ? 'LIVE · AUDIO ONLY' : 'LIVE · VIDEO';
             status.style.background = 'rgba(180,0,40,.85)';
           }
-          if (canPublishMedia) ensureParticipantTile(lkRoom && lkRoom.localParticipant, true);
+          if (canPublishMedia && currentMediaMode !== 'screen') ensureParticipantTile(lkRoom && lkRoom.localParticipant, true);
           if (lkRoom && lkRoom.localParticipant && lkRoom.localParticipant.trackPublications) {
             lkRoom.localParticipant.trackPublications.forEach(function (publication) {
-              if (publication.track && isCameraPublication(publication)) attachTrackToTile(publication.track, publication, lkRoom.localParticipant, true);
+              if (publication.track && (isCameraPublication(publication) || isScreenPublication(publication))) attachTrackToTile(publication.track, publication, lkRoom.localParticipant, true);
             });
           }
           syncMediaButtons();
@@ -489,12 +517,22 @@
             canPublishMedia = !!(result && result.canPublish);
             controls.style.display = canPublishMedia ? '' : 'none';
             leaveStageButton.style.display = canPublishMedia && !isHost ? '' : 'none';
-            if (canPublishMedia && !CHL.hasPublishedCamera()) {
-              await CHL.publishCamera();
-              await CHL.publishMicrophone();
+            if (canPublishMedia) {
+              if (currentMediaMode === 'video') {
+                if (!CHL.hasPublishedCamera()) await CHL.publishCamera();
+                if (!CHL.hasPublishedMicrophone()) await CHL.publishMicrophone();
+              } else if (currentMediaMode === 'audio') {
+                if (!CHL.hasPublishedMicrophone()) await CHL.publishMicrophone();
+              } else if (!isHost) {
+                canPublishMedia = false;
+                controls.style.display = 'none';
+                return;
+              } else {
+                return; // The host starts a screen track from the explicit screen-share button.
+              }
               ensureParticipantTile(participant, true);
               syncMediaButtons(); updateZoomButtons();
-            } else if (!canPublishMedia) {
+            } else {
               stopEchoMonitor();
               try { await CHL.unpublishCamera(); } catch (_) {}
               try { await CHL.unpublishMicrophone(); } catch (_) {}
@@ -517,6 +555,53 @@
     }
   });
 
+  async function startScreenBroadcast(roomId, status, button) {
+    if (!CHL.user || !isHost || currentMediaMode !== 'screen') return;
+    if (button) { button.disabled = true; button.textContent = 'Requesting screen permission…'; }
+    try {
+      await CHL.startScreenShare();
+      var lkRoom = CHL.getActiveLiveKitRoom();
+      var screenPublication = null;
+      if (lkRoom && lkRoom.localParticipant && lkRoom.localParticipant.trackPublications) {
+        lkRoom.localParticipant.trackPublications.forEach(function (publication) {
+          if (publication && publication.track && isScreenPublication(publication)) screenPublication = publication;
+        });
+      }
+      if (!screenPublication) throw new Error('The browser did not publish a screen-share track. Check screen-sharing permission and try again.');
+      attachTrackToTile(screenPublication.track, screenPublication, lkRoom.localParticipant, true);
+      var localMediaTrack = screenPublication.track.mediaStreamTrack;
+      if (localMediaTrack && typeof localMediaTrack.addEventListener === 'function') {
+        localMediaTrack.addEventListener('ended', function () {
+          if (currentRoomId === roomId && isHost && liveStarted) endLive(roomId);
+        }, { once: true });
+      }
+      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/start', { method: 'POST' });
+      if (!result || (result.status && result.status !== 'live')) throw new Error('The server did not confirm the screen-sharing LIVE.');
+      liveStarted = true; status.textContent = 'LIVE · SCREEN SHARING'; status.style.background = 'rgba(180,0,40,.85)';
+      if (button) { button.textContent = 'Screen is being shared · End LIVE to stop'; button.disabled = true; }
+    } catch (error) {
+      try { await CHL.stopScreenShare(); } catch (_) {}
+      if (button) { button.disabled = false; button.textContent = 'Choose screen and Go LIVE'; }
+      status.textContent = 'SCREEN SHARE NOT STARTED';
+      CHL.toast(error.message || 'Could not start screen-sharing LIVE.');
+    }
+  }
+
+  async function shareCurrentLive(roomId) {
+    var url = location.origin + location.pathname + location.search + '#/live/' + encodeURIComponent(roomId);
+    var payload = { title: document.title || 'Creator Hub Live', text: 'Watch this Creator Hub LIVE session', url: url };
+    try {
+      if (navigator.share) { await navigator.share(payload); CHL.toast('LIVE shared.'); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(url); CHL.toast('LIVE link copied.'); return; }
+      var field = el('textarea', { class: 'input', readonly: 'readonly', rows: '2', value: url, 'aria-label': 'Shareable LIVE link' });
+      var box = el('div', { class: 'card', style: 'margin:12px 0' }, [el('div', { text: 'Copy this LIVE link' }), field]);
+      var copy = el('button', { class: 'btn primary', type: 'button', text: 'Select link', onclick: function () { field.focus(); field.select(); } }); box.appendChild(copy); var outlet = document.getElementById('outlet'); if (outlet) outlet.insertBefore(box, outlet.firstChild);
+    } catch (error) {
+      if (error && error.name === 'AbortError') return;
+      CHL.toast(error.message || 'Could not share the LIVE link.');
+    }
+  }
+
   function trackKind(track) {
     var kind = String(track && track.kind || '').toLowerCase();
     var source = String(track && track.source || '').toLowerCase();
@@ -532,9 +617,20 @@
       if (window.LivekitClient && window.LivekitClient.Track && window.LivekitClient.Track.Source && source === window.LivekitClient.Track.Source.ScreenShare) return false;
     } catch (_) {}
     var label = String(source || '').toLowerCase();
-    if (label.indexOf('screen') >= 0) return false;
-    if (label.indexOf('camera') >= 0) return true;
+    if (source === 3 || label.indexOf('screen') >= 0) return false;
+    if (source === 1 || label.indexOf('camera') >= 0) return true;
     return trackKind(publication.track) === 'video';
+  }
+
+  function isScreenPublication(publication) {
+    if (!publication || !publication.track) return false;
+    var source = publication.source || publication.track.source;
+    try {
+      var sources = window.LivekitClient && window.LivekitClient.Track && window.LivekitClient.Track.Source;
+      if (sources && source === sources.ScreenShare) return true;
+    } catch (_) {}
+    var label = String(source || '').toLowerCase();
+    return source === 3 || (source !== 4 && label.indexOf('screen') >= 0 && label.indexOf('audio') < 0);
   }
 
   function participantKey(participant, local) {
@@ -546,12 +642,12 @@
     var tile = participantTiles.get(key);
     if (tile) { tile.participant = participant || tile.participant; return tile; }
     var media = el('div', { class: 'live-participant-media' });
-    var name = (participant && (participant.name || participant.identity)) || (local ? 'You' : 'Participant');
+    var name = (participant && participant.name) || (local ? 'You' : 'Account name unavailable');
     var title = el('span', { class: 'live-participant-name', text: String(name).slice(0, 80) });
     var state = el('span', { class: 'live-participant-state', text: local ? 'YOU' : 'CONNECTED' });
     var footer = el('div', { class: 'live-participant-footer' }, [title, state]);
     var tileElement = el('article', { class: 'live-participant-tile' + (local ? ' is-local' : ''), 'data-participant-id': key });
-    media.appendChild(el('div', { class: 'live-camera-off', text: local ? 'Camera starting…' : 'Waiting for media…' }));
+    media.appendChild(el('div', { class: 'live-camera-off', text: currentMediaMode === 'audio' ? '🎙 Voice stage' : currentMediaMode === 'screen' ? 'Screen preview' : (local ? 'Camera starting…' : 'Waiting for media…') }));
     tileElement.appendChild(media); tileElement.appendChild(footer);
     var tile = { key: key, participant: participant, local: !!local, element: tileElement, media: media, name: title, state: state, audio: [], videoSid: null, audioSid: null, mutedByHost: false };
     var spotlight = el('button', { class: 'live-spotlight-toggle', type: 'button', text: 'Spotlight', 'aria-label': 'Spotlight ' + name, onclick: function () { toggleSpotlight(tile, spotlight); } });
@@ -597,7 +693,7 @@
       mediaElement.muted = true; mediaElement.playsInline = true;
       tile.videoSid = publication && (publication.trackSid || publication.sid) || null;
     }
-    if (tile.media.querySelector('video')) tile.state.textContent = tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON';
+    if (tile.media.querySelector('video')) tile.state.textContent = currentMediaMode === 'screen' ? (tile.local ? 'YOU · SCREEN SHARING' : 'SCREEN SHARING') : (tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON');
   }
 
   function toggleSpotlight(tile, button) {
@@ -647,7 +743,7 @@
     participantTiles.forEach(function (tile, key) {
       tile.element.classList.toggle('is-speaking', active.has(key));
       if (active.has(key)) tile.state.textContent = tile.local ? 'YOU · SPEAKING' : 'SPEAKING';
-      else if (tile.media.querySelector('video')) tile.state.textContent = tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON';
+      else if (tile.media.querySelector('video')) tile.state.textContent = currentMediaMode === 'screen' ? (tile.local ? 'YOU · SCREEN SHARING' : 'SCREEN SHARING') : (tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON');
       else tile.state.textContent = tile.local ? 'YOU' : 'CONNECTED';
     });
   }
@@ -809,7 +905,7 @@
     if (!host) {
       try {
         var own = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/status', { method: 'GET' });
-        if (own && own.guest && own.guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = 'You have been accepted. Camera and microphone controls are available above.'; }
+        if (own && own.guest && own.guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = currentMediaMode === 'audio' ? 'You have been accepted. Your microphone control is available above.' : 'You have been accepted. Your available media controls are above.'; }
         else if (own && own.guest && own.guest.status === 'requested') { guestButton.textContent = 'Request pending'; guestButton.disabled = true; }
         else if (own && own.guest && own.guest.status === 'rejected') { guestButton.textContent = 'Request again'; guestButton.disabled = false; guestStatus.textContent = 'The previous request was declined. You can request again.'; }
       } catch (_) {}
@@ -821,7 +917,7 @@
       var guests = result && Array.isArray(result.guests) ? result.guests : [];
       if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests yet.' })); return; }
       guests.forEach(function (guest) {
-        var profile = guest.profile || {}; var label = profile.display_name || profile.username || guest.user_id;
+        var profile = guest.profile || {}; var label = profile.display_name || profile.username || 'Account name unavailable';
         var row = el('div', { class: 'live-guest-queue-row' }); row.appendChild(el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) })); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
         if (guest.status === 'requested') {
           row.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Accept', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/accept', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest accepted.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not accept guest.'); } } }));
@@ -1018,7 +1114,7 @@
       ).trim();
     }
 
-    return senderDisplayName || senderUsername || 'Creator';
+    return senderDisplayName || senderUsername || 'Account name unavailable';
   }
 
   /* Load persisted messages so host and viewers see the same chat history. */
@@ -1234,6 +1330,7 @@
       if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
       currentRoomId = null;
       roomHostId = null;
+      currentMediaMode = 'video';
       liveStarted = false;
       CHL.disconnectLiveKit();
     }

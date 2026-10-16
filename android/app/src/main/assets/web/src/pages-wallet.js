@@ -2,7 +2,9 @@
 (function () {
   'use strict';
   var CHL = window.CHL, el = CHL.el, ui = CHL.ui;
-  var PACKAGES = [{ coins: 100, usd: 0.99 }, { coins: 500, usd: 4.99 }, { coins: 1000, usd: 9.99 }, { coins: 2500, usd: 24.99 }, { coins: 5000, usd: 49.99 }, { coins: 10000, usd: 99.99 }];
+  // Quantities are presentation shortcuts only. The visible price is loaded
+  // from the backend and checkout recalculates it independently.
+  var PACKAGES = [{ coins: 100 }, { coins: 500 }, { coins: 1000 }, { coins: 2500 }, { coins: 5000 }, { coins: 10000 }];
 
   CHL.route('/wallet', async function (outlet) {
     outlet.appendChild(ui.pageHead('Wallet', 'Buy coins, send gifts, cash out diamonds.'));
@@ -16,8 +18,55 @@
 
     outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Buy coins' }));
     var grid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fill,minmax(150px,1fr))' });
-    PACKAGES.forEach(function (p) { grid.appendChild(el('div', { class: 'card', style: 'text-align:center' }, [el('div', { style: 'font-size:30px', text: '🪙' }), el('div', { style: 'font-size:22px;font-weight:800', text: CHL.fmt(p.coins) }), el('div', { style: 'color:var(--mut);font-size:12px;margin-bottom:10px', text: 'coins' }), el('button', { class: 'btn primary block', onclick: function () { buy(p); } }, '$' + p.usd.toFixed(2))])); });
+    PACKAGES.forEach(function (p) {
+      var price = el('div', { class: 'sub', style: 'min-height:20px;margin:3px 0 9px', text: 'Checking price…' });
+      var buyButton = el('button', { class: 'btn primary block', type:'button', disabled:true, text:'Loading price…', onclick: function () { buy(p); } });
+      var card = el('div', { class: 'card', style: 'text-align:center' }, [el('div', { style: 'font-size:30px', text: '🪙' }),el('div', { style: 'font-size:22px;font-weight:800', text: CHL.fmt(p.coins) }),el('div', { style: 'color:var(--mut);font-size:12px', text: 'coins' }),price,buyButton]);
+      grid.appendChild(card);
+      CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(p.coins)).then(function (quote) {
+        if (!card.isConnected) return;
+        var formatted = quote.currency + ' $' + Number(quote.amountUsd).toFixed(2);
+        price.textContent = quote.custom ? 'Server rate · ' + formatted : 'Package price · ' + formatted;
+        buyButton.textContent = 'Buy ' + formatted; buyButton.disabled = false;
+      }).catch(function () { price.textContent = 'Price unavailable'; buyButton.textContent = 'Unavailable'; buyButton.disabled = true; });
+    });
     outlet.appendChild(grid);
+
+    // Optional custom quantity is quoted by the backend; the browser never
+    // calculates or submits a payment amount.
+    var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:14px' });
+    customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your own coin amount' }));
+    customPanel.appendChild(el('p', { class: 'sub', text: 'Enter a whole-number quantity. The server returns the price that PayPal checkout will use.' }));
+    var customForm = el('form', { class: 'row wrap', style: 'align-items:end;gap:10px' });
+    var customLabel = el('label', { class: 'field', style: 'flex:1;min-width:180px' }, [el('span', { text: 'Coin quantity (1–50,000)' })]);
+    var customInput = el('input', { class: 'input', type: 'number', min: '1', max: '50000', step: '1', required: 'required', placeholder: 'e.g. 1750', inputmode: 'numeric', 'aria-label': 'Custom coin quantity' });
+    customLabel.appendChild(customInput); customForm.appendChild(customLabel);
+    var customPrice = el('div', { class: 'card', style: 'min-width:140px;padding:10px 12px' }, [el('div', { class: 'sub', text: 'Server quote' }), el('strong', { text: 'Enter coins' })]);
+    var customPriceValue = customPrice.querySelector('strong');
+    var customBuy = el('button', { class: 'btn primary', type: 'submit', disabled: true, text: 'Buy custom amount' });
+    customForm.appendChild(customPrice); customForm.appendChild(customBuy); customPanel.appendChild(customForm);
+    var customNote = el('div', { class: 'note', 'aria-live': 'polite', text: 'Quotes are refreshed as you change the quantity. Checkout validates the amount again on the server.' });
+    customPanel.appendChild(customNote); outlet.appendChild(customPanel);
+    var quoteTimer = null; var currentQuote = null; var quoteSequence = 0;
+    async function refreshCustomQuote() {
+      var value = Number(customInput.value); var seq = ++quoteSequence; currentQuote = null; customBuy.disabled = true;
+      if (!Number.isSafeInteger(value) || value < 1 || value > 50000) { customPriceValue.textContent = 'Enter valid quantity'; customNote.textContent = 'Use a whole number from 1 to 50,000 coins.'; return; }
+      customPriceValue.textContent = 'Calculating…'; customNote.textContent = 'Requesting a price from the secure backend…';
+      try {
+        var quote = await CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(value));
+        if (seq !== quoteSequence || Number(customInput.value) !== value) return;
+        currentQuote = quote; customPriceValue.textContent = quote.currency + ' $' + Number(quote.amountUsd).toFixed(2);
+        customNote.textContent = quote.custom ? 'Custom quantity priced using the server-configured reference package. Final price is revalidated at checkout.' : 'This quantity matches an active coin package.';
+        customBuy.disabled = false;
+      } catch (error) {
+        if (seq !== quoteSequence) return;
+        customPriceValue.textContent = 'Unavailable';
+        customNote.textContent = error.message || 'A custom coin price is not configured. You can still choose an available package above.';
+      }
+    }
+    customInput.addEventListener('input', function () { if (quoteTimer) window.clearTimeout(quoteTimer); quoteTimer = window.setTimeout(refreshCustomQuote, 350); });
+    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value, usd: Number(currentQuote.amountUsd), custom: !!currentQuote.custom }); });
+
     outlet.appendChild(el('div', { class: 'note', text: 'Secure checkout is server-authoritative. The browser never supplies the PayPal amount or credits the wallet.' }));
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
     renderDiamondPayouts(outlet);
@@ -91,19 +140,47 @@
   }
 
   CHL.route('/create', function (outlet) {
-    outlet.appendChild(ui.pageHead('Go LIVE', 'Start a secure LiveKit broadcast.'));
+    outlet.appendChild(ui.pageHead('Go LIVE Studio', 'Choose the existing broadcast mode that matches what you want to share. Each mode uses the same secure LIVE system with media-specific permissions.'));
     if (!CHL.user) { CHL.navigate('#/login'); return; }
-    var box = el('div', { class: 'card', style: 'max-width:520px' }); var f = el('form', { onsubmit: function (e) { e.preventDefault(); startLive(f); } });
+    var box = el('div', { class: 'card', style: 'max-width:720px' });
+    box.appendChild(el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px' }, [
+      el('div', { class: 'card', style: 'padding:12px' }, [el('div', { style: 'font-size:24px', text: '📹' }), el('strong', { text: 'Video LIVE' }), el('p', { class: 'sub', text: 'Camera and microphone broadcast.' })]),
+      el('div', { class: 'card', style: 'padding:12px' }, [el('div', { style: 'font-size:24px', text: '🎙️' }), el('strong', { text: 'Audio-Only LIVE' }), el('p', { class: 'sub', text: 'Voice room with listeners and guest speakers.' })]),
+      el('div', { class: 'card', style: 'padding:12px' }, [el('div', { style: 'font-size:24px', text: '🖥️' }), el('strong', { text: 'Screen-Sharing LIVE' }), el('p', { class: 'sub', text: 'Share your screen without sending camera video.' })])
+    ]));
+    var f = el('form', { onsubmit: function (e) { e.preventDefault(); startLive(f); } });
     f.appendChild(field('Stream title', 'title', 'e.g. Friday night acoustic set'));
     var catWrap = el('label', { class: 'field' }, [el('span', { text: 'Category' })]); var sel = el('select', { class: 'input', name: 'category' });
     ['Just Chatting', 'Music', 'Gaming', 'IRL', 'Dance', 'Sports'].forEach(function (c) { sel.appendChild(el('option', { value: c }, c)); }); catWrap.appendChild(sel); f.appendChild(catWrap);
-    f.appendChild(el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:6px' }, '▶ Start broadcasting')); box.appendChild(f); outlet.appendChild(box);
+    var modeWrap = el('label', { class: 'field' }, [el('span', { text: 'Broadcast mode' })]);
+    var mode = el('select', { class: 'input', name: 'mediaMode' });
+    [['video','Video LIVE — camera + microphone'],['audio','Audio-Only LIVE — microphone only'],['screen','Screen-Sharing LIVE — screen only']].forEach(function (pair) { mode.appendChild(el('option', { value: pair[0] }, pair[1])); });
+    var modeHelp = el('p', { class: 'sub', text: 'Screen capture is requested only after you enter the room and press its start button, because the browser requires a direct user gesture.' });
+    mode.addEventListener('change', function () { modeHelp.textContent = mode.value === 'video' ? 'Uses your camera and microphone. You can also share your screen while live.' : mode.value === 'audio' ? 'Uses your microphone only. No camera track is requested for this room.' : 'Uses screen capture only; the camera and microphone are not required.'; });
+    modeWrap.appendChild(mode); modeWrap.appendChild(modeHelp); f.appendChild(modeWrap);
+    var audienceWrap = el('label', { class: 'field' }, [el('span', { text: 'Who can watch?' })]);
+    var audience = el('select', { class: 'input', name: 'audience' });
+    var audienceTouched = false; audience.addEventListener('change', function () { audienceTouched = true; audience.dataset.userSelected = 'true'; });
+    [['public','Public — anyone can watch'],['followers','Followers only'],['private','Private — invited guests and moderators']].forEach(function (pair) { audience.appendChild(el('option', { value: pair[0] }, pair[1])); });
+    var audienceHelp = el('p', { class: 'sub', text: 'Your saved LIVE audience setting is used by default. Private rooms are excluded from public discovery.' });
+    audienceWrap.appendChild(audience); audienceWrap.appendChild(audienceHelp); f.appendChild(audienceWrap);
+    if (CHL.sb && CHL.user) {
+      CHL.sb.from('user_settings').select('live').eq('user_id', CHL.user.id).maybeSingle().then(function (result) {
+        var saved = result && result.data && result.data.live && result.data.live.audience;
+        if (!result.error && !audienceTouched && ['public','followers','private'].indexOf(saved) >= 0) { audience.value = saved; audience.dataset.savedLoaded = 'true'; }
+      }).catch(function () {});
+    }
+    var submit = el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:6px' }, 'Create LIVE room'); f.appendChild(submit); box.appendChild(f); outlet.appendChild(box);
   });
   async function startLive(f) {
     var title = f.title.value.trim(); if (!title) { CHL.toast('Enter a title'); return; }
-    var btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Creating secure room…';
-    try { var d = await CHL.authenticatedApiRequest('/api/live/rooms', { method: 'POST', body: { title: title, category: f.category.value } }); if (!d || !d.id) throw new Error('The LIVE room was not created.'); CHL.navigate('#/live/' + d.id); }
-    catch (e) { btn.disabled = false; btn.textContent = '▶ Start broadcasting'; CHL.toast(e.message || 'Could not create LIVE room.'); }
+    var btn = f.querySelector('button[type="submit"]'); btn.disabled = true; btn.textContent = 'Creating secure room…';
+    var roomBody = { title: title, category: f.category.value, mediaMode: f.mediaMode.value };
+    // If the saved audience lookup hasn't completed and the user didn't change
+    // the selector, let the backend load their stored preference instead.
+    if (f.audience.dataset.userSelected === 'true' || f.audience.dataset.savedLoaded === 'true') roomBody.audience = f.audience.value;
+    try { var d = await CHL.authenticatedApiRequest('/api/live/rooms', { method: 'POST', body: roomBody }); if (!d || !d.id) throw new Error('The LIVE room was not created.'); CHL.navigate('#/live/' + d.id); }
+    catch (e) { btn.disabled = false; btn.textContent = 'Create LIVE room'; CHL.toast(e.message || 'Could not create LIVE room.'); }
   }
   CHL.ownProfile = function (outlet) {
     var p = CHL.profile || {}, u = CHL.user, name = p.display_name || p.username || (u && u.email) || 'You';

@@ -44,10 +44,119 @@
       el('a',{href:'#/creator/analytics',class:'btn'},'View analytics')
     ]));
   });
-  CHL.route('/creator/analytics', function(o){
-    if (guard(o,'Creator Analytics','Real metrics from your account \u2014 nothing fabricated.')) return;
+  CHL.route('/creator/analytics', async function(o){
+    if (guard(o,'Advanced Creator Analytics','Your Creator Journey, at a Glance. Track creator activity, review performance trends, and follow progress over time.')) return;
+    if (!CHL.user) { CHL.navigate('#/login'); return; }
     o.appendChild(subnav(CREATOR_NAV));
-    o.appendChild(ui.empty('\uD83D\uDCCA','Analytics build as you grow','Followers, watch time, gifts and earnings populate here from real activity. Start posting and going LIVE to generate data.'));
+    o.appendChild(el('div',{class:'card',style:'margin-bottom:14px'},[
+      el('div',{style:'font-size:18px;font-weight:850',text:'Performance overview'}),
+      el('p',{class:'sub',text:'Metrics come from your account records. Unsupported metrics are shown as unavailable rather than estimated or invented.'})
+    ]));
+    var rangeWrap = el('div',{class:'row wrap',style:'align-items:center;justify-content:space-between;gap:10px;margin:12px 0'});
+    rangeWrap.appendChild(el('strong',{text:'Reporting period'}));
+    var range = el('select',{class:'input',style:'max-width:220px','aria-label':'Analytics reporting period'});
+    [['7','Last 7 days'],['30','Last 30 days'],['90','Last 90 days'],['0','All available activity']].forEach(function(item){range.appendChild(el('option',{value:item[0]},item[1]));});
+    range.value='30'; rangeWrap.appendChild(range); o.appendChild(rangeWrap);
+    var summary = el('div',{class:'grid stat',style:'margin-bottom:16px'}); o.appendChild(summary);
+    var contentArea = el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:14px'}); o.appendChild(contentArea);
+    var metricNote = el('div',{class:'note',text:'Loading real analytics…'}); o.appendChild(metricNote);
+    var uid = CHL.user.id;
+    async function query(label, request) {
+      try { var result = await request; if (result && result.error) throw result.error; return {ok:true,data:result && result.data,count:result && result.count}; }
+      catch (error) { console.warn('[Creator Analytics] '+label+' unavailable:',error && error.message || error); return {ok:false,error:error}; }
+    }
+    var responses = await Promise.all([
+      query('server metrics',sb.rpc('get_my_creator_metrics')),
+      query('followers',sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',uid).eq('status','accepted')),
+      query('following',sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',uid).eq('status','accepted')),
+      query('published posts',sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',uid).eq('is_draft',false).eq('is_test',false)),
+      query('post records',sb.from('posts').select('id,caption,kind,view_count,like_count,comment_count,created_at,is_draft,is_test,audience').eq('author_id',uid).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(500)),
+      query('LIVE sessions',sb.from('live_sessions').select('id,title,status,viewer_count,started_at,ended_at',{count:'exact'}).eq('host_id',uid).order('started_at',{ascending:false}).limit(500)),
+      query('gift transactions',sb.from('gift_transactions').select('id,coin_cost,diamond_value,created_at,live_id').eq('recipient_id',uid).order('created_at',{ascending:false}).limit(1000)),
+      query('wallet',CHL.authenticatedApiRequest('/api/wallet'))
+    ]);
+    var metrics = responses[0].ok ? (Array.isArray(responses[0].data) ? responses[0].data[0] : responses[0].data) : null;
+    var followers = responses[1].ok ? responses[1].count : (metrics && metrics.followers);
+    var following = responses[2].ok ? responses[2].count : (metrics && metrics.following);
+    var postCount = responses[3].ok ? responses[3].count : (metrics && metrics.posts);
+    var liveCount = responses[5].ok ? responses[5].count : (metrics && metrics.streams);
+    var posts = responses[4].ok && Array.isArray(responses[4].data) ? responses[4].data : [];
+    var lives = responses[5].ok && Array.isArray(responses[5].data) ? responses[5].data : [];
+    var gifts = responses[6].ok && Array.isArray(responses[6].data) ? responses[6].data : [];
+    var wallet = responses[7].ok ? responses[7].data : null;
+    function value(v) { return v === undefined || v === null || !Number.isFinite(Number(v)) ? 'Unavailable' : CHL.fmt(Number(v)); }
+    function stat(label, val, detail) {
+      summary.appendChild(ui.statCard(val === undefined || val === null ? 'Unavailable' : value(val),label));
+      if (detail && summary.lastElementChild) summary.lastElementChild.appendChild(el('div',{class:'sub',style:'font-size:11px;margin-top:4px',text:detail}));
+    }
+    stat('Followers',followers,'Current accepted followers'); stat('Following',following,'Current accepted connections'); stat('Published posts',postCount,'Published, non-test content'); stat('LIVE sessions',liveCount,'Recorded host sessions');
+
+    function card(title, subtitle) {
+      var panel=el('section',{class:'card',style:'min-width:0'});
+      panel.appendChild(el('div',{style:'font-size:17px;font-weight:850;margin-bottom:5px',text:title}));
+      if (subtitle) panel.appendChild(el('p',{class:'sub',text:subtitle}));
+      contentArea.appendChild(panel); return panel;
+    }
+    function inRange(row, field, days) {
+      if (!days) return true;
+      var raw = row && row[field]; if (!raw) return false;
+      var timestamp = new Date(raw).getTime(); return Number.isFinite(timestamp) && timestamp >= Date.now() - days*86400000;
+    }
+    function drawBars(panel, rows, getName, getNumber) {
+      if (!rows.length) { panel.appendChild(ui.empty('📊','No content data for this period','When you publish eligible content, real performance values will appear here.')); return; }
+      var values=rows.map(function(row){return Math.max(0,Number(getNumber(row))||0);}); var max=Math.max.apply(Math,values.concat([1]));
+      rows.forEach(function(row,index){
+        var line=el('div',{style:'display:grid;grid-template-columns:minmax(80px,1fr) minmax(70px,2fr) auto;gap:9px;align-items:center;margin:11px 0'});
+        line.appendChild(el('span',{style:'font-size:12px;overflow-wrap:anywhere',text:String(getName(row)||'Untitled post').slice(0,80)}));
+        var track=el('div',{style:'height:10px;border-radius:99px;background:var(--line,#353747);overflow:hidden',role:'img','aria-label':String(getNumber(row)||0)+' views'});
+        track.appendChild(el('div',{style:'height:100%;width:'+Math.max(0,Math.min(100,values[index]/max*100))+'%;background:var(--chl-accent,#8b75ff);border-radius:99px'})); line.appendChild(track);
+        line.appendChild(el('strong',{style:'font-size:12px;text-align:right',text:value(values[index])})); panel.appendChild(line);
+      });
+    }
+    function renderPeriod() {
+      var days=Number(range.value); contentArea.textContent='';
+      var recentPosts=posts.filter(function(row){return inRange(row,'created_at',days);});
+      var recentLives=lives.filter(function(row){return inRange(row,'started_at',days);});
+      var recentGifts=gifts.filter(function(row){return inRange(row,'created_at',days);});
+      var periodViews=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.view_count)||0);},0);
+      var periodLikes=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.like_count)||0);},0);
+      var periodComments=recentPosts.reduce(function(sum,row){return sum+Math.max(0,Number(row.comment_count)||0);},0);
+      var engagement=periodViews>0?((periodLikes+periodComments)/periodViews*100):null;
+      var diamonds=recentGifts.reduce(function(sum,row){return sum+Math.max(0,Number(row.diamond_value)||0);},0);
+      var coins=recentGifts.reduce(function(sum,row){return sum+Math.max(0,Number(row.coin_cost)||0);},0);
+      var content=card('Content analytics','Current view/like/comment counters for posts published in the selected period. Historical daily snapshots are not available in the current data contract.');
+      var stats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px'});
+      stats.appendChild(ui.statCard(value(periodViews),'Recorded views')); stats.appendChild(ui.statCard(value(periodLikes),'Likes')); stats.appendChild(ui.statCard(value(periodComments),'Comments')); stats.appendChild(ui.statCard(engagement===null?'—':engagement.toFixed(2)+'%','Engagement rate'));
+      content.appendChild(stats);
+      content.appendChild(el('p',{class:'sub',style:'margin-top:8px',text:'Post metrics use real current post counters for posts published within the selected range, not historical day-by-day snapshots. Engagement rate = (likes + comments) ÷ views; it is unavailable when recorded views are zero.'}));
+      var ranking=recentPosts.slice().sort(function(a,b){return (Number(b.view_count)||0)-(Number(a.view_count)||0);}).slice(0,5);
+      var top=card('Top-performing posts','Ranked by recorded views within the selected period.'); drawBars(top,ranking,function(row){return row.caption||row.kind||'Untitled post';},function(row){return row.view_count;});
+
+      var live=card('LIVE analytics','Session counts and available recorded audience data. These counts are not represented as unique viewers.');
+      var audienceRows=recentLives.filter(function(row){return Number.isFinite(Number(row.viewer_count));});
+      var viewerAverage=audienceRows.length?audienceRows.reduce(function(sum,row){return sum+Math.max(0,Number(row.viewer_count)||0);},0)/audienceRows.length:null;
+      var totalDuration=0, completedDurations=0;
+      recentLives.forEach(function(row){if(row.started_at&&row.ended_at){var duration=new Date(row.ended_at).getTime()-new Date(row.started_at).getTime();if(Number.isFinite(duration)&&duration>=0){totalDuration+=duration;completedDurations++;}}});
+      var liveStats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px'});
+      liveStats.appendChild(ui.statCard(value(recentLives.length),'Sessions in period')); liveStats.appendChild(ui.statCard(viewerAverage===null?'Unavailable':Math.round(viewerAverage).toLocaleString(),'Avg. recorded viewers/session')); liveStats.appendChild(ui.statCard(completedDurations?Math.round(totalDuration/completedDurations/60000)+' min':'Unavailable','Avg. completed duration'));
+      live.appendChild(liveStats);
+      if(recentLives.length){var liveList=el('div',{style:'margin-top:12px'});recentLives.slice(0,8).forEach(function(row){liveList.appendChild(el('div',{class:'row wrap',style:'justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line,#353747)'},[el('span',{style:'min-width:0;overflow-wrap:anywhere',text:row.title||'Untitled LIVE'}),el('span',{class:'sub',text:(row.started_at?new Date(row.started_at).toLocaleDateString():'Date unavailable')+' · '+(row.status||'status unavailable')})]));});live.appendChild(liveList);}else live.appendChild(ui.empty('🎙️','No LIVE sessions in this period','Recorded LIVE sessions will appear here after you go live.'));
+
+      var audience=card('Audience analytics','Current relationship counts and gift activity; historical follower snapshots are not available in the current data contract.');
+      var audStats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px'});
+      audStats.appendChild(ui.statCard(value(followers),'Current followers')); audStats.appendChild(ui.statCard(value(following),'Following')); audStats.appendChild(ui.statCard(value(recentGifts.length),'Gift transactions received')); audience.appendChild(audStats);
+
+      var gift=card('Gift & earnings activity','Values are drawn from recorded gift transactions. Diamond-to-fiat conversion is not configured; no fiat estimate is fabricated.');
+      var giftStats=el('div',{class:'grid stat',style:'grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px'});
+      giftStats.appendChild(ui.statCard(value(diamonds),'Diamonds from gifts')); giftStats.appendChild(ui.statCard(value(coins),'Coins spent by senders on gifts to you'));
+      giftStats.appendChild(ui.statCard(wallet&&wallet.diamondBalance!==undefined?value(wallet.diamondBalance):'Unavailable','Current diamond balance')); gift.appendChild(giftStats);
+      gift.appendChild(el('p',{class:'sub',style:'margin-top:10px',text:'PayPal payout amounts remain administrator-confirmed until an official conversion rule is configured.'}));
+    }
+    range.addEventListener('change',renderPeriod);
+    renderPeriod();
+    var capped = posts.length >= 500 || lives.length >= 500 || gifts.length >= 1000;
+    var partial = responses.some(function(result){return !result.ok;});
+    metricNote.textContent = (partial ? 'Some data sources were unavailable. Unavailable metrics are labelled rather than replaced with guesses. ' : 'Displayed counters came from available account records. ') + (capped ? 'Trend panels use a bounded recent-record sample; lifetime counters use the server metric function when available.' : 'Trend details include all records returned for this view.') + (metrics ? ' Server-authoritative aggregate metrics are available.' : ' Server aggregate metrics are unavailable in this environment.');
   });
   CHL.route('/creator/live', function(o){
     if (guard(o,'LIVE Center','Start a broadcast and manage your current stream.')) return;
