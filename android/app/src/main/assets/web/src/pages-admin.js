@@ -65,7 +65,43 @@
   listPage('/admin/diamonds','Diamonds','Diamond ledger entries.','diamond_ledger',['id','user_id','amount','balance_after']);
   listPage('/admin/gifts','Gifts','Gift transactions.','gift_transactions',['id','sender_id','recipient_id','coins']);
   listPage('/admin/subscriptions','Subscriptions','Active and past subscriptions.','subscriptions',['id','subscriber_id','creator_id','status']);
-  listPage('/admin/payouts','Payouts','Creator payout requests (accounts stored masked).','payouts',['id','user_id','amount','status']);
+  CHL.route('/admin/payouts', async function(o){
+    if(head(o,'Creator Payouts','Review diamond withdrawals, confirm exact fiat amounts, refund rejections, and record PayPal payments.')) return;
+    var filter=el('select',{class:'input',style:'max-width:220px;margin-bottom:12px'});
+    [['','All statuses'],['pending','Pending review'],['approved','Approved — not yet paid'],['rejected','Rejected'],['paid','Paid']].forEach(function(x){filter.appendChild(el('option',{value:x[0]},x[1]));});
+    var refresh=el('button',{class:'btn',style:'margin-left:8px',text:'Refresh'}); var wrap=el('div'); o.appendChild(filter); o.appendChild(refresh); o.appendChild(wrap);
+    async function load(){wrap.innerHTML='';wrap.appendChild(ui.spinner());try{
+      var result=await CHL.authenticatedApiRequest('/api/admin/payouts?limit=100'+(filter.value?'&status='+encodeURIComponent(filter.value):''));
+      wrap.innerHTML='';var rows=result&&Array.isArray(result.requests)?result.requests:[];
+      if(!rows.length){wrap.appendChild(ui.empty('💸','No payout requests','New creator requests will appear here.'));return;}
+      rows.forEach(function(r){
+        var card=el('div',{class:'card',style:'margin:10px 0;padding:14px'});
+        card.appendChild(el('div',{style:'font-weight:800;font-size:15px',text:CHL.fmt(r.diamond_amount)+' diamonds · '+r.status.toUpperCase()}));
+        card.appendChild(el('div',{class:'note',style:'margin:6px 0',text:'Creator: '+r.user_id+' · PayPal destination: '+r.paypal_email}));
+        card.appendChild(el('div',{class:'note',text:'Submitted: '+new Date(r.created_at).toLocaleString()}));
+        if(r.fiat_amount!=null)card.appendChild(el('div',{class:'note',text:'Confirmed payable amount: '+r.fiat_currency+' '+Number(r.fiat_amount).toFixed(2)}));
+        if(r.payment_reference)card.appendChild(el('div',{class:'note',text:'PayPal payment reference: '+r.payment_reference}));
+        if(r.admin_note)card.appendChild(el('div',{class:'note',text:'Admin note: '+r.admin_note}));
+        var note=el('input',{class:'input',placeholder:'Internal note / rejection reason',style:'margin-top:10px;width:100%;box-sizing:border-box'});card.appendChild(note);
+        if(r.status==='pending'){
+          var fields=el('div',{style:'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px'});
+          var fiat=el('input',{class:'input',type:'number',min:'0.01',step:'0.01',placeholder:'Exact fiat amount',style:'flex:1;min-width:130px'});
+          var currency=el('input',{class:'input',placeholder:'Currency (e.g. USD)',maxLength:3,style:'width:130px'});
+          fields.appendChild(fiat);fields.appendChild(currency);card.appendChild(fields);
+          var actions=el('div',{style:'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px'});
+          actions.appendChild(el('button',{class:'btn primary',text:'Confirm amount & approve',onclick:async function(){var n=Number(fiat.value),c=currency.value.trim().toUpperCase();if(!Number.isFinite(n)||n<=0||Math.round(n*100)!==n*100||! /^[A-Z]{3}$/.test(c)){CHL.toast('Enter the exact payable amount and a three-letter currency.');return;}await review(r.id,{action:'approve',fiatAmount:n,fiatCurrency:c,adminNote:note.value});}}));
+          actions.appendChild(el('button',{class:'btn',text:'Reject & refund diamonds',onclick:async function(){if(!confirm('Reject this request and refund its reserved diamonds?'))return;await review(r.id,{action:'reject',adminNote:note.value});}}));card.appendChild(actions);
+        } else if(r.status==='approved'){
+          card.appendChild(el('div',{class:'note',text:'Send the confirmed amount to this PayPal address outside the app. Only mark paid after PayPal confirms the transfer.'}));
+          var ref=el('input',{class:'input',placeholder:'PayPal transaction/reference ID',style:'width:100%;box-sizing:border-box;margin-top:8px'});card.appendChild(ref);
+          card.appendChild(el('button',{class:'btn primary',style:'margin-top:8px',text:'Record PayPal payment',onclick:async function(){if(ref.value.trim().length<3){CHL.toast('Enter the PayPal transaction/reference ID.');return;}if(!confirm('Confirm that the PayPal transfer was actually sent?'))return;await review(r.id,{action:'mark_paid',paymentReference:ref.value.trim(),adminNote:note.value});}}));
+        }
+        wrap.appendChild(card);
+      });
+    }catch(e){wrap.innerHTML='';wrap.appendChild(el('div',{class:'note',text:e.message||'Payout queue unavailable.'}));}}
+    async function review(id,payload){try{var result=await CHL.authenticatedApiRequest('/api/admin/payouts/'+id,{method:'PATCH',body:payload});CHL.toast(result.message||'Payout updated.');await load();}catch(e){CHL.toast(e.message||'Payout update failed.');}}
+    filter.onchange=load;refresh.onclick=load;await load();
+  });
   listPage('/admin/teams','Teams','Manage teams.','teams',['id','name','level','points']);
   listPage('/admin/leagues','Leagues','League seasons and divisions.','league_seasons',['id','name','status']);
   listPage('/admin/rankings','Rankings','Computed leaderboards.','rankings',['id','scope','subject_id','points']);

@@ -20,8 +20,60 @@
     outlet.appendChild(grid);
     outlet.appendChild(el('div', { class: 'note', text: 'Secure checkout is server-authoritative. The browser never supplies the PayPal amount or credits the wallet.' }));
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
+    renderDiamondPayouts(outlet);
     handlePaypalReturn();
   });
+
+  async function renderDiamondPayouts(outlet) {
+    var panel = el('section', { class: 'card', style: 'margin-top:18px' });
+    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Withdraw diamonds to PayPal' }));
+    panel.appendChild(el('div', { class: 'note', text: 'Your diamonds are reserved when you submit. The fiat amount is not automatically converted; an authorized administrator confirms the payable amount and currency. Rejected requests are refunded automatically.' }));
+    panel.appendChild(el('a', { href: '#/settings/payments', class: 'btn', style: 'display:inline-block;margin:10px 0', text: 'Manage PayPal payout email' }));
+    var form = el('form', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:8px' });
+    var label = el('label', { class: 'field', style: 'flex:1;min-width:180px' }, [el('span', { text: 'Diamonds to withdraw' })]);
+    var amount = el('input', { class: 'input', type: 'number', name: 'diamondAmount', min: '1', step: '1', required: 'required', placeholder: 'Whole number of diamonds' });
+    label.appendChild(amount); form.appendChild(label);
+    var submit = el('button', { class: 'btn primary', type: 'submit', text: 'Request payout' }); form.appendChild(submit);
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      var value = Number(amount.value);
+      if (!Number.isSafeInteger(value) || value <= 0) { CHL.toast('Enter a whole-number diamond amount greater than zero.'); return; }
+      submit.disabled = true; submit.textContent = 'Submitting…';
+      try {
+        var result = await CHL.authenticatedApiRequest('/api/payouts', { method: 'POST', headers: { 'Idempotency-Key': 'payout:' + CHL.uuid() }, body: { diamondAmount: value } });
+        CHL.toast(result.message || 'Payout request submitted.'); amount.value = ''; await loadPayoutHistory(historyBox);
+        try { var wallet = await CHL.authenticatedApiRequest('/api/wallet'); ui.refreshCoins(); } catch (_) {}
+      } catch (error) { CHL.toast(error.message || 'Payout request failed.'); }
+      finally { submit.disabled = false; submit.textContent = 'Request payout'; }
+    };
+    panel.appendChild(form);
+    var historyBox = el('div', { style: 'margin-top:18px' });
+    historyBox.appendChild(el('div', { style: 'font-weight:700;margin-bottom:8px', text: 'Payout history' }));
+    panel.appendChild(historyBox); outlet.appendChild(panel);
+    await loadPayoutHistory(historyBox);
+  }
+
+  async function loadPayoutHistory(box) {
+    box.innerHTML = ''; box.appendChild(el('div', { class: 'note', text: 'Loading payout history…' }));
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/payouts?limit=20');
+      box.innerHTML = '';
+      var rows = result && Array.isArray(result.requests) ? result.requests : [];
+      if (!rows.length) { box.appendChild(el('div', { class: 'note', text: 'No payout requests yet.' })); return; }
+      rows.forEach(function (item) {
+        var details = item.status === 'approved' || item.status === 'paid'
+          ? 'Administrator-confirmed amount: ' + item.fiat_currency + ' ' + Number(item.fiat_amount).toFixed(2)
+          : item.status === 'rejected' ? 'Diamonds refunded to your wallet.' : 'Waiting for an administrator to confirm the fiat amount.';
+        var card = el('div', { class: 'card', style: 'margin:8px 0;padding:12px' });
+        card.appendChild(el('div', { style: 'display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:700', text: CHL.fmt(item.diamond_amount) + ' diamonds · ' + item.status.toUpperCase() }));
+        card.appendChild(el('div', { class: 'note', style: 'margin-top:5px', text: details }));
+        if (item.admin_note) card.appendChild(el('div', { class: 'note', text: 'Admin note: ' + item.admin_note }));
+        if (item.payment_reference) card.appendChild(el('div', { class: 'note', text: 'PayPal reference: ' + item.payment_reference }));
+        card.appendChild(el('div', { style: 'color:var(--mut);font-size:12px;margin-top:5px', text: new Date(item.created_at).toLocaleString() }));
+        box.appendChild(card);
+      });
+    } catch (error) { box.innerHTML = ''; box.appendChild(el('div', { class: 'note', text: error.message || 'Payout history is unavailable.' })); }
+  }
 
   async function handlePaypalReturn() {
     var q = new URLSearchParams(location.search || ''); var orderId = q.get('token');
