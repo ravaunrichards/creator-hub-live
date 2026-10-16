@@ -21,7 +21,9 @@ assert(SERVER.includes('await verifyHostPublishing('), 'LIVE start does not veri
 const verify = SERVER.indexOf('await verifyHostPublishing(');
 const update = SERVER.indexOf('.update({\n            status: "live"', verify);
 assert(update > verify, 'LIVE database promotion precedes LiveKit verification.');
-assert(TOKEN.includes("canPublishSources: canPublish ? [1, 2] : []"), 'Host token does not restrict publishing sources to camera and microphone.');
+assert(TOKEN.includes('canPublishSources: publishSources'), 'Host token does not use the mode-specific publishing source allowlist.');
+assert(TOKEN.includes("mode === 'audio' ? [2]"), 'Audio LIVE must restrict publishing to the microphone.');
+assert(TOKEN.includes("mode === 'screen' ? (isHost ? [3, 4] : [])"), 'Screen LIVE must restrict publishing to the host screen capture.');
 assert(!SERVER.includes("'wss://creator-hub-live-9susyfri.livekit.cloud'"), 'Server still contains the previous hard-coded LiveKit URL.');
 assert(ROOM.includes('joinResult && joinResult.roomName'), 'Frontend does not consume joinResult.roomName.');
 assert(ROOM.includes('room.room_name'), 'Frontend does not retain backend room_name fallback.');

@@ -1,0 +1,56 @@
+// Contract tests for the coordinated Creator Hub Live upgrade bundle.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+function assert(ok, message) { if (!ok) throw new Error(message); }
+const server = read('backend/src/server.js');
+const token = read('backend/src/livekit-token.js');
+const verification = read('backend/src/livekit-verification.js');
+const room = read('frontend/src/pages-room.js');
+const wallet = read('frontend/src/pages-wallet.js');
+const styles = read('frontend/src/style-system.js');
+const core = read('frontend/src/core.js');
+const auth = read('frontend/src/pages-auth.js');
+const migration = read('database/migrations/0028_live_modes_appearance.sql');
+const env = read('backend/.env.example');
+const walletUi = read('frontend/src/pages-wallet.js');
+
+assert(server.includes('media_mode: mediaMode'), 'Room creation must persist its selected media mode.');
+assert(server.includes('audience,') && server.includes('assertLiveRoomAccess'), 'LIVE audience must be server-enforced.');
+assert(server.includes('.eq("audience", "public")'), 'The public LIVE discovery endpoint must exclude non-public rooms.');
+assert(server.includes('handleTeamsRoute') && server.includes('pathname === "/api/teams"'), 'The existing Teams API module must be wired into the server router.');
+assert(server.includes('pathname === "/api/payments/coin-quote"'), 'A server-authoritative custom coin quote route is required.');
+assert(server.includes('coinPriceForAmount(client, coins)'), 'Checkout must recalculate the custom amount on the server.');
+assert(server.includes('paypal=success#/wallet') && server.includes('paypal=cancelled#/wallet') && walletUi.includes("q.get('paypal') !== 'success'"), 'PayPal redirects must match the wallet SPA callback contract.');
+assert(server.includes('SCREEN_LIVE_HAS_NO_GUEST_STAGE'), 'Screen-only LIVE must not grant guest publishing.');
+assert(token.includes("mode === 'audio' ? [2]"), 'Audio-only token must publish microphone only.');
+assert(token.includes("mode === 'screen' ? (isHost ? [3, 4] : [])"), 'Screen token must restrict screen publishing to the host.');
+assert(token.includes(": [1, 2, 3, 4]"), 'Video LIVE must preserve in-room screen sharing.');
+assert(verification.includes('SCREEN_SHARE_SOURCE = 3'), 'Server verification must distinguish screen-share from camera video.');
+assert(room.includes("currentMediaMode === 'audio' ? 'Audio-Only LIVE'"), 'Room UI must reflect audio-only mode.');
+assert(room.includes('Choose screen and Go LIVE'), 'Screen-only mode must request screen capture on a user gesture.');
+assert(room.includes('shareCurrentLive(roomId)'), 'The LIVE room must expose a real shareable deep link.');
+assert(wallet.includes('/api/payments/coin-quote?coins='), 'Wallet custom-quantity preview must use a backend quote.');
+assert(wallet.includes('mediaMode: f.mediaMode.value'), 'The GO LIVE setup must send the selected media mode.');
+assert(wallet.includes('roomBody.audience = f.audience.value'), 'The GO LIVE setup must persist the selected audience when the user chooses one.');
+for (const layout of ['classic','compact','spacious','grid','immersive','studio']) assert(styles.includes("id: '" + layout + "'"), `Missing supported appearance layout ${layout}.`);
+for (const field of ['theme','layout','font','scale','accent']) assert(styles.includes(field), `Missing appearance setting ${field}.`);
+assert(core.includes('CHL.refreshAccessToken') && core.includes('Number(error.status) !== 401'), 'Authenticated requests need a single refresh-and-retry path for expired sessions.');
+assert(auth.includes('STEP 1 OF 2') && auth.includes("'STEP ' + step + ' OF 2'") && auth.includes('data: { username: username, display_name: displayName }'), 'Signup should use the two-step Creator Hub profile flow.');
+assert(migration.includes("'requested','invited','accepted','rejected','removed','left'"), 'Forward migration must include the requested guest state.');
+assert(migration.includes('add column if not exists media_mode'), 'Forward migration must add the LIVE mode column.');
+assert(migration.includes('add column if not exists appearance'), 'Forward migration must add account appearance preferences.');
+const privateCredentialLines = env.split(/\r?\n/).filter(line => /^(SUPABASE_SERVICE_ROLE_KEY|LIVEKIT_API_SECRET|PAYPAL_CLIENT_SECRET)=/.test(line));
+assert(privateCredentialLines.length === 3 && privateCredentialLines.every(line => line.split('=', 2)[1].startsWith('YOUR_')), 'Private credential template values must be obvious placeholders.');
+console.log('PASS — LIVE modes, server-side permissions, and media verification');
+console.log('PASS — existing Teams API module is connected to the HTTP router');
+console.log('PASS — secure custom coin quote and checkout pricing contract');
+console.log('PASS — PayPal redirects match the wallet SPA callback contract');
+console.log('PASS — share LIVE, audio-only UI, and screen-only user-gesture flow');
+console.log('PASS — appearance layout/font/color controls');
+console.log('PASS — limited session refresh retry');
+console.log('PASS — two-step signup preserves Creator Hub auth metadata');
+console.log('PASS — forward migration for guest requests, LIVE modes, and account appearance');
+console.log('PASS — example env file contains placeholders, not credentials');
