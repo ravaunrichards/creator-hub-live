@@ -3,11 +3,11 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
   var lastLoadedSettings = null;
-  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed'}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
   var SNAV=[
     {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/notifications',label:'Notifications'},
-    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'}
+    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'},{h:'#/settings/appearance',label:'Appearance'}
   ];
   function snav(){ var bar=el('div',{class:'row wrap',style:'gap:8px;margin-bottom:16px'}); SNAV.forEach(function(it){ var on=CHL.current.path===it.h.replace('#',''); bar.appendChild(el('a',{href:it.h,class:'chip'+(on?' on':'')},it.label)); }); return bar; }
   function head(o,title,sub){ o.appendChild(ui.pageHead(title,sub)); if(!CHL.configured){ o.appendChild(ui.setupNotice()); return true;} o.appendChild(snav()); return false; }
@@ -21,9 +21,8 @@
   }
   async function saveSettings(value){
     var base = lastLoadedSettings || SETTING_DEFAULTS;
-    // The floating appearance panel can change after this page loaded. Use its
-    // latest state when saving an unrelated settings category to avoid racing
-    // and overwriting newer layout/color/font choices with stale JSON.
+    // Keep the current appearance preferences when saving another settings category,
+    // so changing privacy or LIVE controls never overwrites the appearance choices.
     var currentAppearance = window.CHLStyleSystem && typeof window.CHLStyleSystem.get === 'function'
       ? window.CHLStyleSystem.get()
       : base.appearance;
@@ -78,7 +77,76 @@
     }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Payment settings unavailable.'}));}
   }
 
-  CHL.route('/settings/live', async function(o){ if(head(o,'LIVE settings','Defaults for your broadcasts.')) return; var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card); try{var s=await loadSettings();card.innerHTML='';var f=el('form',{onsubmit:async function(e){e.preventDefault();var v={privacy:s.privacy,notifications:s.notifications,live:{audience:f.audience.value,guest_permissions:f.guest_permissions.value}};try{await saveSettings(v);}catch(err){CHL.toast(err.message||'Could not save settings.');}}});f.appendChild(selectField('Default audience','audience',['public','followers','private'],s.live.audience));f.appendChild(selectField('Guest permissions','guest_permissions',['allowed','host_only'],s.live.guest_permissions));f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save LIVE settings'));card.appendChild(f);}catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}});
+  CHL.route('/settings/live', async function(o){
+    if(head(o,'LIVE settings','Control who can join your guest stage.')) return;
+    var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card);
+    try{
+      var s=await loadSettings(); card.innerHTML='';
+      var f=el('form',{onsubmit:async function(e){
+        e.preventDefault();
+        var v={privacy:s.privacy,notifications:s.notifications,live:{
+          audience:f.elements.audience.value,
+          guest_permissions:f.elements.guest_permissions.value,
+          max_guests:Number(f.elements.max_guests.value)
+        }};
+        try{await saveSettings(v);}catch(err){CHL.toast(err.message||'Could not save settings.');}
+      }});
+      f.appendChild(selectField('Default audience','audience',['public','followers','private'],s.live.audience));
+      f.appendChild(selectField('Who can request the guest stage','guest_permissions',[
+        {value:'allowed',label:'Allow viewers to request to join'},
+        {value:'host_only',label:'Host-only: accept invited guests, close viewer requests'}
+      ],s.live.guest_permissions));
+      f.appendChild(selectField('Maximum accepted guests','max_guests',[1,2,3,4,5,6,7,8].map(function(n){return {value:String(n),label:String(n)+' guest'+(n===1?'':'s')};}),String(s.live.max_guests||8)));
+      f.appendChild(el('p',{class:'sub',text:'The host can review requests, accept or reject viewers, invite a creator by username, mute their published audio, stop video, and remove a guest. The host remains on stage separately from the guest limit.'}));
+      f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save LIVE settings')); card.appendChild(f);
+    }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}
+  });
 
-  function selectField(label,name,values,current){var w=el('label',{class:'field'},[el('span',{text:label})]);var s=el('select',{class:'input',name:name});values.forEach(function(v){s.appendChild(el('option',{value:v,selected:v===current},v));});w.appendChild(s);return w;}
+  CHL.route('/settings/appearance', async function(o){
+    if(head(o,'Appearance','Personalize Creator Hub Live without a floating screen overlay.')) return;
+    var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card);
+    try{
+      var s=await loadSettings(); var style=window.CHLStyleSystem;
+      if(!style) throw new Error('Appearance controls are unavailable. Reload Creator Hub Live and try again.');
+      var current=Object.assign({},style.get(),s.appearance||{}); style.apply(current); current=style.get();
+      card.innerHTML='';
+      card.appendChild(el('p',{class:'sub',text:'Changes preview immediately and are saved to this device and your account.'}));
+      var f=el('form',{style:'max-width:620px',onsubmit:async function(e){
+        e.preventDefault();
+        var next={theme:f.elements.theme.value,layout:f.elements.layout.value,font:f.elements.font.value,scale:f.elements.scale.value,accent:f.elements.accent.value};
+        style.apply(next);
+        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:next});CHL.toast('Appearance saved.');}
+        catch(err){CHL.toast(err.message||'Appearance could not be saved.');}
+      }});
+      f.appendChild(appearanceField('Color theme','theme',style.themes,current.theme));
+      f.appendChild(appearanceField('Layout','layout',style.layouts,current.layout));
+      f.appendChild(appearanceField('Font','font',style.fonts,current.font));
+      f.appendChild(appearanceField('Text size','scale',style.scales,current.scale));
+      f.appendChild(appearanceField('Accent color','accent',style.accents,current.accent));
+      var status=el('div',{class:'note','aria-live':'polite',text:'Appearance changes do not change wallet prices, gifts, permissions or account settings.'});
+      status.id='chl-ui-theme-status'; f.appendChild(status);
+      f.appendChild(el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save appearance'));
+      f.appendChild(el('button',{class:'btn',type:'button',style:'margin:8px 0 0 8px',text:'Reset appearance',onclick:async function(){
+        var defaults={theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'};
+        style.apply(defaults); Object.keys(defaults).forEach(function(key){f.elements[key].value=defaults[key];});
+        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:defaults});CHL.toast('Appearance reset and saved.');}
+        catch(err){CHL.toast(err.message||'Appearance reset locally but could not be saved to your account.');}
+      }}));
+      card.appendChild(f);
+    }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load appearance settings.'}));}
+  });
+
+  function appearanceField(label,name,items,current){
+    var w=el('label',{class:'field'},[el('span',{text:label})]);
+    var select=el('select',{class:'input',name:name,'data-chl-appearance':name});
+    items.forEach(function(item){select.appendChild(el('option',{value:item.id,selected:item.id===current},item.label));});
+    select.value=current;
+    select.addEventListener('change',function(){var next=Object.assign({},window.CHLStyleSystem.get());next[name]=select.value;window.CHLStyleSystem.apply(next);});
+    w.appendChild(select);return w;
+  }
+  function selectField(label,name,values,current){
+    var w=el('label',{class:'field'},[el('span',{text:label})]);var s=el('select',{class:'input',name:name});
+    values.forEach(function(v){var value=(v&&typeof v==='object')?v.value:String(v);var text=(v&&typeof v==='object')?v.label:String(v);s.appendChild(el('option',{value:value,selected:value===String(current)},text));});
+    s.value=String(current);w.appendChild(s);return w;
+  }
 })();

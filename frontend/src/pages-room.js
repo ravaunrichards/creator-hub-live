@@ -223,12 +223,32 @@
 
     var guestCard = el('section', { class: 'card live-guest-card', style: 'margin-top:14px;min-width:0' });
     guestCard.appendChild(el('div', { class: 'live-panel-heading', text: 'Guest stage' }));
-    var guestAction = el('button', { class: 'btn primary', type: 'button', text: 'Request to join stage', onclick: function () { requestGuest(roomId, guestAction); } });
-    var guestStatus = el('p', { class: 'sub', text: 'Up to 8 guests plus the host can appear on the stage. Host approval is required.' });
+    var guestAction = el('button', { class: 'btn primary block', type: 'button', text: 'Request to Join', onclick: function () { requestGuest(roomId, guestAction, controls, leaveStageButton); } });
+    var guestStatus = el('p', { class: 'sub', text: 'Ask the host to add you to the live guest boxes. Host approval is required.' });
     guestCard.appendChild(guestAction); guestCard.appendChild(guestStatus);
+    var guestInviteForm = el('form', { class: 'row wrap', style: 'display:none;gap:8px;margin:8px 0;align-items:end' });
+    var guestInviteLabel = el('label', { class: 'field', style: 'flex:1;min-width:170px' }, [el('span', { text: 'Invite creator by username' })]);
+    var guestInviteInput = el('input', { class: 'input', type: 'text', name: 'guestUsername', maxlength: '200', autocomplete: 'off', placeholder: 'Creator username' });
+    guestInviteLabel.appendChild(guestInviteInput); guestInviteForm.appendChild(guestInviteLabel);
+    var guestInviteButton = el('button', { class: 'btn', type: 'submit', text: 'Invite guest' }); guestInviteForm.appendChild(guestInviteButton);
+    guestInviteForm.addEventListener('submit', async function(event){
+      event.preventDefault(); var username = String(guestInviteInput.value || '').trim().replace(/^@/, '');
+      if (!username) { CHL.toast('Enter a Creator Hub username to invite.'); return; }
+      guestInviteButton.disabled = true; guestInviteButton.textContent = 'Sending invite…';
+      try {
+        await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/invite', { method:'POST', body:{username:username} });
+        guestInviteInput.value = ''; CHL.toast('Guest invitation sent.');
+        await refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
+      } catch(error) { CHL.toast(error.message || 'Could not invite this creator.'); }
+      finally { guestInviteButton.disabled = false; guestInviteButton.textContent = 'Invite guest'; }
+    });
+    guestCard.appendChild(guestInviteForm);
     guestQueueContainer = el('div', { class: 'live-guest-queue' });
     guestCard.appendChild(guestQueueContainer);
     side.appendChild(guestCard);
+    // The viewer's request button is deliberately near the top of the LIVE
+    // side rail instead of below entertainment controls or the chat panel.
+    side.insertBefore(guestCard, funPanel);
 
     /* Chat panel. Its messages scroll independently of the video/page. */
     var chat = el('div', {
@@ -405,13 +425,17 @@
       pollLaunch.disabled = !isHost;
       challengeStart.disabled = !isHost;
       soundCueButtons.forEach(function (button) { button.disabled = !isHost; });
-      if (isHost) {
+      if (currentMediaMode === 'screen') {
+        guestCard.style.display = 'none';
+      } else if (isHost) {
         guestAction.style.display = 'none';
-        guestStatus.textContent = 'Review requests and manage accepted guests individually.';
+        guestInviteForm.style.display = 'flex';
+        guestStatus.textContent = 'Review requests, invite creators by username, and manage accepted guests individually.';
       } else {
+        guestInviteForm.style.display = 'none';
         guestQueueContainer.style.display = 'none';
       }
-      refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
+      if (currentMediaMode !== 'screen') refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
       guestPollTimer = window.setInterval(function () {
         if (currentRoomId === roomId) refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
       }, 5000);
@@ -892,12 +916,32 @@
     } catch (error) { console.warn('[Creator Hub LIVE] ignored invalid room event', error); }
   }
 
-  async function requestGuest(roomId, button) {
+  async function requestGuest(roomId, button, mediaControls, leaveStageControl) {
     button.disabled = true;
     try {
-      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/request', { method: 'POST', body: {} });
-      button.textContent = 'Request sent'; CHL.toast('Guest request sent to the host.');
+      var base = '/api/live/rooms/' + encodeURIComponent(roomId) + '/guests';
+      var status = await CHL.authenticatedApiRequest(base + '/status', { method: 'GET' });
+      if (status && status.guest && status.guest.status === 'invited') {
+        await CHL.authenticatedApiRequest(base + '/accept-invitation', { method: 'POST', body: {} });
+        // Refresh the authenticated room grant after accepting an invitation.
+        // Existing viewers stay connected, but receive publisher controls only
+        // after the backend confirms the accepted guest row.
+        var grant = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/join', { method: 'POST' });
+        canPublishMedia = !!(grant && grant.canPublish);
+        if (mediaControls) mediaControls.style.display = canPublishMedia ? '' : 'none';
+        if (leaveStageControl) leaveStageControl.style.display = canPublishMedia && !isHost ? '' : 'none';
+        button.textContent = canPublishMedia ? 'You are on stage' : 'Invitation accepted';
+        CHL.toast(canPublishMedia ? 'Host invitation accepted. Stage controls are ready.' : 'Invitation accepted. The stage permission is refreshing.');
+      } else {
+        await CHL.authenticatedApiRequest(base + '/request', { method: 'POST', body: {} });
+        button.textContent = 'Request pending'; CHL.toast('Guest request sent to the host.');
+      }
+      await refreshGuestQueue(roomId, guestQueueContainer, isHost, button, guestStatusElement(button));
     } catch (error) { CHL.toast(error.message || 'Guest request failed.'); button.disabled = false; }
+  }
+
+  function guestStatusElement(button) {
+    return button && button.parentElement ? button.parentElement.querySelector('p.sub') : null;
   }
 
   async function refreshGuestQueue(roomId, container, host, guestButton, guestStatus) {
@@ -905,17 +949,24 @@
     if (!host) {
       try {
         var own = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/status', { method: 'GET' });
-        if (own && own.guest && own.guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = currentMediaMode === 'audio' ? 'You have been accepted. Your microphone control is available above.' : 'You have been accepted. Your available media controls are above.'; }
-        else if (own && own.guest && own.guest.status === 'requested') { guestButton.textContent = 'Request pending'; guestButton.disabled = true; }
-        else if (own && own.guest && own.guest.status === 'rejected') { guestButton.textContent = 'Request again'; guestButton.disabled = false; guestStatus.textContent = 'The previous request was declined. You can request again.'; }
+        var guest = own && own.guest;
+        if (guest && guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = currentMediaMode === 'audio' ? 'You have been accepted. Your microphone control is available above.' : 'You have been accepted. Your available media controls are above.'; }
+        else if (guest && guest.status === 'invited') { guestButton.textContent = 'Accept invitation'; guestButton.disabled = false; guestStatus.textContent = 'The host invited you to join the guest stage. Tap Accept invitation to join.'; }
+        else if (guest && guest.status === 'requested') { guestButton.textContent = 'Request pending'; guestButton.disabled = true; guestStatus.textContent = 'Your request is waiting for the host.'; }
+        else if (own && own.guestPermissions === 'host_only') { guestButton.textContent = 'Requests closed'; guestButton.disabled = true; guestStatus.textContent = 'This host accepts invited guests only.'; }
+        else { guestButton.textContent = 'Request to Join'; guestButton.disabled = false; if (guest && guest.status === 'rejected') guestStatus.textContent = 'The previous request was declined. You can request again.'; else if (guest && (guest.status === 'left' || guest.status === 'removed')) guestStatus.textContent = 'You are viewing the LIVE. You may request to rejoin the guest stage.'; }
       } catch (_) {}
       return;
     }
     try {
       var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests', { method: 'GET' });
       container.textContent = '';
+      var guestSettings = result && result.guestSettings || {};
+      var limit = Number(guestSettings.maxGuests) || 8;
       var guests = result && Array.isArray(result.guests) ? result.guests : [];
-      if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests yet.' })); return; }
+      var modeText = guestSettings.guestPermissions === 'host_only' ? 'Viewer requests are closed; use username invitations.' : 'Viewer requests are open.';
+      container.appendChild(el('p', { class:'sub', text: modeText + ' Guest limit: ' + limit + '. Accepted guests: ' + guests.filter(function(g){return g.status === 'accepted';}).length + '/' + limit + '.' }));
+      if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests or invitations yet.' })); return; }
       guests.forEach(function (guest) {
         var profile = guest.profile || {}; var label = profile.display_name || profile.username || 'Account name unavailable';
         var row = el('div', { class: 'live-guest-queue-row' }); row.appendChild(el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) })); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
@@ -923,6 +974,7 @@
           row.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Accept', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/accept', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest accepted.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not accept guest.'); } } }));
           row.appendChild(el('button', { class: 'btn', type: 'button', text: 'Reject', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/reject', { method: 'POST', body: { userId: guest.user_id } }); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not reject guest.'); } } }));
         } else if (guest.status === 'accepted') row.appendChild(el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/remove', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest removed from stage.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not remove guest.'); } } }));
+        else if (guest.status === 'invited') row.appendChild(el('span', { class:'sub', text:'Invitation sent' }));
         container.appendChild(row);
       });
     } catch (error) { container.textContent = ''; container.appendChild(el('p', { class: 'sub', text: 'Guest queue unavailable: ' + (error.message || 'check database migration') })); }

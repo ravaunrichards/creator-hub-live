@@ -113,9 +113,10 @@
   }
   function syncControls() {
     var panel = document.getElementById('chl-style-panel');
-    if (!panel) return;
     ['theme', 'layout', 'font', 'scale', 'accent'].forEach(function (key) {
-      var input = panel.querySelector('[data-appearance="' + key + '"]'); if (input) input.value = preferences[key];
+      var oldInput = panel && panel.querySelector('[data-appearance="' + key + '"]');
+      if (oldInput) oldInput.value = preferences[key];
+      document.querySelectorAll('select[data-chl-appearance="' + key + '"]').forEach(function (input) { input.value = preferences[key]; });
     });
     var status = document.getElementById('chl-ui-theme-status');
     if (status) status.textContent = 'Saved locally · ' + find(preferences.theme, THEMES).label + ' · ' + find(preferences.layout, LAYOUTS).label;
@@ -170,37 +171,22 @@
     wrap.appendChild(label); wrap.appendChild(select); panel.appendChild(wrap);
   }
   function setup() {
-    if (!document.body || document.getElementById('chl-style-launcher')) return;
+    // Remove any legacy launcher in a soft-reloaded page. Appearance controls
+    // now live only under Settings and must never cover the live/chat controls.
+    var oldLauncher = document.getElementById('chl-style-launcher');
+    if (oldLauncher) oldLauncher.remove();
     installRules();
-    var inlineStyle = document.createElement('style');
-    inlineStyle.textContent = '#chl-style-launcher{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:1500;font:inherit}#chl-style-launcher .chl-style-toggle{border:1px solid var(--line,#4b5268);background:var(--panel,#171824);color:var(--text,#fff);box-shadow:0 8px 30px #0005;border-radius:999px;padding:11px 15px;cursor:pointer}#chl-style-panel{width:min(380px,calc(100vw - 24px));max-height:min(78vh,680px);overflow:auto;background:var(--panel,#171824);color:var(--text,#fff);border:1px solid var(--line,#4b5268);border-radius:18px;padding:16px;box-shadow:0 18px 55px #0007;margin-bottom:10px}#chl-style-panel[hidden]{display:none}#chl-style-panel h2{font-size:18px;margin:0 0 4px}#chl-style-panel .chl-style-hint{font-size:12px;line-height:1.5;opacity:.85;margin:12px 0}#chl-style-panel .chl-appearance-field{display:grid;gap:6px;margin:12px 0;font-size:13px}#chl-style-panel .input{width:100%;min-height:42px}#chl-style-panel .chl-style-actions{display:flex;gap:8px;flex-wrap:wrap}#chl-style-panel .chl-style-actions .btn{flex:1}';
-    document.head.appendChild(inlineStyle);
-    var launcher = document.createElement('aside'); launcher.id = 'chl-style-launcher'; launcher.setAttribute('aria-label', 'Appearance settings');
-    var toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'chl-style-toggle'; toggle.textContent = '◐ Appearance'; toggle.setAttribute('aria-expanded', 'false'); toggle.setAttribute('aria-controls', 'chl-style-panel');
-    var panel = document.createElement('section'); panel.id = 'chl-style-panel'; panel.hidden = true; panel.setAttribute('aria-label', 'Personalize Creator Hub Live');
-    var heading = document.createElement('h2'); heading.textContent = 'Your experience'; panel.appendChild(heading);
-    var sub = document.createElement('p'); sub.className = 'chl-style-hint'; sub.textContent = 'Choose a theme, layout, font, size and accent. Classic keeps the current layout.'; panel.appendChild(sub);
-    createField(panel, 'Color theme', 'theme', THEMES);
-    createField(panel, 'Layout', 'layout', LAYOUTS);
-    createField(panel, 'Font', 'font', FONTS);
-    createField(panel, 'Text size', 'scale', [ { id:'0.9', label:'Small' }, { id:'1', label:'Standard' }, { id:'1.1', label:'Large' }, { id:'1.2', label:'Extra large' } ]);
-    createField(panel, 'Accent color', 'accent', ACCENTS);
-    var status = document.createElement('p'); status.id = 'chl-ui-theme-status'; status.className = 'chl-style-hint'; status.setAttribute('aria-live', 'polite'); panel.appendChild(status);
-    var hint = document.createElement('p'); hint.className = 'chl-style-hint'; hint.textContent = 'Your choices never change coin prices, gift assets, permissions or account records. Some room layouts stay optimized for their specific task.'; panel.appendChild(hint);
-    var actions = document.createElement('div'); actions.className = 'chl-style-actions';
-    var reset = document.createElement('button'); reset.type = 'button'; reset.className = 'btn'; reset.textContent = 'Reset appearance'; reset.addEventListener('click', function () { apply(DEFAULTS, true, true); });
-    var close = document.createElement('button'); close.type = 'button'; close.className = 'btn'; close.textContent = 'Close'; close.addEventListener('click', function () { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); });
-    actions.appendChild(reset); actions.appendChild(close); panel.appendChild(actions); launcher.appendChild(toggle); launcher.appendChild(panel); document.body.appendChild(launcher);
-    toggle.addEventListener('click', function () { var opening = panel.hidden; panel.hidden = !opening; toggle.setAttribute('aria-expanded', String(opening)); if (opening) panel.querySelector('select').focus(); });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !panel.hidden) { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); } });
     apply(preferences, true, false);
   }
 
   window.CHLStyleSystem = {
-    themes: THEMES.slice(), layouts: LAYOUTS.slice(), fonts: FONTS.map(function (font) { return { id: font.id, label: font.label }; }),
+    themes: THEMES.slice(), layouts: LAYOUTS.slice(),
+    fonts: FONTS.map(function (font) { return { id: font.id, label: font.label }; }),
+    accents: ACCENTS.map(function (accent) { return { id: accent.id, label: accent.label }; }),
+    scales: [{ id: '0.9', label: 'Small' }, { id: '1', label: 'Standard' }, { id: '1.1', label: 'Large' }, { id: '1.2', label: 'Extra large' }],
     get: function () { return Object.assign({}, preferences); },
     apply: function (next) { apply(Object.assign({}, preferences, next || {}), true, true); },
-    open: function () { var button = document.querySelector('#chl-style-launcher > button'); if (button) button.click(); }
+    open: function () { if (window.CHL && typeof CHL.navigate === 'function') CHL.navigate('#/settings/appearance'); }
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { once: true }); else setup();
   if (window.CHL && typeof CHL.onAuthStateChange === 'function') {
