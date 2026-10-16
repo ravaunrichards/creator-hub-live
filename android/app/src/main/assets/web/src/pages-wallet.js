@@ -105,23 +105,27 @@
     var config;
     try { config = await CHL.authenticatedApiRequest('/api/wallet/conversion-config'); }
     catch (error) { notice.textContent = error.message || 'The conversion settings could not be loaded.'; return; }
-    if (!config || config.enabled !== true || !Number.isSafeInteger(Number(config.coinsPerDiamond)) || Number(config.coinsPerDiamond) < 1) {
-      notice.textContent = 'Conversions are safely disabled until the platform exchange rate is configured. Your balances have not been changed.';
+    if (!config || config.enabled !== true || !Number.isSafeInteger(Number(config.coinsPerDiamond)) || Number(config.coinsPerDiamond) < 1
+        || !Number.isSafeInteger(Number(config.diamondsPerCoin)) || Number(config.diamondsPerCoin) < 1) {
+      notice.textContent = 'Conversions are safely disabled until both platform exchange rates are configured. Your balances have not been changed.';
       return;
     }
-    var rate = Number(config.coinsPerDiamond); submit.disabled = false;
+    var coinsPerDiamond = Number(config.coinsPerDiamond), diamondsPerCoin = Number(config.diamondsPerCoin); submit.disabled = false;
     function showDirection() {
       var label = amountLabel.querySelector('span');
-      label.textContent = direction.value === 'coins_to_diamonds' ? 'Coins to convert (multiples of ' + rate.toLocaleString('en-US') + ')' : 'Diamonds to convert';
+      label.textContent = direction.value === 'coins_to_diamonds'
+        ? 'Coins to convert (multiples of ' + coinsPerDiamond.toLocaleString('en-US') + ')'
+        : 'Diamonds to convert (multiples of ' + diamondsPerCoin.toLocaleString('en-US') + ')';
       notice.textContent = direction.value === 'coins_to_diamonds'
-        ? rate.toLocaleString('en-US') + ' coins = 1 diamond. Coins must be an exact multiple of the configured rate.'
-        : '1 diamond = ' + rate.toLocaleString('en-US') + ' coins. The same platform rate applies in reverse.';
+        ? coinsPerDiamond.toLocaleString('en-US') + ' coins = 1 diamond. This rate is intentionally different from the reverse conversion.'
+        : diamondsPerCoin.toLocaleString('en-US') + ' diamond' + (diamondsPerCoin === 1 ? '' : 's') + ' = 1 coin. The reverse rate is intentionally less favourable to protect the platform economy.';
     }
     direction.addEventListener('change', showDirection); showDirection();
     form.addEventListener('submit', async function(event){
       event.preventDefault(); var value = Number(amount.value);
       if (!Number.isSafeInteger(value) || value < 1 || value > 1000000000) { CHL.toast('Enter a whole number from 1 to 1,000,000,000.'); return; }
-      if (direction.value === 'coins_to_diamonds' && value % rate !== 0) { CHL.toast('Coin amounts must be a multiple of ' + rate.toLocaleString('en-US') + '.'); return; }
+      var requiredMultiple = direction.value === 'coins_to_diamonds' ? coinsPerDiamond : diamondsPerCoin;
+      if (value % requiredMultiple !== 0) { CHL.toast('Amount must be a multiple of ' + requiredMultiple.toLocaleString('en-US') + '.'); return; }
       submit.disabled = true; submit.textContent = 'Converting…';
       try {
         var result = await CHL.authenticatedApiRequest('/api/wallet/convert', { method:'POST', headers:{'Idempotency-Key':'wallet-convert:' + CHL.uuid()}, body:{direction:direction.value,amount:value} });
