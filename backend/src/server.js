@@ -2,6 +2,7 @@ import "dotenv/config";
 import http from "node:http";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { URL } from "node:url";
+import { handleTeamsRoute } from "./teams-routes.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   createLiveKitToken,
@@ -399,6 +400,49 @@ async function liveRoomById(client, id) {
   return data;
 }
 
+// Service-role database access bypasses browser RLS, so verify LIVE audience
+// access before returning room details or minting a LiveKit token.
+async function canAccessLiveRoom(client, room, user) {
+  if (!room || !user || !user.id) return false;
+  const viewerId = String(user.id);
+  const hostId = String(room.host_id || "");
+  if (viewerId === hostId) return true;
+  if (room.status !== "live" || !hostId) return false;
+
+  const [blockedByViewer, blockedByHost] = await Promise.all([
+    client.from("blocks").select("blocker_id").eq("blocker_id", viewerId).eq("blocked_id", hostId).limit(1),
+    client.from("blocks").select("blocker_id").eq("blocker_id", hostId).eq("blocked_id", viewerId).limit(1),
+  ]);
+  if (blockedByViewer.error || blockedByHost.error) throw fail(503, "LIVE_ACCESS_CHECK_FAILED", "Could not verify LIVE access. Please try again.");
+  if ((blockedByViewer.data || []).length || (blockedByHost.data || []).length) return false;
+
+  const [profileResult, guestResult, moderatorResult, followResult] = await Promise.all([
+    client.from("profiles").select("privacy").eq("id", hostId).maybeSingle(),
+    client.from("live_guests").select("status").eq("live_id", room.id).eq("user_id", viewerId).maybeSingle(),
+    client.from("live_room_moderators").select("user_id").eq("live_id", room.id).eq("user_id", viewerId).limit(1),
+    client.from("follows").select("status").eq("follower_id", viewerId).eq("followee_id", hostId).eq("status", "accepted").limit(1),
+  ]);
+  if (profileResult.error || guestResult.error || moderatorResult.error || followResult.error) {
+    throw fail(503, "LIVE_ACCESS_CHECK_FAILED", "Could not verify LIVE access. Please try again.");
+  }
+  const privacy = profileResult.data && profileResult.data.privacy;
+  const privateProfile = !!(privacy && typeof privacy === "object" && privacy.account === "private");
+  const following = (followResult.data || []).length > 0;
+  const invited = guestResult.data && ["invited", "accepted"].includes(String(guestResult.data.status));
+  const moderator = (moderatorResult.data || []).length > 0;
+  if (invited || moderator) return true;
+  const audience = ["public", "followers", "private"].includes(String(room.audience)) ? String(room.audience) : "public";
+  if (audience === "private") return false;
+  if (audience === "followers" || privateProfile) return following;
+  return true;
+}
+
+async function assertLiveRoomAccess(client, room, user) {
+  if (!(await canAccessLiveRoom(client, room, user))) {
+    throw fail(404, "LIVE_ROOM_UNAVAILABLE", "This LIVE is private, unavailable, or you do not have permission to view it.");
+  }
+}
+
 function validateLiveRoomName(roomName) {
   const value = String(roomName || "").trim();
   if (!validateRoomName(value))
@@ -583,6 +627,29 @@ async function coinPackage(client, coins) {
   return data;
 }
 
+const MAX_CUSTOM_COIN_QUANTITY = 50000;
+
+async function coinPriceForAmount(client, coins) {
+  if (!Number.isSafeInteger(coins) || coins < 1 || coins > MAX_CUSTOM_COIN_QUANTITY) {
+    throw fail(400, "INVALID_COIN_QUANTITY", `Choose a whole-number quantity between 1 and ${MAX_CUSTOM_COIN_QUANTITY.toLocaleString("en-US")} coins.`);
+  }
+  const exact = await client.from("coin_packages").select("*").eq("coins", coins).eq("active", true).maybeSingle();
+  if (exact.error) throw exact.error;
+  if (exact.data) return { ...exact.data, custom: false };
+
+  // Custom quantities use the active 1,000-coin package as the server-side
+  // reference rate. Existing exact packages retain their own published price.
+  const reference = await client.from("coin_packages").select("coins,price_usd").eq("coins", 1000).eq("active", true).maybeSingle();
+  if (reference.error) throw reference.error;
+  if (!reference.data || Number(reference.data.coins) !== 1000 || !Number.isFinite(Number(reference.data.price_usd)) || Number(reference.data.price_usd) <= 0) {
+    throw fail(503, "CUSTOM_PURCHASE_NOT_CONFIGURED", "Custom coin purchases are not configured. Keep using the available coin packages until an administrator configures the 1,000-coin reference price.");
+  }
+  const unitPrice = Number(reference.data.price_usd) / 1000;
+  const priceUsd = Math.max(0.01, Math.round(unitPrice * coins * 100) / 100);
+  if (!Number.isFinite(priceUsd) || priceUsd > 500) throw fail(400, "COIN_QUANTITY_LIMIT", "This quantity exceeds the supported custom checkout limit.");
+  return { coins, price_usd: priceUsd.toFixed(2), active: true, custom: true };
+}
+
 // ============================================================================
 // Wallet Helpers
 // ============================================================================
@@ -671,6 +738,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    // The Teams API implementation already lives in its own module. Route
+    // matching must be wired here before the fallback 404 so the existing
+    // Teams page's /api/teams requests are not treated as unknown endpoints.
+    if (pathname === "/api/teams" || pathname.startsWith("/api/teams/")) {
+      const teamHandled = await handleTeamsRoute({
+        pathname, method, req, res, url, fail, ok, db,
+        requireSupabaseUser, readJson, normalizeExternalError,
+      });
+      // The route module sends responses through ok()/send(), whose return
+      // value is intentionally undefined; writableEnded is the reliable signal.
+      if (teamHandled || res.writableEnded) return;
+    }
+
     // Infrastructure & Health
     if (pathname === "/api/health" && method === "GET") {
       return ok(res, {
@@ -704,11 +784,15 @@ const server = http.createServer(async (req, res) => {
       let roomName = null;
       let canPublish = false;
       let isHost = false;
+      let mediaMode = "video";
+      let liveRoom = null;
       const roomId = body.roomId ? String(body.roomId).trim() : null;
 
       if (roomId) {
         const room = await liveRoomById(client, roomId);
+        liveRoom = room;
         roomName = String(room.room_name).trim();
+        mediaMode = ["video", "audio", "screen"].includes(String(room.media_mode)) ? String(room.media_mode) : "video";
         isHost = String(room.host_id) === String(user.id);
         canPublish = isHost;
         if (!canPublish) {
@@ -722,12 +806,14 @@ const server = http.createServer(async (req, res) => {
         roomName = String(body.roomName).trim();
         const { data: room, error } = await client
           .from("live_sessions")
-          .select("id,host_id,room_name,status")
+          .select("id,host_id,room_name,status,media_mode,audience")
           .eq("room_name", roomName)
           .maybeSingle();
         if (error) throw error;
         if (!room)
           throw fail(404, "LIVE_ROOM_NOT_FOUND", "LIVE room not found.");
+        liveRoom = room;
+        mediaMode = ["video", "audio", "screen"].includes(String(room.media_mode)) ? String(room.media_mode) : "video";
         isHost = String(room.host_id) === String(user.id);
         canPublish = isHost;
         if (!canPublish) {
@@ -740,16 +826,20 @@ const server = http.createServer(async (req, res) => {
       } else {
         throw fail(400, "INVALID_ROOM", "A valid LIVE room is required.");
       }
+      await assertLiveRoomAccess(client, liveRoom, user);
+      if (mediaMode === "screen" && !isHost) canPublish = false;
 
       const { data: profile, error: profileError } = await client.from("profiles")
         .select("username,display_name").eq("id", user.id).maybeSingle();
       if (profileError) throw profileError;
-      const participantName = String((profile && profile.display_name) || (profile && profile.username) || (isHost ? "Host" : canPublish ? "Guest" : "Viewer")).slice(0, 128);
+      const participantName = String((profile && profile.display_name) || (profile && profile.username) || "Account name unavailable").trim().slice(0, 128);
       const token = await createLiveKitToken({
         userId: user.id,
         roomName,
         canPublish,
         participantName,
+        mediaMode,
+        isHost,
         ttlSeconds: body.ttlSeconds,
       });
       return ok(res, {
@@ -798,6 +888,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (guestParts.action === "request" && method === "POST") {
+        if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guest stage requests are disabled.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already owns this stage.");
         const { data: existing, error: existingError } = await client.from("live_guests")
           .select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
@@ -817,6 +908,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (guestParts.action === "accept" && method === "POST") {
+        if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
         if (!hostOwnsRoom) throw fail(403, "FORBIDDEN", "Only the host can accept a guest.");
         const body = await readJson(req);
         const targetId = String(body.userId || guestParts.targetId || "").trim();
@@ -835,8 +927,9 @@ const server = http.createServer(async (req, res) => {
         // Update an already connected viewer in-place; never disconnect the room.
         let publishPermissionUpdated = false;
         try {
+          const guestSources = room.media_mode === "audio" ? [2] : [1, 2];
           await liveKitRoomService().updateParticipant(room.room_name, targetId, {
-            permission: { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: [1, 2] }
+            permission: { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: guestSources }
           });
           publishPermissionUpdated = true;
         } catch (e) {
@@ -918,8 +1011,9 @@ const server = http.createServer(async (req, res) => {
       const limit = clampLimit(url.searchParams.get("limit"), 30, 100);
       const { data, error } = await client
         .from("live_sessions")
-        .select("id,host_id,title,category,status,viewer_count,started_at,ended_at")
+        .select("id,host_id,title,category,media_mode,audience,status,viewer_count,started_at,ended_at")
         .eq("status", "live")
+        .eq("audience", "public")
         .is("ended_at", null)
         .order("started_at", { ascending: false })
         .limit(limit);
@@ -930,7 +1024,15 @@ const server = http.createServer(async (req, res) => {
           details: normalized.details,
         });
       }
-      return ok(res, { rooms: data || [] });
+      const rooms = data || [];
+      const hostIds = [...new Set(rooms.map((room) => room.host_id).filter(Boolean))];
+      let publicHostIds = new Set();
+      if (hostIds.length) {
+        const profiles = await client.from("profiles").select("id,privacy").in("id", hostIds);
+        if (profiles.error) throw profiles.error;
+        publicHostIds = new Set((profiles.data || []).filter((profile) => !(profile.privacy && typeof profile.privacy === "object" && profile.privacy.account === "private")).map((profile) => String(profile.id)));
+      }
+      return ok(res, { rooms: rooms.filter((room) => publicHostIds.has(String(room.host_id))) });
     }
 
     // LIVE Room - Create
@@ -942,7 +1044,20 @@ const server = http.createServer(async (req, res) => {
         .slice(0, 200);
       if (!title)
         throw fail(400, "INVALID_INPUT", "A stream title is required.");
+      const mediaMode = String(body.mediaMode || "video").trim().toLowerCase();
+      if (!["video", "audio", "screen"].includes(mediaMode)) {
+        throw fail(400, "INVALID_MEDIA_MODE", "Choose video, audio-only, or screen-sharing LIVE.");
+      }
       const client = db();
+      let audience = String(body.audience || "").trim().toLowerCase();
+      if (!audience) {
+        const settingsResult = await client.from("user_settings").select("live").eq("user_id", user.id).maybeSingle();
+        if (settingsResult.error) throw settingsResult.error;
+        audience = String(settingsResult.data && settingsResult.data.live && settingsResult.data.live.audience || "public").trim().toLowerCase();
+      }
+      if (!["public", "followers", "private"].includes(audience)) {
+        throw fail(400, "INVALID_LIVE_AUDIENCE", "Choose a public, followers-only, or private LIVE audience.");
+      }
       const randomId = globalThis.crypto?.randomUUID?.();
       const roomName = ("chl_" + (randomId || Date.now().toString(36))).replace(
         /-/g,
@@ -956,6 +1071,8 @@ const server = http.createServer(async (req, res) => {
           ? String(body.category).trim().slice(0, 60)
           : null,
         status: "pending",
+        media_mode: mediaMode,
+        audience,
       };
       const { data, error } = await client
         .from("live_sessions")
@@ -977,13 +1094,16 @@ const server = http.createServer(async (req, res) => {
     if (liveParts && liveParts.id) {
       const client = db();
       if (!liveParts.action && method === "GET") {
+        const user = await requireSupabaseUser(req);
         const room = await liveRoomById(client, liveParts.id);
+        await assertLiveRoomAccess(client, room, user);
         return ok(res, room);
       }
 
       if (liveParts.action === "join" && method === "POST") {
         const user = await requireSupabaseUser(req);
         const room = await liveRoomById(client, liveParts.id);
+        await assertLiveRoomAccess(client, room, user);
         if (room.status === "ended")
           throw fail(409, "LIVE_ENDED", "This LIVE session has ended.");
         const isHost = String(room.host_id) === String(user.id);
@@ -995,6 +1115,7 @@ const server = http.createServer(async (req, res) => {
           if (guestError) throw guestError;
           canPublish = !!guest && guest.status === "accepted";
         }
+        if (room.media_mode === "screen" && !isHost) canPublish = false;
         return ok(res, {
           joined: true,
           roomId: room.id,
@@ -1018,11 +1139,12 @@ const server = http.createServer(async (req, res) => {
         if (room.status === "ended")
           throw fail(409, "LIVE_ENDED", "This LIVE session has already ended.");
 
-        // Only mark the database LIVE after LiveKit confirms this host has
-        // published both camera and microphone tracks in the expected room.
+        // Only mark the database LIVE after LiveKit confirms the media required
+        // by this room's authoritative mode has actually been published.
         await verifyHostPublishing(
           validateLiveRoomName(room.room_name),
-          user.id
+          user.id,
+          room.media_mode || "video"
         );
         const { data, error } = await client
           .from("live_sessions")
@@ -1081,17 +1203,28 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // Server-authoritative coin quote for custom quantities. The client never
+    // submits the payable amount; the same pricing helper is used at checkout.
+    if (pathname === "/api/payments/coin-quote" && method === "GET") {
+      await requireSupabaseUser(req);
+      const coins = Number(url.searchParams.get("coins"));
+      if (!Number.isSafeInteger(coins) || coins < 1 || coins > MAX_CUSTOM_COIN_QUANTITY) {
+        throw fail(400, "INVALID_COIN_QUANTITY", `Choose a whole-number quantity between 1 and ${MAX_CUSTOM_COIN_QUANTITY.toLocaleString("en-US")} coins.`);
+      }
+      const quote = await coinPriceForAmount(db(), coins);
+      return ok(res, { coins, amountUsd: Number(quote.price_usd).toFixed(2), custom: !!quote.custom, currency: "USD", maxCoins: MAX_CUSTOM_COIN_QUANTITY });
+    }
+
     // PayPal Payments - Create Order
     if (pathname === "/api/payments/paypal/create-order" && method === "POST") {
       const user = await requireSupabaseUser(req);
       const idempotencyKey = requireIdem(req);
       const body = await readJson(req);
       const coins = Number(body.coins);
-      if (!Number.isSafeInteger(coins) || coins <= 0) {
-        throw fail(400, "INVALID_PACKAGE", "A valid coin package is required.");
+      if (!Number.isSafeInteger(coins) || coins < 1 || coins > MAX_CUSTOM_COIN_QUANTITY) {
+        throw fail(400, "INVALID_COIN_QUANTITY", `Choose a whole-number quantity between 1 and ${MAX_CUSTOM_COIN_QUANTITY.toLocaleString("en-US")} coins.`);
       }
       const client = db();
-      const pkg = await coinPackage(client, coins);
       const { data: existingPayment, error: existingError } = await client
         .from("payments")
         .select("*")
@@ -1111,9 +1244,11 @@ const server = http.createServer(async (req, res) => {
           status: existingPayment.status,
           coins: existingPayment.package_coins,
           amount: Number(existingPayment.amount),
+          custom: !existingPayment.package_id,
         });
       }
 
+      const pkg = await coinPriceForAmount(client, coins);
       const amountUsd = Number(pkg.price_usd).toFixed(2);
       const payload = {
         intent: "CAPTURE",
@@ -1128,8 +1263,10 @@ const server = http.createServer(async (req, res) => {
           user_action: "PAY_NOW",
           ...(PAYPAL_RETURN_URL
             ? {
-                return_url: `${PAYPAL_RETURN_URL}/wallet?success=true`,
-                cancel_url: `${PAYPAL_RETURN_URL}/wallet?canceled=true`,
+                // This SPA uses hash routes but reads the provider's `token`
+                // from location.search, so keep the query before the hash.
+                return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
+                cancel_url: `${PAYPAL_RETURN_URL}/?paypal=cancelled#/wallet`,
               }
             : {}),
         },
@@ -1151,7 +1288,7 @@ const server = http.createServer(async (req, res) => {
         user_id: user.id,
         provider: "paypal",
         provider_order_id: orderId,
-        package_id: pkg.id,
+        package_id: pkg.id || null,
         package_coins: pkg.coins,
         amount: amountUsd,
         currency: "USD",
@@ -1168,6 +1305,7 @@ const server = http.createServer(async (req, res) => {
         status: "pending",
         coins: pkg.coins,
         amount: Number(amountUsd),
+        custom: !!pkg.custom,
       });
     }
 

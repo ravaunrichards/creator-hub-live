@@ -7,8 +7,8 @@ function livekitHttpBase() {
   return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 }
 
-// Verify that the host has published both camera and microphone tracks.
-export async function verifyHostPublishing(roomName, identity) {
+// Verify the actual media required by the selected LIVE mode.
+export async function verifyHostPublishing(roomName, identity, mediaMode = 'video') {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const httpBase = livekitHttpBase();
@@ -50,31 +50,26 @@ export async function verifyHostPublishing(roomName, identity) {
       : [];
 
   const media = classifyPublishedTracks(tracks);
-
-  if (!media.camera || !media.microphone) {
-    const missing = [];
-
+  const mode = ['video', 'audio', 'screen'].includes(String(mediaMode)) ? String(mediaMode) : 'video';
+  const missing = [];
+  if (mode === 'video') {
     if (!media.camera) missing.push('camera');
     if (!media.microphone) missing.push('microphone');
+  } else if (mode === 'audio') {
+    if (!media.microphone) missing.push('microphone');
+  } else if (mode === 'screen') {
+    if (!media.screen) missing.push('screen share');
+  }
 
+  if (missing.length) {
+    const required = mode === 'video' ? 'camera and microphone' : mode === 'audio' ? 'microphone' : 'screen share';
     throw Object.assign(
-      new Error(
-        `Host must publish camera and microphone. Missing: ${missing.join(', ')}.`
-      ),
-      {
-        code: 'LIVE_PUBLISH_REQUIRED',
-        status: 409,
-        details: { missing }
-      }
+      new Error(`Host must publish the required ${required} before going LIVE. Missing: ${missing.join(', ')}.`),
+      { code: 'LIVE_PUBLISH_REQUIRED', status: 409, details: { missing, mediaMode: mode } }
     );
   }
 
-  return {
-    identity: String(identity),
-    trackCount: tracks.length,
-    camera: true,
-    microphone: true
-  };
+  return { identity: String(identity), trackCount: tracks.length, camera: media.camera, microphone: media.microphone, screen: media.screen, screenAudio: media.screenAudio, mediaMode: mode };
 }
 
 // Validate the room name.
@@ -90,6 +85,8 @@ export async function createLiveKitToken({
   roomName,
   canPublish = false,
   participantName = null,
+  mediaMode = 'video',
+  isHost = false,
   ttlSeconds = 3600
 }) {
   const apiKey = process.env.LIVEKIT_API_KEY;
@@ -119,15 +116,20 @@ export async function createLiveKitToken({
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: String(userId),
-    name: String(participantName || (canPublish ? 'Creator' : 'Viewer')).trim().slice(0, 128),
+    name: String(participantName || 'Account name unavailable').trim().slice(0, 128),
     ttl: boundedTtlSeconds
   });
+
+  const mode = ['video', 'audio', 'screen'].includes(String(mediaMode)) ? String(mediaMode) : 'video';
+  // Video LIVE keeps the existing in-room Share Screen capability. Audio-only
+  // and dedicated screen-only rooms still receive tightly scoped source grants.
+  const publishSources = !canPublish ? [] : mode === 'audio' ? [2] : mode === 'screen' ? (isHost ? [3, 4] : []) : [1, 2, 3, 4];
 
   token.addGrant({
     roomJoin: true,
     room: roomName,
-    canPublish: !!canPublish,
-    canPublishSources: canPublish ? [1, 2] : [],
+    canPublish: !!canPublish && publishSources.length > 0,
+    canPublishSources: publishSources,
     canSubscribe: true,
     canPublishData: true
   });
