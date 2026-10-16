@@ -1203,6 +1203,232 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // Private direct messaging. Conversation creation, membership, unread state,
+    // and message writes are performed server-side so clients cannot add arbitrary members.
+    if (pathname === "/api/messages/conversations" && method === "GET") {
+      const user = await requireSupabaseUser(req);
+      const client = db();
+      const { data: ownMemberships, error: ownMembershipError } = await client
+        .from("conversation_members")
+        .select("conversation_id,last_read_at")
+        .eq("user_id", user.id);
+      if (ownMembershipError) throw ownMembershipError;
+      const ownRows = ownMemberships || [];
+      const ids = ownRows.map((row) => row.conversation_id).filter(Boolean);
+      if (!ids.length) return ok(res, { conversations: [] });
+
+      const [{ data: conversations, error: conversationError }, { data: members, error: membersError }, { data: messageRows, error: messagesError }] = await Promise.all([
+        client.from("conversations").select("id,is_group,title,created_at").in("id", ids),
+        client.from("conversation_members").select("conversation_id,user_id,last_read_at").in("conversation_id", ids),
+        client.from("messages").select("id,conversation_id,sender_id,body,kind,unsent,created_at").in("conversation_id", ids).order("created_at", { ascending: false }).limit(Math.min(500, Math.max(80, ids.length * 8))),
+      ]);
+      if (conversationError) throw conversationError;
+      if (membersError) throw membersError;
+      if (messagesError) throw messagesError;
+
+      const memberRows = members || [];
+      const participantIds = [...new Set(memberRows.map((row) => row.user_id).filter((id) => id && id !== user.id))];
+      let profiles = [];
+      let blockedParticipantIds = new Set();
+      if (participantIds.length) {
+        const [{ data: profileData, error: profileError }, { data: blockedByMe, error: blockedByMeError }, { data: blockedMe, error: blockedMeError }] = await Promise.all([
+          client.from("profiles").select("id,username,display_name,avatar_url").in("id", participantIds),
+          client.from("blocks").select("blocked_id").eq("blocker_id", user.id).in("blocked_id", participantIds),
+          client.from("blocks").select("blocker_id").eq("blocked_id", user.id).in("blocker_id", participantIds),
+        ]);
+        if (profileError) throw profileError;
+        if (blockedByMeError) throw blockedByMeError;
+        if (blockedMeError) throw blockedMeError;
+        profiles = profileData || [];
+        for (const row of blockedByMe || []) blockedParticipantIds.add(String(row.blocked_id));
+        for (const row of blockedMe || []) blockedParticipantIds.add(String(row.blocker_id));
+      }
+      const profileById = new Map(profiles.map((profile) => [String(profile.id), profile]));
+      const readByConversation = new Map(ownRows.map((row) => [String(row.conversation_id), row.last_read_at]));
+      const latestByConversation = new Map();
+      for (const message of messageRows || []) {
+        if (!latestByConversation.has(String(message.conversation_id))) latestByConversation.set(String(message.conversation_id), message);
+      }
+      const memberGroups = new Map();
+      for (const member of memberRows) {
+        const key = String(member.conversation_id);
+        if (!memberGroups.has(key)) memberGroups.set(key, []);
+        memberGroups.get(key).push(member);
+      }
+      const result = (conversations || []).map((conversation) => {
+        const key = String(conversation.id);
+        const latest = latestByConversation.get(key) || null;
+        const otherMembers = (memberGroups.get(key) || []).filter((member) => String(member.user_id) !== String(user.id));
+        const participant = otherMembers.length ? profileById.get(String(otherMembers[0].user_id)) || { id: otherMembers[0].user_id, username: "Account" } : null;
+        const lastReadAt = readByConversation.get(key) || null;
+        return {
+          id: conversation.id,
+          title: conversation.title,
+          isGroup: Boolean(conversation.is_group),
+          createdAt: conversation.created_at,
+          lastReadAt,
+          participant,
+          blocked: otherMembers.some((member) => blockedParticipantIds.has(String(member.user_id))),
+          lastMessage: latest ? { id: latest.id, senderId: latest.sender_id, body: latest.unsent ? "Message removed" : latest.body, kind: latest.kind, createdAt: latest.created_at } : null,
+          unread: Boolean(latest && String(latest.sender_id) !== String(user.id) && (!lastReadAt || new Date(latest.created_at).getTime() > new Date(lastReadAt).getTime())),
+        };
+      }).filter((conversation) => !conversation.blocked).map(({ blocked, ...conversation }) => conversation).sort((a, b) => new Date((b.lastMessage && b.lastMessage.createdAt) || b.createdAt).getTime() - new Date((a.lastMessage && a.lastMessage.createdAt) || a.createdAt).getTime());
+      return ok(res, { conversations: result });
+    }
+
+    if (pathname === "/api/messages/conversations" && method === "POST") {
+      const user = await requireSupabaseUser(req);
+      const body = await readJson(req);
+      const recipientLookup = String(body.recipientId || body.recipient || body.username || "").trim().replace(/^@/, "");
+      if (!recipientLookup || recipientLookup.length > 200) throw fail(400, "INVALID_RECIPIENT", "Enter a creator username to start a conversation.");
+      if (recipientLookup === String(user.id)) throw fail(400, "INVALID_RECIPIENT", "You cannot message your own account.");
+      const client = db();
+      let recipientQuery = client.from("profiles").select("id,username,display_name,privacy");
+      recipientQuery = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(recipientLookup)
+        ? recipientQuery.eq("id", recipientLookup)
+        : recipientQuery.eq("username", recipientLookup);
+      const { data: recipient, error: recipientError } = await recipientQuery.maybeSingle();
+      if (recipientError) throw recipientError;
+      if (!recipient) throw fail(404, "RECIPIENT_NOT_FOUND", "That Creator Hub account could not be found.");
+
+      const [{ data: viewerBlock, error: viewerBlockError }, { data: recipientBlock, error: recipientBlockError }] = await Promise.all([
+        client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", recipient.id).maybeSingle(),
+        client.from("blocks").select("blocker_id").eq("blocker_id", recipient.id).eq("blocked_id", user.id).maybeSingle(),
+      ]);
+      if (viewerBlockError) throw viewerBlockError;
+      if (recipientBlockError) throw recipientBlockError;
+      if (viewerBlock || recipientBlock) throw fail(403, "MESSAGING_BLOCKED", "This conversation is not available.");
+
+      const { data: recipientSettings, error: settingsError } = await client.from("user_settings").select("privacy").eq("user_id", recipient.id).maybeSingle();
+      if (settingsError) throw settingsError;
+      const recipientPrivacy = recipientSettings?.privacy || recipient.privacy || {};
+      if (recipientPrivacy.messages === "nobody") throw fail(403, "MESSAGING_NOT_ALLOWED", "This creator is not accepting direct messages.");
+      if (recipientPrivacy.messages === "followers") {
+        const { data: follow, error: followError } = await client.from("follows").select("follower_id").eq("follower_id", user.id).eq("followee_id", recipient.id).eq("status", "accepted").maybeSingle();
+        if (followError) throw followError;
+        if (!follow) throw fail(403, "MESSAGING_FOLLOWERS_ONLY", "Follow this creator before starting a conversation.");
+      }
+
+      const [{ data: ownMembers, error: ownMembersError }, { data: recipientMembers, error: recipientMembersError }] = await Promise.all([
+        client.from("conversation_members").select("conversation_id").eq("user_id", user.id),
+        client.from("conversation_members").select("conversation_id").eq("user_id", recipient.id),
+      ]);
+      if (ownMembersError) throw ownMembersError;
+      if (recipientMembersError) throw recipientMembersError;
+      const recipientConversationIds = new Set((recipientMembers || []).map((row) => String(row.conversation_id)));
+      const commonIds = [...new Set((ownMembers || []).map((row) => String(row.conversation_id)).filter((id) => recipientConversationIds.has(id)))];
+      if (commonIds.length) {
+        const { data: commonConversations, error: commonConversationError } = await client.from("conversations").select("id,is_group").in("id", commonIds).eq("is_group", false);
+        if (commonConversationError) throw commonConversationError;
+        const usableIds = (commonConversations || []).map((row) => row.id);
+        if (usableIds.length) {
+          const { data: commonMembers, error: commonMembersError } = await client.from("conversation_members").select("conversation_id,user_id").in("conversation_id", usableIds);
+          if (commonMembersError) throw commonMembersError;
+          const membersById = new Map();
+          for (const row of commonMembers || []) {
+            const key = String(row.conversation_id);
+            if (!membersById.has(key)) membersById.set(key, new Set());
+            membersById.get(key).add(String(row.user_id));
+          }
+          const existing = usableIds.find((id) => {
+            const set = membersById.get(String(id));
+            return set && set.size === 2 && set.has(String(user.id)) && set.has(String(recipient.id));
+          });
+          if (existing) return ok(res, { conversationId: existing, created: false });
+        }
+      }
+
+      const { data: conversation, error: createConversationError } = await client.from("conversations").insert({ is_group: false, title: null }).select("id").single();
+      if (createConversationError) throw createConversationError;
+      const { error: membershipInsertError } = await client.from("conversation_members").insert([
+        { conversation_id: conversation.id, user_id: user.id },
+        { conversation_id: conversation.id, user_id: recipient.id },
+      ]);
+      if (membershipInsertError) {
+        await client.from("conversations").delete().eq("id", conversation.id);
+        throw membershipInsertError;
+      }
+      return send(res, 201, { ok: true, conversationId: conversation.id, created: true, participant: { id: recipient.id, username: recipient.username, displayName: recipient.display_name } });
+    }
+
+    const messageRoute = pathname.match(/^\/api\/messages\/conversations\/([0-9a-f-]{36})\/(messages|read)$/i);
+    if (messageRoute) {
+      const user = await requireSupabaseUser(req);
+      const conversationId = messageRoute[1];
+      const action = messageRoute[2];
+      if ((action === "messages" && method !== "GET" && method !== "POST") || (action === "read" && method !== "POST")) {
+        throw fail(405, "METHOD_NOT_ALLOWED", "This messaging action does not support that method.");
+      }
+      const client = db();
+      const { data: membership, error: membershipError } = await client.from("conversation_members").select("conversation_id,last_read_at").eq("conversation_id", conversationId).eq("user_id", user.id).maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership) throw fail(404, "CONVERSATION_NOT_FOUND", "This conversation is unavailable.");
+      const { data: otherMemberRows, error: otherMemberError } = await client.from("conversation_members").select("user_id").eq("conversation_id", conversationId).neq("user_id", user.id);
+      if (otherMemberError) throw otherMemberError;
+      for (const other of otherMemberRows || []) {
+        const [{ data: outgoingBlock, error: outgoingBlockError }, { data: incomingBlock, error: incomingBlockError }] = await Promise.all([
+          client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", other.user_id).maybeSingle(),
+          client.from("blocks").select("blocker_id").eq("blocker_id", other.user_id).eq("blocked_id", user.id).maybeSingle(),
+        ]);
+        if (outgoingBlockError) throw outgoingBlockError;
+        if (incomingBlockError) throw incomingBlockError;
+        if (outgoingBlock || incomingBlock) throw fail(403, "MESSAGING_BLOCKED", "This conversation is not available.");
+      }
+
+      if (action === "read") {
+        const now = new Date().toISOString();
+        const { error } = await client.from("conversation_members").update({ last_read_at: now }).eq("conversation_id", conversationId).eq("user_id", user.id);
+        if (error) throw error;
+        return ok(res, { markedRead: true, lastReadAt: now });
+      }
+
+      if (method === "GET") {
+        const now = new Date().toISOString();
+        const { error: readError } = await client.from("conversation_members").update({ last_read_at: now }).eq("conversation_id", conversationId).eq("user_id", user.id);
+        if (readError) throw readError;
+        const [{ data: messages, error: messagesError }, { data: memberRows, error: membersError }, { data: conversation, error: conversationError }] = await Promise.all([
+          client.from("messages").select("id,conversation_id,sender_id,body,kind,media,reply_to,unsent,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }).limit(100),
+          client.from("conversation_members").select("conversation_id,user_id,last_read_at").eq("conversation_id", conversationId),
+          client.from("conversations").select("id,is_group,title,created_at").eq("id", conversationId).maybeSingle(),
+        ]);
+        if (messagesError) throw messagesError;
+        if (membersError) throw membersError;
+        if (conversationError) throw conversationError;
+        const participantIds = [...new Set((memberRows || []).map((row) => row.user_id))];
+        const { data: profiles, error: profilesError } = participantIds.length
+          ? await client.from("profiles").select("id,username,display_name,avatar_url").in("id", participantIds)
+          : { data: [], error: null };
+        if (profilesError) throw profilesError;
+        return ok(res, {
+          conversation,
+          participants: profiles || [],
+          messages: (messages || []).map((message) => ({ ...message, body: message.unsent ? "Message removed" : message.body, own: String(message.sender_id) === String(user.id) })),
+          lastReadAt: now,
+        });
+      }
+
+      const body = await readJson(req);
+      const messageBody = String(body.body || "").trim();
+      if (!messageBody) throw fail(400, "EMPTY_MESSAGE", "Type a message before sending.");
+      if (messageBody.length > 5000) throw fail(400, "MESSAGE_TOO_LONG", "Messages can contain up to 5,000 characters.");
+      const { data: inserted, error: insertError } = await client.from("messages").insert({ conversation_id: conversationId, sender_id: user.id, body: messageBody, kind: "text" }).select("id,conversation_id,sender_id,body,kind,created_at").single();
+      if (insertError) throw insertError;
+      const { data: recipientRows, error: recipientLookupError } = await client.from("conversation_members").select("user_id").eq("conversation_id", conversationId).neq("user_id", user.id);
+      if (recipientLookupError) throw recipientLookupError;
+      const recipient = (recipientRows || [])[0];
+      if (recipient?.user_id) {
+        const { data: recipientSettings, error: recipientSettingsError } = await client.from("user_settings").select("notifications").eq("user_id", recipient.user_id).maybeSingle();
+        if (recipientSettingsError) console.warn("[Messaging] Notification preference lookup failed:", recipientSettingsError.message || recipientSettingsError);
+        if (!recipientSettingsError && (!recipientSettings?.notifications || recipientSettings.notifications.messages !== false)) {
+          const { error: notificationError } = await client.from("notifications").insert({ user_id: recipient.user_id, type: "message", actor_id: user.id, data: { conversation_id: conversationId, message_id: inserted.id } });
+          if (notificationError) console.warn("[Messaging] Notification creation failed:", notificationError.message || notificationError);
+        }
+      }
+      const now = new Date().toISOString();
+      await client.from("conversation_members").update({ last_read_at: now }).eq("conversation_id", conversationId).eq("user_id", user.id);
+      return send(res, 201, { ok: true, message: { ...inserted, own: true } });
+    }
+
     // Server-authoritative coin quote for custom quantities. The client never
     // submits the payable amount; the same pricing helper is used at checkout.
     if (pathname === "/api/payments/coin-quote" && method === "GET") {
@@ -1239,12 +1465,16 @@ const server = http.createServer(async (req, res) => {
             "This idempotency key is already associated with another account."
           );
         }
+        const savedLinks = existingPayment.metadata && Array.isArray(existingPayment.metadata.links) ? existingPayment.metadata.links : [];
+        const savedApproval = savedLinks.find((link) => link && link.rel === "approve" && typeof link.href === "string");
+        if (!savedApproval) throw fail(409, "PAYMENT_APPROVAL_LINK_MISSING", "This pending checkout has no PayPal approval link. Start a fresh checkout.");
         return ok(res, {
           orderId: existingPayment.provider_order_id,
           status: existingPayment.status,
           coins: existingPayment.package_coins,
           amount: Number(existingPayment.amount),
           custom: !existingPayment.package_id,
+          approveUrl: savedApproval.href,
         });
       }
 
@@ -1283,6 +1513,12 @@ const server = http.createServer(async (req, res) => {
           "PAYMENT_PROVIDER_ERROR",
           "PayPal did not return an order ID."
         );
+      const approvalLink = Array.isArray(order.links)
+        ? order.links.find((link) => link && link.rel === "approve" && typeof link.href === "string")
+        : null;
+      if (!approvalLink || !approvalLink.href) {
+        throw fail(502, "PAYMENT_PROVIDER_ERROR", "PayPal did not return the approval link needed to continue checkout.");
+      }
 
       const { error: insertError } = await client.from("payments").insert({
         user_id: user.id,
@@ -1306,6 +1542,7 @@ const server = http.createServer(async (req, res) => {
         coins: pkg.coins,
         amount: Number(amountUsd),
         custom: !!pkg.custom,
+        approveUrl: approvalLink.href,
       });
     }
 
