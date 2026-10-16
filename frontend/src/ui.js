@@ -6,6 +6,7 @@
   var mobileMenuPanel = null;
   var mobileMenuBackdrop = null;
   var mobileMenuTrigger = null;
+  var previousBodyOverflow = null;
 
   var NAV = [
     {h:'#/',        ic:'\uD83C\uDFE0', label:'Home',     base:'/'},
@@ -109,8 +110,23 @@
     });
     if (!CHL._mobileMenuKeyboardBound) {
       CHL._mobileMenuKeyboardBound = true;
-      document.addEventListener('keydown',function(event){if(event.key==='Escape' && mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(true);});
+      document.addEventListener('keydown',function(event){
+        if (!mobileMenuPanel || mobileMenuPanel.style.display === 'none') return;
+        if (event.key === 'Escape') { ui.closeMobileMenu(true); return; }
+        if (event.key !== 'Tab') return;
+        var focusable = Array.from(mobileMenuPanel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+          .filter(function(node){ return node.getClientRects().length > 0; });
+        if (!focusable.length) { event.preventDefault(); return; }
+        var first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !mobileMenuPanel.contains(document.activeElement))) {
+          event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || !mobileMenuPanel.contains(document.activeElement))) {
+          event.preventDefault(); first.focus();
+        }
+      });
       window.addEventListener('hashchange',function(){if(mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
+      window.addEventListener('resize',function(){if(window.innerWidth > 860 && mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
+      window.addEventListener('orientationchange',function(){if(window.innerWidth > 860 && mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
     }
     ui.refreshCoins();
   };
@@ -128,6 +144,10 @@
 
   ui.openMobileMenu = function(){
     if (!mobileMenuPanel || !mobileMenuBackdrop || !mobileMenuTrigger) return;
+    if (document.body && previousBodyOverflow === null) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
     mobileMenuPanel.style.display = 'block';
     mobileMenuBackdrop.style.display = 'block';
     mobileMenuPanel.setAttribute('aria-hidden','false');
@@ -140,6 +160,10 @@
     if (!mobileMenuPanel || !mobileMenuBackdrop || !mobileMenuTrigger) return;
     mobileMenuPanel.style.display = 'none';
     mobileMenuBackdrop.style.display = 'none';
+    if (document.body && previousBodyOverflow !== null) {
+      document.body.style.overflow = previousBodyOverflow;
+      previousBodyOverflow = null;
+    }
     mobileMenuPanel.setAttribute('aria-hidden','true');
     mobileMenuTrigger.setAttribute('aria-expanded','false');
     mobileMenuTrigger.setAttribute('aria-label','Open all navigation links');
