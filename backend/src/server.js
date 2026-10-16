@@ -357,7 +357,7 @@ async function liveGuestSettingsForHost(client, hostId) {
   const saved = data && data.live && typeof data.live === "object" ? data.live : {};
   const guestPermissions = saved.guest_permissions === "host_only" ? "host_only" : "allowed";
   const configuredLimit = Number(saved.max_guests);
-  const maxGuests = Number.isSafeInteger(configuredLimit) && configuredLimit >= 1 && configuredLimit <= 8 ? configuredLimit : 8;
+  const maxGuests = Number.isSafeInteger(configuredLimit) && configuredLimit >= 0 && configuredLimit <= 8 ? configuredLimit : 8;
   return { guestPermissions, maxGuests };
 }
 
@@ -436,14 +436,14 @@ async function canAccessLiveRoom(client, room, user) {
     throw fail(503, "LIVE_ACCESS_CHECK_FAILED", "Could not verify LIVE access. Please try again.");
   }
   const privacy = profileResult.data && profileResult.data.privacy;
-  const privateProfile = !!(privacy && typeof privacy === "object" && privacy.account === "private");
+  const restrictedProfile = !!(privacy && typeof privacy === "object" && ["private", "followers"].includes(String(privacy.account || "")));
   const following = (followResult.data || []).length > 0;
   const invited = guestResult.data && ["invited", "accepted"].includes(String(guestResult.data.status));
   const moderator = (moderatorResult.data || []).length > 0;
   if (invited || moderator) return true;
   const audience = ["public", "followers", "private"].includes(String(room.audience)) ? String(room.audience) : "public";
   if (audience === "private") return false;
-  if (audience === "followers" || privateProfile) return following;
+  if (audience === "followers" || restrictedProfile) return following;
   return true;
 }
 
@@ -636,6 +636,15 @@ async function coinPackage(client, coins) {
     );
   return data;
 }
+
+const CREATOR_TASKS = [
+  { key: "live_15_minutes", title: "Go LIVE for 15 minutes", description: "Host a real LIVE session for at least 15 minutes.", metric: "live_minutes", target: 15 },
+  { key: "publish_one_post", title: "Publish a post", description: "Share one published post with your community.", metric: "posts", target: 1 },
+  { key: "live_30_minutes", title: "Go LIVE for 30 minutes", description: "Build a longer conversation with viewers.", metric: "live_minutes", target: 30 },
+  { key: "welcome_three_followers", title: "Welcome 3 new followers", description: "Grow your community through genuine follows.", metric: "followers", target: 3 },
+  { key: "live_60_minutes", title: "Go LIVE for 1 hour", description: "Host a real broadcast for a full hour.", metric: "live_minutes", target: 60 },
+  { key: "publish_three_posts", title: "Publish 3 posts", description: "Share three pieces of published content.", metric: "posts", target: 3 },
+];
 
 const MAX_CUSTOM_COIN_QUANTITY = 50000;
 
@@ -849,7 +858,7 @@ const server = http.createServer(async (req, res) => {
       const { data: profile, error: profileError } = await client.from("profiles")
         .select("username,display_name").eq("id", user.id).maybeSingle();
       if (profileError) throw profileError;
-      const participantName = String((profile && profile.display_name) || (profile && profile.username) || "Account name unavailable").trim().slice(0, 128);
+      const participantName = String((profile && profile.display_name) || (profile && profile.username) || "Creator").trim().slice(0, 128);
       const token = await createLiveKitToken({
         userId: user.id,
         roomName,
@@ -911,6 +920,7 @@ const server = http.createServer(async (req, res) => {
         if (room.status !== "live") throw fail(409, "LIVE_NOT_STARTED", "Guest requests open when the host starts the LIVE session.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already owns this stage.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        if (guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "This host has disabled guest slots and is staying full-screen.");
         if (guestSettings.guestPermissions === "host_only") throw fail(403, "GUEST_REQUESTS_CLOSED", "This host is accepting invited guests only.");
         const { data: existing, error: existingError } = await client.from("live_guests")
           .select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
@@ -1070,14 +1080,29 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId || targetId === String(room.host_id)) throw fail(400, "INVALID_GUEST", "A valid guest user ID is required.");
-        const { data, error } = await client.from("live_guests").update({ status: "removed" })
+        const { data: existingGuest, error: existingGuestError } = await client.from("live_guests")
+          .select("id,user_id,status,mic_on,cam_on").eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted").maybeSingle();
+        if (existingGuestError) throw existingGuestError;
+        if (!existingGuest) throw fail(404, "GUEST_NOT_FOUND", "The accepted guest was not found.");
+        // Mark the guest removed first so the guest's permission-change handler cannot
+        // race and re-grant publishing while it refreshes its room grant.
+        const { data, error } = await client.from("live_guests").update({ status: "removed", mic_on: false, cam_on: false })
           .eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted")
           .select("id,user_id,status").maybeSingle();
         if (error) throw error;
-        if (!data) throw fail(404, "GUEST_NOT_FOUND", "The accepted guest was not found.");
-        try { await liveKitRoomService().removeParticipant(room.room_name, targetId); }
-        catch (e) { console.info("[LIVE guest] participant already disconnected:", e && e.message); }
-        return ok(res, { guest: data, removedFromRoom: true });
+        if (!data) throw fail(409, "GUEST_STATE_CHANGED", "The guest stage state changed before removal completed.");
+        // Revoke publishing but keep subscription enabled so the person returns to viewer mode.
+        try {
+          await liveKitRoomService().updateParticipant(room.room_name, targetId, {
+            permission: { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] }
+          });
+        } catch (e) {
+          const { error: rollbackError } = await client.from("live_guests").update({ status: "accepted", mic_on: existingGuest.mic_on, cam_on: existingGuest.cam_on })
+            .eq("live_id", room.id).eq("user_id", targetId).eq("status", "removed");
+          if (rollbackError) console.error("[LIVE guest] removal rollback failed:", rollbackError.message || rollbackError);
+          throw fail(503, "GUEST_STAGE_PERMISSION_UPDATE_FAILED", "Could not return this guest to viewer mode. Please retry.", { details: e && e.message });
+        }
+        return ok(res, { guest: data, removedFromRoom: false, returnedToViewer: true });
       }
 
       if (guestParts.action === "leave" && method === "POST") {
@@ -1122,7 +1147,7 @@ const server = http.createServer(async (req, res) => {
       if (hostIds.length) {
         const profiles = await client.from("profiles").select("id,privacy").in("id", hostIds);
         if (profiles.error) throw profiles.error;
-        publicHostIds = new Set((profiles.data || []).filter((profile) => !(profile.privacy && typeof profile.privacy === "object" && profile.privacy.account === "private")).map((profile) => String(profile.id)));
+        publicHostIds = new Set((profiles.data || []).filter((profile) => (!profile.privacy || typeof profile.privacy !== "object" || !profile.privacy.account || profile.privacy.account === "public")).map((profile) => String(profile.id)));
       }
       return ok(res, { rooms: rooms.filter((room) => publicHostIds.has(String(room.host_id))) });
     }
@@ -1297,6 +1322,199 @@ const server = http.createServer(async (req, res) => {
 
     // Private direct messaging. Conversation creation, membership, unread state,
     // and message writes are performed server-side so clients cannot add arbitrary members.
+    const postCommentsRoute = pathname.match(/^\/api\/posts\/([0-9a-f-]{36})\/comments$/i);
+    if (postCommentsRoute && method === "POST") {
+      const user = await requireSupabaseUser(req);
+      const postId = postCommentsRoute[1];
+      const body = await readJson(req);
+      const commentBody = String(body.body || "").trim();
+      if (!commentBody || commentBody.length > 2000) throw fail(400, "INVALID_COMMENT", "Comments must contain between 1 and 2,000 characters.");
+      const client = db();
+      const { data: post, error: postError } = await client.from("posts").select("id,author_id,audience,allow_comments,is_draft,is_test").eq("id", postId).maybeSingle();
+      if (postError) throw postError;
+      if (!post || post.is_draft || post.is_test) throw fail(404, "POST_NOT_FOUND", "This published post is unavailable.");
+      if (post.allow_comments === false) throw fail(403, "COMMENTS_DISABLED", "The creator has disabled comments on this post.");
+      const isAuthor = String(post.author_id) === String(user.id);
+      if (!isAuthor) {
+        if (post.audience === "private") throw fail(403, "POST_PRIVATE", "This post is private.");
+        const [{ data: ownBlock, error: ownBlockError }, { data: incomingBlock, error: incomingBlockError }] = await Promise.all([
+          client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", post.author_id).maybeSingle(),
+          client.from("blocks").select("blocker_id").eq("blocker_id", post.author_id).eq("blocked_id", user.id).maybeSingle(),
+        ]);
+        if (ownBlockError) throw ownBlockError;
+        if (incomingBlockError) throw incomingBlockError;
+        if (ownBlock || incomingBlock) throw fail(403, "COMMENT_BLOCKED", "You cannot comment on this creator's post.");
+        const [{ data: authorSettings, error: settingsError }, { data: authorProfile, error: authorProfileError }, { data: follow, error: followError }] = await Promise.all([
+          client.from("user_settings").select("privacy").eq("user_id", post.author_id).maybeSingle(),
+          client.from("profiles").select("privacy").eq("id", post.author_id).maybeSingle(),
+          client.from("follows").select("follower_id").eq("follower_id", user.id).eq("followee_id", post.author_id).eq("status", "accepted").maybeSingle(),
+        ]);
+        if (settingsError) throw settingsError;
+        if (authorProfileError) throw authorProfileError;
+        if (followError) throw followError;
+        const authorPrivacy = authorSettings?.privacy || authorProfile?.privacy || {};
+        if (authorPrivacy.comments === "nobody") throw fail(403, "COMMENTS_NOT_ALLOWED", "This creator is not accepting comments.");
+        if ((post.audience === "followers" || authorPrivacy.comments === "followers" || authorPrivacy.account === "private") && !follow) throw fail(403, "COMMENTS_FOLLOWERS_ONLY", "Follow this creator before commenting.");
+      }
+      const { data: inserted, error: insertError } = await client.from("comments").insert({ post_id: postId, author_id: user.id, body: commentBody }).select("id,post_id,author_id,body,created_at").single();
+      if (insertError) throw insertError;
+      return send(res, 201, { ok: true, comment: inserted });
+    }
+
+    if (pathname === "/api/creator/tasks" && method === "GET") {
+      const user = await requireSupabaseUser(req);
+      const client = db();
+      let { data: active, error: activeError } = await client.from("creator_task_cycles").select("id,user_id,cycle_no,task_key,assigned_at,completed_at,progress,target").eq("user_id", user.id).is("completed_at", null).order("cycle_no", { ascending: false }).limit(1).maybeSingle();
+      if (activeError) throw activeError;
+      if (!active) {
+        const { data: latest, error: latestError } = await client.from("creator_task_cycles").select("cycle_no").eq("user_id", user.id).order("cycle_no", { ascending: false }).limit(1).maybeSingle();
+        if (latestError) throw latestError;
+        const cycleNo = Number(latest?.cycle_no || 0) + 1;
+        const task = CREATOR_TASKS[(cycleNo - 1) % CREATOR_TASKS.length];
+        const { data: inserted, error: insertError } = await client.from("creator_task_cycles").insert({ user_id: user.id, cycle_no: cycleNo, task_key: task.key, assigned_at: new Date().toISOString(), progress: 0, target: task.target }).select("id,user_id,cycle_no,task_key,assigned_at,completed_at,progress,target").single();
+        if (insertError && insertError.code !== "23505") throw insertError;
+        if (insertError) {
+          const retry = await client.from("creator_task_cycles").select("id,user_id,cycle_no,task_key,assigned_at,completed_at,progress,target").eq("user_id", user.id).is("completed_at", null).order("cycle_no", { ascending: false }).limit(1).maybeSingle();
+          if (retry.error) throw retry.error;
+          active = retry.data;
+        } else active = inserted;
+      }
+      const definition = CREATOR_TASKS.find((task) => task.key === active.task_key) || CREATOR_TASKS[0];
+      let progress = 0;
+      if (definition.metric === "live_minutes") {
+        const { data: sessions, error: sessionsError } = await client.from("live_sessions").select("started_at,ended_at,status").eq("host_id", user.id).gte("started_at", active.assigned_at).order("started_at", { ascending: true }).limit(500);
+        if (sessionsError) throw sessionsError;
+        const now = Date.now();
+        progress = Math.floor((sessions || []).reduce((sum, session) => {
+          const start = new Date(session.started_at || active.assigned_at).getTime();
+          const end = session.ended_at ? new Date(session.ended_at).getTime() : session.status === "live" ? now : start;
+          return sum + Math.max(0, end - start);
+        }, 0) / 60000);
+      } else if (definition.metric === "posts") {
+        const result = await client.from("posts").select("id", { count: "exact", head: true }).eq("author_id", user.id).eq("is_draft", false).eq("is_test", false).gte("created_at", active.assigned_at);
+        if (result.error) throw result.error;
+        progress = Number(result.count || 0);
+      } else if (definition.metric === "followers") {
+        const result = await client.from("follows").select("follower_id", { count: "exact", head: true }).eq("followee_id", user.id).eq("status", "accepted").gte("created_at", active.assigned_at);
+        if (result.error) throw result.error;
+        progress = Number(result.count || 0);
+      }
+      progress = Math.min(definition.target, Math.max(0, progress));
+      let completedTask = null;
+      if (progress >= definition.target) {
+        const completedAt = new Date().toISOString();
+        const { error: completeError } = await client.from("creator_task_cycles").update({ progress, completed_at: completedAt }).eq("id", active.id).is("completed_at", null);
+        if (completeError) throw completeError;
+        completedTask = { ...definition, cycleNo: active.cycle_no, progress: definition.target, completedAt };
+        const nextCycle = Number(active.cycle_no) + 1;
+        const nextDefinition = CREATOR_TASKS[(nextCycle - 1) % CREATOR_TASKS.length];
+        const { data: nextActive, error: nextError } = await client.from("creator_task_cycles").insert({ user_id: user.id, cycle_no: nextCycle, task_key: nextDefinition.key, assigned_at: completedAt, progress: 0, target: nextDefinition.target }).select("id,user_id,cycle_no,task_key,assigned_at,completed_at,progress,target").single();
+        if (nextError && nextError.code !== "23505") throw nextError;
+        active = nextActive || { ...active, cycle_no: nextCycle, task_key: nextDefinition.key, assigned_at: completedAt, progress: 0, target: nextDefinition.target };
+      } else {
+        const { error: progressError } = await client.from("creator_task_cycles").update({ progress }).eq("id", active.id).is("completed_at", null);
+        if (progressError) throw progressError;
+        active.progress = progress;
+      }
+      const activeDefinition = CREATOR_TASKS.find((task) => task.key === active.task_key) || CREATOR_TASKS[0];
+      const { data: history, error: historyError } = await client.from("creator_task_cycles").select("cycle_no,task_key,assigned_at,completed_at,progress,target").eq("user_id", user.id).not("completed_at", "is", null).order("completed_at", { ascending: false }).limit(20);
+      if (historyError) throw historyError;
+      return ok(res, { activeTask: { cycleNo: active.cycle_no, key: activeDefinition.key, title: activeDefinition.title, description: activeDefinition.description, metric: activeDefinition.metric, target: activeDefinition.target, progress: Math.min(activeDefinition.target, Number(active.progress || 0)), assignedAt: active.assigned_at }, completedTask, history: (history || []).map((row) => { const task = CREATOR_TASKS.find((item) => item.key === row.task_key) || CREATOR_TASKS[0]; return { cycleNo: row.cycle_no, key: task.key, title: task.title, progress: row.target, target: row.target, completedAt: row.completed_at }; }) });
+    }
+
+    if (pathname === "/api/social/follows" && (method === "POST" || method === "DELETE")) {
+      const user = await requireSupabaseUser(req);
+      const body = await readJson(req);
+      const lookup = String(body.userId || body.username || "").trim().replace(/^@/, "");
+      if (!lookup || lookup.length > 200) throw fail(400, "INVALID_FOLLOW_TARGET", "Choose a valid Creator Hub account.");
+      const client = db();
+      let query = client.from("profiles").select("id,username,display_name,privacy");
+      query = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(lookup) ? query.eq("id", lookup) : query.eq("username", lookup);
+      const { data: target, error: targetError } = await query.maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) throw fail(404, "FOLLOW_TARGET_NOT_FOUND", "That Creator Hub account could not be found.");
+      if (String(target.id) === String(user.id)) throw fail(400, "CANNOT_FOLLOW_SELF", "You cannot follow your own account.");
+      const [{ data: ownBlock, error: ownBlockError }, { data: incomingBlock, error: incomingBlockError }] = await Promise.all([
+        client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", target.id).maybeSingle(),
+        client.from("blocks").select("blocker_id").eq("blocker_id", target.id).eq("blocked_id", user.id).maybeSingle(),
+      ]);
+      if (ownBlockError) throw ownBlockError;
+      if (incomingBlockError) throw incomingBlockError;
+      if (ownBlock || incomingBlock) throw fail(403, "FOLLOW_BLOCKED", "This follow is unavailable.");
+      if (method === "DELETE") {
+        const { error: removeError } = await client.from("follows").delete().eq("follower_id", user.id).eq("followee_id", target.id);
+        if (removeError) throw removeError;
+        return ok(res, { following: false, requested: false });
+      }
+      const { data: targetSettings, error: settingsError } = await client.from("user_settings").select("privacy").eq("user_id", target.id).maybeSingle();
+      if (settingsError) throw settingsError;
+      const privacy = targetSettings?.privacy || target.privacy || {};
+      const status = privacy.account === "private" ? "pending" : "accepted";
+      const { data: relation, error: followError } = await client.from("follows").upsert({ follower_id: user.id, followee_id: target.id, status }, { onConflict: "follower_id,followee_id" }).select("follower_id,followee_id,status,created_at").single();
+      if (followError) throw followError;
+      const notificationType = status === "pending" ? "follow_request" : "follow";
+      const { error: notificationError } = await client.from("notifications").insert({ user_id: target.id, type: notificationType, actor_id: user.id, data: { follower_id: user.id } });
+      if (notificationError) console.warn("[Social] Follow notification failed:", notificationError.message || notificationError);
+      return send(res, 201, { following: status === "accepted", requested: status === "pending", status: relation.status });
+    }
+
+    const followRequestRoute = pathname.match(/^\/api\/social\/follow-requests\/([0-9a-f-]{36})$/i);
+    if (followRequestRoute && (method === "PATCH" || method === "DELETE")) {
+      const user = await requireSupabaseUser(req);
+      const followerId = followRequestRoute[1];
+      const client = db();
+      const { data: request, error: requestError } = await client.from("follows").select("follower_id,followee_id,status").eq("follower_id", followerId).eq("followee_id", user.id).eq("status", "pending").maybeSingle();
+      if (requestError) throw requestError;
+      if (!request) throw fail(404, "FOLLOW_REQUEST_NOT_FOUND", "That follow request is no longer available.");
+      if (method === "DELETE") {
+        const { error: declineError } = await client.from("follows").delete().eq("follower_id", followerId).eq("followee_id", user.id).eq("status", "pending");
+        if (declineError) throw declineError;
+        return ok(res, { accepted: false, declined: true });
+      }
+      const { data: accepted, error: acceptError } = await client.from("follows").update({ status: "accepted" }).eq("follower_id", followerId).eq("followee_id", user.id).eq("status", "pending").select("follower_id,followee_id,status").single();
+      if (acceptError) throw acceptError;
+      const { error: notificationError } = await client.from("notifications").insert({ user_id: followerId, type: "follow_request_accepted", actor_id: user.id, data: { followee_id: user.id } });
+      if (notificationError) console.warn("[Social] Follow acceptance notification failed:", notificationError.message || notificationError);
+      return ok(res, { accepted: true, relation: accepted });
+    }
+
+    if (pathname === "/api/social/blocks" && (method === "GET" || method === "POST" || method === "DELETE")) {
+      const user = await requireSupabaseUser(req);
+      const body = method === "GET" ? {} : await readJson(req);
+      const lookup = String(body.userId || body.username || url.searchParams.get("userId") || url.searchParams.get("username") || "").trim().replace(/^@/, "");
+      if (!lookup || lookup.length > 200) throw fail(400, "INVALID_BLOCK_TARGET", "Choose a valid Creator Hub account.");
+      const client = db();
+      let query = client.from("profiles").select("id,username,display_name");
+      query = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(lookup) ? query.eq("id", lookup) : query.eq("username", lookup);
+      const { data: target, error: targetError } = await query.maybeSingle();
+      if (targetError) throw targetError;
+      if (!target) throw fail(404, "BLOCK_TARGET_NOT_FOUND", "That account could not be found.");
+      if (String(target.id) === String(user.id)) throw fail(400, "CANNOT_BLOCK_SELF", "You cannot block your own account.");
+      if (method === "GET") {
+        const [{ data: ownBlock, error: ownBlockError }, { data: incomingBlock, error: incomingBlockError }] = await Promise.all([
+          client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", target.id).maybeSingle(),
+          client.from("blocks").select("blocker_id").eq("blocker_id", target.id).eq("blocked_id", user.id).maybeSingle(),
+        ]);
+        if (ownBlockError) throw ownBlockError;
+        if (incomingBlockError) throw incomingBlockError;
+        return ok(res, { blockedByMe: !!ownBlock, blockedMe: !!incomingBlock });
+      }
+      if (method === "POST") {
+        const { error: insertError } = await client.from("blocks").upsert({ blocker_id: user.id, blocked_id: target.id }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
+        if (insertError) throw insertError;
+        const [{ error: ownFollowError }, { error: incomingFollowError }] = await Promise.all([
+          client.from("follows").delete().eq("follower_id", user.id).eq("followee_id", target.id),
+          client.from("follows").delete().eq("follower_id", target.id).eq("followee_id", user.id),
+        ]);
+        if (ownFollowError) throw ownFollowError;
+        if (incomingFollowError) throw incomingFollowError;
+        return ok(res, { blocked: true, userId: target.id, username: target.username });
+      }
+      const { error: deleteError } = await client.from("blocks").delete().eq("blocker_id", user.id).eq("blocked_id", target.id);
+      if (deleteError) throw deleteError;
+      return ok(res, { blocked: false, userId: target.id, username: target.username });
+    }
+
     if (pathname === "/api/messages/conversations" && method === "GET") {
       const user = await requireSupabaseUser(req);
       const client = db();
@@ -1443,12 +1661,13 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, { ok: true, conversationId: conversation.id, created: true, participant: { id: recipient.id, username: recipient.username, displayName: recipient.display_name } });
     }
 
-    const messageRoute = pathname.match(/^\/api\/messages\/conversations\/([0-9a-f-]{36})\/(messages|read)$/i);
+    const messageRoute = pathname.match(/^\/api\/messages\/conversations\/([0-9a-f-]{36})\/(messages|read)(?:\/([0-9a-f-]{36}))?$/i);
     if (messageRoute) {
       const user = await requireSupabaseUser(req);
       const conversationId = messageRoute[1];
       const action = messageRoute[2];
-      if ((action === "messages" && method !== "GET" && method !== "POST") || (action === "read" && method !== "POST")) {
+      const messageId = messageRoute[3] || null;
+      if ((action === "messages" && !messageId && method !== "GET" && method !== "POST") || (action === "messages" && messageId && method !== "PATCH" && method !== "DELETE") || (action === "read" && method !== "POST")) {
         throw fail(405, "METHOD_NOT_ALLOWED", "This messaging action does not support that method.");
       }
       const client = db();
@@ -1479,7 +1698,7 @@ const server = http.createServer(async (req, res) => {
         const { error: readError } = await client.from("conversation_members").update({ last_read_at: now }).eq("conversation_id", conversationId).eq("user_id", user.id);
         if (readError) throw readError;
         const [{ data: messages, error: messagesError }, { data: memberRows, error: membersError }, { data: conversation, error: conversationError }] = await Promise.all([
-          client.from("messages").select("id,conversation_id,sender_id,body,kind,media,reply_to,unsent,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }).limit(100),
+          client.from("messages").select("id,conversation_id,sender_id,body,kind,media,reply_to,unsent,edited_at,created_at").eq("conversation_id", conversationId).order("created_at", { ascending: true }).limit(100),
           client.from("conversation_members").select("conversation_id,user_id,last_read_at").eq("conversation_id", conversationId),
           client.from("conversations").select("id,is_group,title,created_at").eq("id", conversationId).maybeSingle(),
         ]);
@@ -1499,11 +1718,33 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      if (messageId) {
+        const { data: existingMessage, error: existingMessageError } = await client.from("messages").select("id,conversation_id,sender_id,body,kind,unsent,created_at,edited_at").eq("id", messageId).eq("conversation_id", conversationId).maybeSingle();
+        if (existingMessageError) throw existingMessageError;
+        if (!existingMessage || String(existingMessage.sender_id) !== String(user.id)) throw fail(404, "MESSAGE_NOT_FOUND", "That message is unavailable or you cannot change it.");
+        if (existingMessage.unsent) throw fail(409, "MESSAGE_ALREADY_REMOVED", "This message has already been removed.");
+        if (method === "DELETE") {
+          const { data: removed, error: removeError } = await client.from("messages").update({ body: null, unsent: true, edited_at: new Date().toISOString() }).eq("id", messageId).eq("sender_id", user.id).select("id,unsent,edited_at").single();
+          if (removeError) throw removeError;
+          return ok(res, { message: { ...removed, body: "Message removed" } });
+        }
+        if (existingMessage.kind !== "text") throw fail(400, "MESSAGE_NOT_EDITABLE", "Only text messages can be edited.");
+        if (Date.now() - new Date(existingMessage.created_at).getTime() > 15 * 60 * 1000) throw fail(403, "MESSAGE_EDIT_WINDOW_EXPIRED", "Text messages can be edited for 15 minutes after sending.");
+        const editBody = await readJson(req);
+        const editedBody = String(editBody.body || "").trim();
+        if (!editedBody) throw fail(400, "EMPTY_MESSAGE", "A message cannot be empty.");
+        if (editedBody.length > 5000) throw fail(400, "MESSAGE_TOO_LONG", "Messages can contain up to 5,000 characters.");
+        const editedAt = new Date().toISOString();
+        const { data: edited, error: editError } = await client.from("messages").update({ body: editedBody, edited_at: editedAt }).eq("id", messageId).eq("sender_id", user.id).select("id,conversation_id,sender_id,body,kind,unsent,edited_at,created_at").single();
+        if (editError) throw editError;
+        return ok(res, { message: { ...edited, own: true } });
+      }
+
       const body = await readJson(req);
       const messageBody = String(body.body || "").trim();
       if (!messageBody) throw fail(400, "EMPTY_MESSAGE", "Type a message before sending.");
       if (messageBody.length > 5000) throw fail(400, "MESSAGE_TOO_LONG", "Messages can contain up to 5,000 characters.");
-      const { data: inserted, error: insertError } = await client.from("messages").insert({ conversation_id: conversationId, sender_id: user.id, body: messageBody, kind: "text" }).select("id,conversation_id,sender_id,body,kind,created_at").single();
+      const { data: inserted, error: insertError } = await client.from("messages").insert({ conversation_id: conversationId, sender_id: user.id, body: messageBody, kind: "text" }).select("id,conversation_id,sender_id,body,kind,edited_at,created_at").single();
       if (insertError) throw insertError;
       const { data: recipientRows, error: recipientLookupError } = await client.from("conversation_members").select("user_id").eq("conversation_id", conversationId).neq("user_id", user.id);
       if (recipientLookupError) throw recipientLookupError;
