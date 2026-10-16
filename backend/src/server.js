@@ -351,6 +351,16 @@ function liveKitRoomService() {
   return new RoomServiceClient(serviceUrl, apiKey, apiSecret);
 }
 
+async function liveGuestSettingsForHost(client, hostId) {
+  const { data, error } = await client.from("user_settings").select("live").eq("user_id", hostId).maybeSingle();
+  if (error) throw error;
+  const saved = data && data.live && typeof data.live === "object" ? data.live : {};
+  const guestPermissions = saved.guest_permissions === "host_only" ? "host_only" : "allowed";
+  const configuredLimit = Number(saved.max_guests);
+  const maxGuests = Number.isSafeInteger(configuredLimit) && configuredLimit >= 1 && configuredLimit <= 8 ? configuredLimit : 8;
+  return { guestPermissions, maxGuests };
+}
+
 function liveGuestParts(pathname) {
   const match = pathname.match(/^\/api\/live\/rooms\/([^/]+)\/guests(?:\/([^/]+)(?:\/([^/]+))?)?\/?$/);
   if (!match) return null;
@@ -635,19 +645,26 @@ async function coinPriceForAmount(client, coins) {
   }
   const exact = await client.from("coin_packages").select("*").eq("coins", coins).eq("active", true).maybeSingle();
   if (exact.error) throw exact.error;
-  if (exact.data) return { ...exact.data, custom: false };
+  if (exact.data) {
+    const priceUsd = Number(exact.data.price);
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) throw fail(503, "COIN_PACKAGE_PRICE_INVALID", "This coin package has an invalid configured price. Please contact support.");
+    // The live database column is `price`; normalize it for PayPal code that
+    // consumes `price_usd`. Never return an undefined price to checkout.
+    return { ...exact.data, price_usd: priceUsd.toFixed(2), custom: false };
+  }
 
   // Custom quantities use the active 1,000-coin package as the server-side
-  // reference rate. Existing exact packages retain their own published price.
-  const reference = await client.from("coin_packages").select("coins,price_usd").eq("coins", 1000).eq("active", true).maybeSingle();
+  // reference rate. Exact packages retain their own administrator-set prices.
+  const reference = await client.from("coin_packages").select("coins,price").eq("coins", 1000).eq("active", true).maybeSingle();
   if (reference.error) throw reference.error;
-  if (!reference.data || Number(reference.data.coins) !== 1000 || !Number.isFinite(Number(reference.data.price_usd)) || Number(reference.data.price_usd) <= 0) {
-    throw fail(503, "CUSTOM_PURCHASE_NOT_CONFIGURED", "Custom coin purchases are not configured. Keep using the available coin packages until an administrator configures the 1,000-coin reference price.");
+  const referencePrice = Number(reference.data?.price);
+  if (!reference.data || Number(reference.data.coins) !== 1000 || !Number.isFinite(referencePrice) || referencePrice <= 0) {
+    throw fail(503, "CUSTOM_PURCHASE_NOT_CONFIGURED", "Custom coin purchases are not configured. Use an active coin package until the 1,000-coin reference price is available.");
   }
-  const unitPrice = Number(reference.data.price_usd) / 1000;
+  const unitPrice = referencePrice / 1000;
   const priceUsd = Math.max(0.01, Math.round(unitPrice * coins * 100) / 100);
   if (!Number.isFinite(priceUsd) || priceUsd > 500) throw fail(400, "COIN_QUANTITY_LIMIT", "This quantity exceeds the supported custom checkout limit.");
-  return { coins, price_usd: priceUsd.toFixed(2), active: true, custom: true };
+  return { coins, price_usd: priceUsd.toFixed(2), currency: "USD", active: true, custom: true };
 }
 
 // ============================================================================
@@ -866,7 +883,8 @@ const server = http.createServer(async (req, res) => {
           .select("id,live_id,user_id,status,slot,mic_on,cam_on,pinned,joined_at,created_at")
           .eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
         if (error) throw error;
-        return ok(res, { guest: data || null });
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        return ok(res, { guest: data || null, guestPermissions: guestSettings.guestPermissions, maxGuests: guestSettings.maxGuests });
       }
 
       if (!guestParts.action && method === "GET") {
@@ -884,12 +902,16 @@ const server = http.createServer(async (req, res) => {
           profiles = result.data || [];
         }
         const byId = new Map(profiles.map((profile) => [String(profile.id), profile]));
-        return ok(res, { guests: (data || []).map((guest) => ({ ...guest, profile: byId.get(String(guest.user_id)) || null })) });
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        return ok(res, { guests: (data || []).map((guest) => ({ ...guest, profile: byId.get(String(guest.user_id)) || null })), guestSettings });
       }
 
       if (guestParts.action === "request" && method === "POST") {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guest stage requests are disabled.");
+        if (room.status !== "live") throw fail(409, "LIVE_NOT_STARTED", "Guest requests open when the host starts the LIVE session.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already owns this stage.");
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        if (guestSettings.guestPermissions === "host_only") throw fail(403, "GUEST_REQUESTS_CLOSED", "This host is accepting invited guests only.");
         const { data: existing, error: existingError } = await client.from("live_guests")
           .select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
         if (existingError) throw existingError;
@@ -907,17 +929,87 @@ const server = http.createServer(async (req, res) => {
         return ok(res, { request: data });
       }
 
+      if (guestParts.action === "invite" && method === "POST") {
+        if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
+        if (!hostOwnsRoom) throw fail(403, "FORBIDDEN", "Only the host can invite a guest.");
+        const body = await readJson(req);
+        const lookup = String(body.username || body.userId || "").trim().replace(/^@/, "");
+        if (!lookup || lookup.length > 200) throw fail(400, "INVALID_GUEST", "Enter a Creator Hub username to invite.");
+        let targetQuery = client.from("profiles").select("id,username,display_name,account_status");
+        targetQuery = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(lookup) ? targetQuery.eq("id", lookup) : targetQuery.eq("username", lookup);
+        const { data: target, error: targetError } = await targetQuery.maybeSingle();
+        if (targetError) throw targetError;
+        if (!target || target.account_status !== "active") throw fail(404, "GUEST_ACCOUNT_NOT_FOUND", "That active Creator Hub account could not be found.");
+        if (String(target.id) === String(user.id)) throw fail(400, "HOST_CANNOT_INVITE_SELF", "The host cannot invite their own account.");
+        const blocks = await Promise.all([
+          client.from("blocks").select("blocker_id").eq("blocker_id", user.id).eq("blocked_id", target.id).maybeSingle(),
+          client.from("blocks").select("blocker_id").eq("blocker_id", target.id).eq("blocked_id", user.id).maybeSingle(),
+        ]);
+        if (blocks.some((result) => result.error)) throw blocks.find((result) => result.error).error;
+        if (blocks.some((result) => result.data)) throw fail(403, "GUEST_INVITE_BLOCKED", "This account cannot be invited to the stage.");
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
+        if (activeError) throw activeError;
+        const { data: existing, error: existingError } = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", target.id).maybeSingle();
+        if (existingError) throw existingError;
+        if (existing && existing.status === "accepted") throw fail(409, "ALREADY_GUEST", "This creator is already on the guest stage.");
+        const alreadyOnStage = (activeRows || []).some((g) => String(g.user_id) === String(target.id));
+        if (!alreadyOnStage && (activeRows || []).length >= guestSettings.maxGuests) throw fail(409, "GUEST_STAGE_FULL", "The stage has reached the host's configured guest limit.");
+        const now = new Date().toISOString();
+        let invited;
+        if (existing) {
+          const result = await client.from("live_guests").update({ status: "invited", created_at: now, updated_at: now }).eq("id", existing.id).select("id,live_id,user_id,status,created_at").single();
+          if (result.error) throw result.error;
+          invited = result.data;
+        } else {
+          const result = await client.from("live_guests").insert({ live_id: room.id, user_id: target.id, status: "invited", updated_at: now }).select("id,live_id,user_id,status,created_at").single();
+          if (result.error) throw result.error;
+          invited = result.data;
+        }
+        try {
+          const { data: targetSettings, error: targetSettingsError } = await client.from("user_settings").select("notifications").eq("user_id", target.id).maybeSingle();
+          if (targetSettingsError) throw targetSettingsError;
+          if (!targetSettings || !targetSettings.notifications || targetSettings.notifications.live !== false) {
+            const { error: notificationError } = await client.from("notifications").insert({ user_id: target.id, type: "live_guest_invite", actor_id: user.id, data: { live_id: room.id, title: room.title || "Creator Hub Live" } });
+            if (notificationError) throw notificationError;
+          }
+        } catch (notificationError) { console.warn("[LIVE guest] invitation saved but notification could not be created:", notificationError && notificationError.message || notificationError); }
+        return ok(res, { guest: invited, invited: true });
+      }
+
+      if (guestParts.action === "accept-invitation" && method === "POST") {
+        if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
+        if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_ACCEPT_INVITATION", "The host cannot accept an invitation to their own room.");
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
+        const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
+        if (activeError) throw activeError;
+        if ((activeRows || []).filter((g) => String(g.user_id) !== String(user.id)).length >= guestSettings.maxGuests) throw fail(409, "GUEST_STAGE_FULL", "The stage has reached the host's configured guest limit.");
+        const { data, error } = await client.from("live_guests").update({ status: "accepted", joined_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq("live_id", room.id).eq("user_id", user.id).eq("status", "invited")
+          .select("id,live_id,user_id,status,slot,mic_on,cam_on,pinned").maybeSingle();
+        if (error) throw error;
+        if (!data) throw fail(404, "GUEST_INVITATION_NOT_FOUND", "There is no pending invitation for your account in this LIVE room.");
+        let publishPermissionUpdated = false;
+        try {
+          const guestSources = room.media_mode === "audio" ? [2] : [1, 2];
+          await liveKitRoomService().updateParticipant(room.room_name, String(user.id), { permission: { canPublish: true, canSubscribe: true, canPublishData: true, canPublishSources: guestSources } });
+          publishPermissionUpdated = true;
+        } catch (e) { console.info("[LIVE guest] invitation accepted before participant connected; next token will grant publishing:", e && e.message); }
+        return ok(res, { guest: data, publishPermissionUpdated });
+      }
+
       if (guestParts.action === "accept" && method === "POST") {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
         if (!hostOwnsRoom) throw fail(403, "FORBIDDEN", "Only the host can accept a guest.");
         const body = await readJson(req);
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId) throw fail(400, "INVALID_GUEST", "A guest user ID is required.");
+        const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
         const { data: activeGuestRows, error: activeGuestError } = await client.from("live_guests")
           .select("id,user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeGuestError) throw activeGuestError;
         const alreadyAccepted = (activeGuestRows || []).filter((guest) => String(guest.user_id) !== String(targetId)).length;
-        if (alreadyAccepted >= 8) throw fail(409, "GUEST_STAGE_FULL", "The stage supports the host and up to eight guests.");
+        if (alreadyAccepted >= guestSettings.maxGuests) throw fail(409, "GUEST_STAGE_FULL", "The stage has reached the host's configured guest limit.");
         const { data, error } = await client.from("live_guests")
           .update({ status: "accepted", joined_at: new Date().toISOString() })
           .eq("live_id", room.id).eq("user_id", targetId).in("status", ["requested", "invited", "accepted"])
@@ -1930,6 +2022,69 @@ const server = http.createServer(async (req, res) => {
             gift.diamond_value == null ? null : Number(gift.diamond_value),
         },
       });
+    }
+
+    // Active coin packages are read from the authoritative catalogue. `price`
+    // is the actual database column; expose one normalized `priceUsd` field.
+    if (pathname === "/api/wallet/packages" && method === "GET") {
+      await requireSupabaseUser(req);
+      const { data, error } = await db().from("coin_packages")
+        .select("id,coins,price,currency,active,sort")
+        .eq("active", true).order("sort", { ascending: true }).order("coins", { ascending: true });
+      if (error) throw error;
+      const packages = (data || []).map((item) => ({
+        id: item.id, coins: Number(item.coins), priceUsd: Number(item.price),
+        currency: String(item.currency || "USD"), sort: Number(item.sort || 0),
+      })).filter((item) => Number.isSafeInteger(item.coins) && item.coins > 0 && Number.isFinite(item.priceUsd) && item.priceUsd > 0);
+      return ok(res, { packages });
+    }
+
+    // A conversion rate is a deliberate platform setting, never inferred from
+    // a gift price or payout. Keep conversion unavailable until configured.
+    if (pathname === "/api/wallet/conversion-config" && method === "GET") {
+      await requireSupabaseUser(req);
+      const coinsPerDiamond = Number(process.env.CHL_COINS_PER_DIAMOND);
+      const diamondsPerCoin = Number(process.env.CHL_DIAMONDS_PER_COIN);
+      const configured = Number.isSafeInteger(coinsPerDiamond) && coinsPerDiamond >= 1 && coinsPerDiamond <= 1000000
+        && Number.isSafeInteger(diamondsPerCoin) && diamondsPerCoin >= 1 && diamondsPerCoin <= 1000000;
+      return ok(res, {
+        enabled: configured,
+        coinsPerDiamond: configured ? coinsPerDiamond : null,
+        diamondsPerCoin: configured ? diamondsPerCoin : null,
+        reason: configured ? null : "WALLET_CONVERSION_RATE_NOT_CONFIGURED",
+      });
+    }
+
+    if (pathname === "/api/wallet/convert" && method === "POST") {
+      const user = await requireSupabaseUser(req);
+      const idempotencyKey = requireIdem(req);
+      const body = await readJson(req);
+      const direction = String(body.direction || "");
+      const amount = Number(body.amount);
+      const coinsPerDiamond = Number(process.env.CHL_COINS_PER_DIAMOND);
+      const diamondsPerCoin = Number(process.env.CHL_DIAMONDS_PER_COIN);
+      if (!Number.isSafeInteger(coinsPerDiamond) || coinsPerDiamond < 1 || coinsPerDiamond > 1000000
+          || !Number.isSafeInteger(diamondsPerCoin) || diamondsPerCoin < 1 || diamondsPerCoin > 1000000) {
+        throw fail(503, "WALLET_CONVERSION_RATE_NOT_CONFIGURED", "Wallet conversion is unavailable until both platform exchange rates are configured.");
+      }
+      if (!["coins_to_diamonds", "diamonds_to_coins"].includes(direction)) throw fail(400, "INVALID_CONVERSION_DIRECTION", "Choose coins to diamonds or diamonds to coins.");
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000000) throw fail(400, "INVALID_CONVERSION_AMOUNT", "Enter a whole-number amount from 1 to 1,000,000,000.");
+      const requiredMultiple = direction === "coins_to_diamonds" ? coinsPerDiamond : diamondsPerCoin;
+      const unitName = direction === "coins_to_diamonds" ? "Coin" : "Diamond";
+      if (amount % requiredMultiple !== 0) throw fail(400, "CONVERSION_AMOUNT_MULTIPLE_REQUIRED", `${unitName} amounts must be a multiple of ${requiredMultiple.toLocaleString("en-US")} for this exchange rate.`);
+      const { data, error } = await db().rpc("convert_wallet_currency", {
+        p_user_id: user.id, p_direction: direction, p_amount: amount,
+        p_coins_per_diamond: coinsPerDiamond, p_diamonds_per_coin: diamondsPerCoin,
+        p_idempotency_key: idempotencyKey,
+      });
+      if (error) {
+        const normalized = normalizeExternalError(error);
+        const msg = String(normalized.message || "");
+        if (/insufficient coins/i.test(msg)) throw fail(400, "INSUFFICIENT_COINS", "You do not have enough coins for this conversion.");
+        if (/insufficient diamonds/i.test(msg)) throw fail(400, "INSUFFICIENT_DIAMONDS", "You do not have enough diamonds for this conversion.");
+        throw fail(400, "WALLET_CONVERSION_FAILED", normalized.message || "The conversion could not be completed.");
+      }
+      return ok(res, { conversion: data, coinBalance: data && data.coinBalance, diamondBalance: data && data.diamondBalance });
     }
 
     // Wallet Balance
