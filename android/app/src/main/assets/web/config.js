@@ -44,7 +44,7 @@
       tileUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
     },
     features: { livekit: true, paypal: true, maps: true, storage: true },
-    version: '3.2.0'
+    version: '3.2.1'
   };
 
   // Backward-compatible legacy shape used by the existing pages.
