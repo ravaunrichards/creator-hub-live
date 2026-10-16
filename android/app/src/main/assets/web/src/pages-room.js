@@ -1,5 +1,4 @@
-/* Creator Hub Creator Network — real LiveKit room,
-   server-authoritative LIVE state, synchronized chat and database-priced gifts. */
+/* Creator Hub Live — real LiveKit room, server-authoritative state and database-priced gifts. */
 (function () {
   'use strict';
 
@@ -7,18 +6,32 @@
   var el = CHL.el;
   var ui = CHL.ui;
 
-  // Never show invented sample gifts. The database-backed API is the source of truth.
+  // No invented gifts or prices: the active database catalogue is authoritative.
   var GIFTS = [];
 
   var roomHostId = null;
   var currentRoomId = null;
   var isHost = false;
+  var canPublishMedia = false;
   var liveStarted = false;
   var chatPollTimer = null;
-  var liveToolsPollTimer = null;
+  var guestPollTimer = null;
+  var guestQueueContainer = null;
+  var participantTiles = new Map();
+  var activePoll = null;
+  var activeChallengeTimer = null;
+  var echoMonitor = null;
+  var lastReactionAt = 0;
+  var giftEventsBySender = Object.create(null);
+  var liveStageGrid = null;
+  var liveMicButton = null;
+  var liveCameraButton = null;
+  var liveZoomControls = null;
+  var livePollDisplay = null;
+  var liveChallengeDisplay = null;
+  var pollRefreshTimer = null;
   var chatRequestsInFlight = Object.create(null);
   var giftRequestsInFlight = Object.create(null);
-  var guestRefreshInFlight = Object.create(null);
 
   CHL.route('/live', async function (outlet, r) {
     if (!CHL.user) {
@@ -27,6 +40,12 @@
     }
 
     stopChatPolling();
+    stopGuestPolling();
+    stopEchoMonitor();
+    clearChallengeTimer();
+    if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
+    participantTiles.clear();
+    activePoll = null;
 
     var roomId = String((r && r.id) || '').trim();
 
@@ -40,16 +59,18 @@
     currentRoomId = roomId;
     roomHostId = null;
     isHost = false;
+    canPublishMedia = false;
     liveStarted = false;
 
-    var roomTitleHeading = el('div', { class: 'h1', text: 'LIVE' });
-    var roomSubtitle = el('p', {
-      class: 'sub',
-      text: 'Secure LiveKit video session'
-    });
     outlet.appendChild(
-      el('div', { class: 'row between', style: 'min-width:0;margin-bottom:10px' }, [
-        el('div', { style: 'min-width:0' }, [roomTitleHeading, roomSubtitle])
+      el('div', { class: 'row between' }, [
+        el('div', {}, [
+          el('div', { class: 'h1', text: 'LIVE' }),
+          el('p', {
+            class: 'sub',
+            text: 'Secure LiveKit video session'
+          })
+        ])
       ])
     );
 
@@ -95,6 +116,10 @@
       text: 'CONNECTING'
     });
 
+    var stageGrid = el('div', { class: 'live-stage-grid', 'aria-label': 'LIVE participant stage' });
+    liveStageGrid = stageGrid;
+    stageGrid.appendChild(el('div', { class: 'live-stage-empty', text: 'Connecting to the LIVE stage…' }));
+    stage.appendChild(stageGrid);
     stage.appendChild(status);
     video.appendChild(stage);
 
@@ -107,58 +132,94 @@
     layout.appendChild(side);
     outlet.appendChild(layout);
 
-    /* LIVE controls. */
-    var controls = el('div', {
-      class: 'row wrap live-controls',
-      style: 'gap:8px;margin-top:10px;display:none'
+    /* LIVE controls. Camera/audio controls never leave the LiveKit room. */
+    var controls = el('div', { class: 'row wrap live-controls', style: 'gap:8px;margin-top:10px;display:none' });
+    var micButton = el('button', { class: 'btn', type: 'button', onclick: function () {
+      CHL.toggleMicrophone().then(function () { var room = CHL.getActiveLiveKitRoom(); if (!room || !room.localParticipant.isMicrophoneEnabled) { stopEchoMonitor(); monitorButton.textContent = 'Echo Monitor: OFF'; monitorButton.setAttribute('aria-pressed', 'false'); monitorButton.classList.remove('is-active'); } syncMediaButtons(); }).catch(function (e) { CHL.toast(e.message || 'Microphone failed.'); });
+    } }, 'Mic');
+    var cameraButton = el('button', { class: 'btn', type: 'button', onclick: function () {
+      CHL.toggleCamera().then(function () { refreshLocalVideoTile(); syncMediaButtons(); updateZoomButtons(); }).catch(function (e) { CHL.toast(e.message || 'Camera failed.'); });
+    } }, 'Camera');
+    liveMicButton = micButton;
+    var flipButton = el('button', { class: 'btn', type: 'button', onclick: function () {
+      CHL.switchCamera().then(function (device) { refreshLocalVideoTile(); updateZoomButtons(); CHL.toast('Camera switched' + (device.label ? ': ' + device.label : '') + '.'); }).catch(function (e) { CHL.toast(e.message || 'Camera switch failed.'); });
+    } }, 'Flip camera');
+    var monitorButton = el('button', { class: 'btn', type: 'button', 'aria-pressed': 'false', onclick: function () {
+      setEchoMonitor(!echoMonitor, monitorButton);
+    } }, 'Echo Monitor: OFF');
+    var zoomControls = el('div', { class: 'live-zoom-controls', role: 'group', 'aria-label': 'Camera zoom' });
+    zoomControls.appendChild(el('span', { class: 'live-control-label', text: 'Zoom' }));
+    [1, 2, 3].forEach(function (level) {
+      zoomControls.appendChild(el('button', { class: 'btn live-zoom-button', type: 'button', text: level + '×', onclick: function () {
+        CHL.setCameraZoom(level).then(function (result) { CHL.toast('Camera zoom ' + result.zoom + '×'); }).catch(function (e) { CHL.toast(e.message || 'Zoom unavailable on this camera.'); });
+      } }));
     });
-
-    var micButton = el('button', {
-      class: 'btn',
-      type: 'button',
-      onclick: function () {
-        CHL.toggleMicrophone().catch(function (e) {
-          CHL.toast(e.message || 'Microphone failed.');
-        });
-      }
-    }, 'Mic');
-
-    var cameraButton = el('button', {
-      class: 'btn',
-      type: 'button',
-      onclick: function () {
-        CHL.toggleCamera().catch(function (e) {
-          CHL.toast(e.message || 'Camera failed.');
-        });
-      }
-    }, 'Camera');
-
-    var shareButton = el('button', {
-      class: 'btn',
-      type: 'button',
-      onclick: function () {
-        CHL.startScreenShare().catch(function (e) {
-          CHL.toast(e.message || 'Screen share failed.');
-        });
-      }
-    }, 'Share screen');
-
-    var endButton = el('button', {
-      class: 'btn danger',
-      type: 'button',
-      onclick: function () {
-        endLive(roomId);
-      }
-    }, 'End LIVE');
-
-    controls.appendChild(micButton);
-    controls.appendChild(cameraButton);
-    controls.appendChild(shareButton);
-
-    // Only the server-authorized host can see/use End LIVE.
+    liveCameraButton = cameraButton;
+    liveZoomControls = zoomControls;
+    var shareButton = el('button', { class: 'btn', type: 'button', onclick: function () {
+      CHL.startScreenShare().catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); });
+    } }, 'Share screen');
+    var leaveStageButton = el('button', { class: 'btn danger', type: 'button', text: 'Leave stage', style: 'display:none', onclick: async function () {
+      try {
+        await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/leave', { method: 'POST', body: {} });
+        try { await CHL.unpublishCamera(); } catch (_) {}
+        try { await CHL.unpublishMicrophone(); } catch (_) {}
+        stopEchoMonitor(); removeParticipantTile({ identity: CHL.user.id });
+        canPublishMedia = false; controls.style.display = 'none'; guestAction.textContent = 'Request to join stage'; guestAction.disabled = false;
+        guestStatus.textContent = 'You left the stage but remain connected as a viewer.';
+      } catch (error) { CHL.toast(error.message || 'Could not leave the stage.'); }
+    } });
+    var endButton = el('button', { class: 'btn danger', type: 'button', onclick: function () { endLive(roomId); } }, 'End LIVE');
     endButton.style.display = 'none';
-    controls.appendChild(endButton);
+    [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
     video.appendChild(controls);
+
+    var funPanel = el('section', { class: 'card live-fun-panel', 'aria-label': 'LIVE entertainment tools' });
+    funPanel.appendChild(el('div', { class: 'live-panel-heading', text: 'Make it fun' }));
+    var reactionRow = el('div', { class: 'live-reaction-row', role: 'group', 'aria-label': 'Send live reaction' });
+    [['❤️','Heart'],['👏','Clap'],['🔥','Fire'],['😂','Laugh'],['🎉','Celebrate'],['😍','Love']].forEach(function (item) {
+      reactionRow.appendChild(el('button', { class: 'btn live-reaction-button', type: 'button', 'aria-label': item[1], onclick: function () {
+        sendReaction(item[0]);
+      } }, item[0]));
+    });
+    funPanel.appendChild(reactionRow);
+
+    var soundRow = el('div', { class: 'live-soundboard-row', role: 'group', 'aria-label': 'Soundboard' });
+    var soundCueButtons = [];
+    soundRow.appendChild(el('span', { class: 'live-control-label', text: 'Soundboard' }));
+    [['👏','applause'],['🎆','celebration-fireworks'],['🎈','balloon']].forEach(function (item) {
+      var cueButton = el('button', { class: 'btn', type: 'button', text: item[0] + ' ' + item[1].replace(/-/g, ' '), onclick: function () { sendSoundCue(item[1]); } });
+      soundCueButtons.push(cueButton); soundRow.appendChild(cueButton);
+    });
+    funPanel.appendChild(soundRow);
+
+    var pollCreator = el('div', { class: 'live-poll-creator' });
+    var pollQuestion = el('input', { class: 'input', type: 'text', maxlength: 120, placeholder: 'Ask your audience a question…', 'aria-label': 'Poll question' });
+    var pollLaunch = el('button', { class: 'btn primary', type: 'button', text: 'Launch Yes / No poll', onclick: function () { launchPoll(pollQuestion.value); } });
+    pollCreator.appendChild(pollQuestion); pollCreator.appendChild(pollLaunch);
+    funPanel.appendChild(pollCreator);
+    var pollDisplay = el('div', { class: 'live-poll-display', 'aria-live': 'polite' });
+    livePollDisplay = pollDisplay;
+    funPanel.appendChild(pollDisplay);
+
+    var challengeRow = el('div', { class: 'live-challenge-row' });
+    var challengeTitle = el('input', { class: 'input', type: 'text', maxlength: 100, placeholder: '60-second challenge title', 'aria-label': 'Challenge title' });
+    var challengeStart = el('button', { class: 'btn', type: 'button', text: 'Start 60s challenge', onclick: function () { startChallenge(challengeTitle.value || 'Creator challenge'); } });
+    challengeRow.appendChild(challengeTitle); challengeRow.appendChild(challengeStart);
+    funPanel.appendChild(challengeRow);
+    var challengeDisplay = el('div', { class: 'live-challenge-display', 'aria-live': 'polite' });
+    liveChallengeDisplay = challengeDisplay;
+    funPanel.appendChild(challengeDisplay);
+    side.appendChild(funPanel);
+
+    var guestCard = el('section', { class: 'card live-guest-card', style: 'margin-top:14px;min-width:0' });
+    guestCard.appendChild(el('div', { class: 'live-panel-heading', text: 'Guest stage' }));
+    var guestAction = el('button', { class: 'btn primary', type: 'button', text: 'Request to join stage', onclick: function () { requestGuest(roomId, guestAction); } });
+    var guestStatus = el('p', { class: 'sub', text: 'Up to 8 guests plus the host can appear on the stage. Host approval is required.' });
+    guestCard.appendChild(guestAction); guestCard.appendChild(guestStatus);
+    guestQueueContainer = el('div', { class: 'live-guest-queue' });
+    guestCard.appendChild(guestQueueContainer);
+    side.appendChild(guestCard);
 
     /* Chat panel. Its messages scroll independently of the video/page. */
     var chat = el('div', {
@@ -269,40 +330,6 @@
     renderGifts(giftGrid, giftStatus, roomId);
     loadGiftCatalog(giftGrid, giftStatus, roomId);
 
-    /* Guest stage requests and host approvals use the backend guest workflow. */
-    var guestCard = el('div', { class: 'card live-guest-card', style: 'margin-top:14px;min-width:0' });
-    guestCard.appendChild(el('div', { style: 'font-weight:800;margin-bottom:8px', text: 'Guest stage' }));
-    var guestStatus = el('div', { class: 'sub', style: 'margin-bottom:8px', text: 'Loading guest stage…' });
-    var guestList = el('div', { class: 'live-guest-list', style: 'display:grid;gap:8px;min-width:0' });
-    var requestGuestButton = el('button', { class: 'btn primary block', type: 'button', onclick: function () { requestGuestStage(roomId, guestStatus, guestList); } }, 'Request to join stage');
-    var refreshGuestButton = el('button', { class: 'btn block', type: 'button', onclick: function () { loadGuests(roomId, guestStatus, guestList, requestGuestButton); } }, 'Refresh guests');
-    var inviteInput = el('input', { class: 'input', type: 'text', placeholder: 'Creator user ID to invite', autocomplete: 'off', style: 'display:none;margin-top:8px' });
-    var inviteButton = el('button', { class: 'btn', type: 'button', style: 'display:none;margin-top:8px', onclick: async function () {
-      var userId = String(inviteInput.value || '').trim();
-      if (!userId) { CHL.toast('Enter a creator user ID.'); return; }
-      inviteButton.disabled = true;
-      try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/invite', { method: 'POST', body: { userId: userId } }); inviteInput.value = ''; guestStatus.textContent = 'Guest invitation saved.'; await loadGuests(roomId, guestStatus, guestList, requestGuestButton); }
-      catch (e) { CHL.toast(e.message || 'Guest invitation failed.'); }
-      finally { inviteButton.disabled = false; }
-    } }, 'Invite creator');
-    guestCard.appendChild(requestGuestButton);
-    guestCard.appendChild(refreshGuestButton);
-    guestCard.appendChild(inviteInput);
-    guestCard.appendChild(inviteButton);
-    guestCard.appendChild(guestStatus);
-    guestCard.appendChild(guestList);
-    side.appendChild(guestCard);
-
-    // Expanded LIVE controls are wired to persisted backend APIs. Every list is
-    // server-backed; no placeholder polls, reactions, gifts or recordings are invented.
-    var liveTools = buildLiveTools(side, roomId);
-    liveTools.updateAccess();
-    liveTools.refresh();
-    if (liveToolsPollTimer) window.clearInterval(liveToolsPollTimer);
-    liveToolsPollTimer = window.setInterval(function () {
-      if (currentRoomId === roomId) liveTools.refresh();
-    }, 6000);
-
     // Load chat now and refresh it while this room remains open.
     loadChatMessages(roomId, messages);
 
@@ -325,11 +352,8 @@
       }
 
       roomHostId = room.host_id || null;
-      isHost = !!CHL.user && !!roomHostId &&
-        String(CHL.user.id) === String(roomHostId);
-      roomTitleHeading.textContent = String(room.title || 'LIVE');
-      roomSubtitle.textContent = [room.category, room.status === 'live' ? 'LIVE session' : (isHost ? 'Ready to go LIVE' : 'Waiting for host')]
-        .filter(function (part) { return String(part || '').trim(); }).join(' · ') || 'Creator Hub LIVE room';
+      isHost = !!CHL.user && !!roomHostId && String(CHL.user.id) === String(roomHostId);
+      canPublishMedia = isHost;
 
       if (room.status === 'live') {
         status.textContent = 'LIVE';
@@ -349,13 +373,25 @@
       if (currentRoomId !== roomId) return;
 
       /* Server publication permission is authoritative. */
-      var canPublishMedia = !!(joinResult && joinResult.canPublish);
-      isHost = !!(joinResult && joinResult.isHost);
+      if (joinResult && typeof joinResult.canPublish === 'boolean') {
+        canPublishMedia = joinResult.canPublish;
+      }
       controls.style.display = canPublishMedia ? '' : 'none';
       endButton.style.display = isHost ? '' : 'none';
-      loadGuests(roomId, guestStatus, guestList, requestGuestButton, inviteInput, inviteButton);
-      liveTools.updateAccess();
-      liveTools.refresh();
+      leaveStageButton.style.display = canPublishMedia && !isHost ? '' : 'none';
+      pollLaunch.disabled = !isHost;
+      challengeStart.disabled = !isHost;
+      soundCueButtons.forEach(function (button) { button.disabled = !isHost; });
+      if (isHost) {
+        guestAction.style.display = 'none';
+        guestStatus.textContent = 'Review requests and manage accepted guests individually.';
+      } else {
+        guestQueueContainer.style.display = 'none';
+      }
+      refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
+      guestPollTimer = window.setInterval(function () {
+        if (currentRoomId === roomId) refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
+      }, 5000);
 
       /* Use the backend-generated LiveKit room name. */
       var roomName = (joinResult && joinResult.roomName) || room.room_name;
@@ -369,7 +405,7 @@
       await CHL.connectLiveKit({
         roomName: roomName,
         roomId: roomId,
-        canPublish: canPublishMedia,
+        canPublish: !!isHost,
 
         onConnected: async function (lkRoom) {
           if (currentRoomId !== roomId) return;
@@ -379,7 +415,7 @@
             : 'CONNECTED';
           status.style.background = 'rgba(0,0,0,.75)';
 
-          // Only the authorized host publishes camera and microphone media.
+          // Only host or server-accepted guests receive media publishing rights.
           if (canPublishMedia) {
             try {
               await CHL.publishCamera();
@@ -390,36 +426,34 @@
               throw e;
             }
           }
-
           if (isHost) {
-            // Only the host may transition the session to LIVE.
-            var startResult = await CHL.authenticatedApiRequest(
-              '/api/live/rooms/' + encodeURIComponent(roomId) + '/start',
-              { method: 'POST' }
-            );
-            if (!startResult || (startResult.status && startResult.status !== 'live')) {
-              throw new Error('The server did not confirm that LIVE started.');
-            }
+            var startResult = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/start', { method: 'POST' });
+            if (!startResult || (startResult.status && startResult.status !== 'live')) throw new Error('The server did not confirm that LIVE started.');
             liveStarted = true;
             status.textContent = 'LIVE';
             status.style.background = 'rgba(180,0,40,.85)';
           }
-
-          // Attach tracks already published by the local participant.
-          if (lkRoom && lkRoom.localParticipant &&
-              lkRoom.localParticipant.trackPublications) {
+          if (canPublishMedia) ensureParticipantTile(lkRoom && lkRoom.localParticipant, true);
+          if (lkRoom && lkRoom.localParticipant && lkRoom.localParticipant.trackPublications) {
             lkRoom.localParticipant.trackPublications.forEach(function (publication) {
-              if (publication.track) {
-                CHL.attachLocalTrack(publication.track, stage);
-              }
+              if (publication.track && isCameraPublication(publication)) attachTrackToTile(publication.track, publication, lkRoom.localParticipant, true);
             });
           }
+          syncMediaButtons();
+          updateZoomButtons();
         },
 
-        onRemoteTrack: function (track) {
-          if (currentRoomId === roomId) {
-            CHL.attachRemoteTrack(track, stage);
-          }
+        onRemoteTrack: function (track, participant, publication) {
+          if (currentRoomId === roomId) attachTrackToTile(track, publication, participant, false);
+        },
+        onRemoteTrackRemoved: function (track, participant, publication) {
+          if (currentRoomId === roomId) removeTrackFromTile(track, participant, publication);
+        },
+        onActiveSpeakers: function (speakers) {
+          if (currentRoomId === roomId) updateActiveSpeakers(speakers || []);
+        },
+        onDataReceived: function (payload, participant) {
+          if (currentRoomId === roomId) handleLiveData(payload, participant, pollDisplay, challengeDisplay);
         },
 
         onDisconnected: function () {
@@ -445,8 +479,34 @@
             : 'CONNECTED';
         },
 
-        onParticipantConnected: CHL.handleParticipantConnected,
-        onParticipantDisconnected: CHL.handleParticipantDisconnected
+        onParticipantConnected: function (participant) {
+          CHL.handleParticipantConnected(participant);
+          if (participant && participant.permissions && participant.permissions.canPublish) ensureParticipantTile(participant, false);
+        },
+        onParticipantPermissionsChanged: function (participant) {
+          if (!participant || !CHL.user || String(participant.identity) !== String(CHL.user.id)) return;
+          CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/join', { method: 'POST' }).then(async function (result) {
+            canPublishMedia = !!(result && result.canPublish);
+            controls.style.display = canPublishMedia ? '' : 'none';
+            leaveStageButton.style.display = canPublishMedia && !isHost ? '' : 'none';
+            if (canPublishMedia && !CHL.hasPublishedCamera()) {
+              await CHL.publishCamera();
+              await CHL.publishMicrophone();
+              ensureParticipantTile(participant, true);
+              syncMediaButtons(); updateZoomButtons();
+            } else if (!canPublishMedia) {
+              stopEchoMonitor();
+              try { await CHL.unpublishCamera(); } catch (_) {}
+              try { await CHL.unpublishMicrophone(); } catch (_) {}
+              removeParticipantTile(participant);
+            }
+          }).catch(function (error) { CHL.toast(error.message || 'Guest permission update failed.'); });
+        },
+        onParticipantDisconnected: function (participant) {
+          CHL.handleParticipantDisconnected(participant);
+          removeParticipantTile(participant);
+          if (participant && String(participant.identity) === String(CHL.user && CHL.user.id)) stopEchoMonitor();
+        }
       });
     } catch (e) {
       if (currentRoomId !== roomId) return;
@@ -457,277 +517,337 @@
     }
   });
 
-  function buildLiveTools(side, roomId) {
-    var base = '/api/live/rooms/' + encodeURIComponent(roomId);
-    function card(title) {
-      var node = el('div', { class: 'card live-tool-card', style: 'margin-top:14px;min-width:0;overflow:hidden' });
-      node.appendChild(el('div', { style: 'font-weight:800;margin-bottom:10px', text: title }));
-      side.appendChild(node);
-      return node;
-    }
-    function label(parent, text) { parent.appendChild(el('div', { class: 'sub', style: 'margin:6px 0', text: text })); }
-    function button(text, fn, className) { return el('button', { class: className || 'btn', type: 'button', onclick: fn }, text); }
-    async function api(path, options) { return CHL.authenticatedApiRequest(base + path, options || { method: 'GET' }); }
-    async function safeAction(fn, statusNode, successText) {
-      try { var r = await fn(); if (statusNode) statusNode.textContent = successText || 'Saved.'; return r; }
-      catch (e) { if (statusNode) statusNode.textContent = e.message || 'Request failed.'; else CHL.toast(e.message || 'Request failed.'); return null; }
-    }
-
-    // Reactions: API throttles per account and returns only persisted recent events.
-    var reactionCard = card('Live reactions');
-    var reactionButtons = el('div', { class: 'row wrap', style: 'gap:6px' });
-    ['❤️','👏','🔥','🎉','😂','🇯🇲'].forEach(function (reaction) {
-      reactionButtons.appendChild(button(reaction, function () {
-        safeAction(function () { return api('/reactions', { method: 'POST', body: { reaction: reaction } }); }, reactionStatus, 'Reaction sent.');
-      }, 'btn'));
-    });
-    reactionCard.appendChild(reactionButtons);
-    var reactionStatus = el('div', { class: 'sub', style: 'margin-top:8px', text: 'Reactions appear after the server saves them.' });
-    var reactionList = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px' });
-    reactionCard.appendChild(reactionStatus); reactionCard.appendChild(reactionList);
-    async function loadReactions() {
-      var data = await api('/reactions'); if (currentRoomId !== roomId) return;
-      reactionList.textContent = '';
-      (data.reactions || []).slice(-18).forEach(function (row) {
-        reactionList.appendChild(el('span', { class: 'pill', text: (row.reaction || '') + ' ' + ((row.profile && (row.profile.displayName || row.profile.username)) || 'Member') }));
-      });
-      if (!(data.reactions || []).length) label(reactionList, 'No reactions yet.');
-    }
-
-    // Polls: host creates/ends; any authorized viewer can vote once (and update their vote).
-    var pollCard = card('Polls & audience votes');
-    var pollQuestion = el('input', { class: 'input', type: 'text', maxlength: '220', placeholder: 'Ask your audience a question', style: 'width:100%;margin-bottom:6px' });
-    var pollOptions = el('input', { class: 'input', type: 'text', maxlength: '400', placeholder: 'Options separated by commas (e.g. Music, Games)', style: 'width:100%;margin-bottom:6px' });
-    var createPollButton = button('Create poll', async function () {
-      var options = String(pollOptions.value || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 6);
-      var result = await safeAction(function () { return api('/polls', { method: 'POST', body: { question: pollQuestion.value, options: options, kind: 'poll' } }); }, pollStatus, 'Poll created.');
-      if (result) { pollQuestion.value = ''; pollOptions.value = ''; await loadPolls(); }
-    }, 'btn primary');
-    var createQaPromptButton = button('Post Q&A prompt', async function () {
-      var result = await safeAction(function () { return api('/polls', { method: 'POST', body: { question: pollQuestion.value, kind: 'qa' } }); }, pollStatus, 'Q&A prompt created.');
-      if (result) { pollQuestion.value = ''; await loadPolls(); }
-    }, 'btn');
-    pollCard.appendChild(pollQuestion); pollCard.appendChild(pollOptions);
-    var pollHostActions = el('div', { class: 'row wrap', style: 'gap:6px' });
-    pollHostActions.appendChild(createPollButton); pollHostActions.appendChild(createQaPromptButton); pollCard.appendChild(pollHostActions);
-    var pollStatus = el('div', { class: 'sub', style: 'margin-top:8px', text: 'Loading polls…' });
-    var pollList = el('div', { style: 'display:grid;gap:10px;margin-top:8px' }); pollCard.appendChild(pollStatus); pollCard.appendChild(pollList);
-    async function loadPolls() {
-      var data = await api('/polls'); if (currentRoomId !== roomId) return;
-      pollList.textContent = '';
-      (data.polls || []).forEach(function (poll) {
-        var item = el('div', { class: 'live-tool-subcard', style: 'padding:10px;border:1px solid var(--border,#333);border-radius:10px;min-width:0' });
-        item.appendChild(el('div', { style: 'font-weight:700;overflow-wrap:anywhere', text: poll.question }));
-        item.appendChild(el('div', { class: 'sub', text: (poll.kind === 'qa' ? 'Q&A prompt' : 'Poll') + ' · ' + (poll.status || 'active') + ' · ' + (poll.totalVotes || 0) + ' votes' }));
-        if (poll.kind !== 'qa') (poll.options || []).forEach(function (option, index) {
-          var count = (poll.voteCounts || [])[index] || 0;
-          item.appendChild(button(String(option) + ' (' + count + ')' + (poll.myVote === index ? ' ✓' : ''), async function () {
-            await safeAction(function () { return api('/polls/' + encodeURIComponent(poll.id) + '/vote', { method: 'POST', body: { optionIndex: index } }); }, pollStatus, 'Vote saved.'); await loadPolls();
-          }, 'btn block'));
-        });
-        if (isHost && poll.status === 'active') item.appendChild(button('Close poll', async function () {
-          await safeAction(function () { return api('/polls/' + encodeURIComponent(poll.id) + '/close', { method: 'POST', body: {} }); }, pollStatus, 'Poll closed.'); await loadPolls();
-        }));
-        pollList.appendChild(item);
-      });
-      if (!(data.polls || []).length) pollStatus.textContent = 'No polls have been created for this LIVE yet.';
-      else pollStatus.textContent = 'Results come from saved server votes.';
-    }
-
-    // Questions: every audience member can submit; host/moderator actions are server-authorized.
-    var questionCard = card('Audience questions & Q&A');
-    var questionInput = el('textarea', { class: 'input', rows: '2', maxlength: '500', placeholder: 'Ask the host a question', style: 'width:100%;resize:vertical' });
-    var questionStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'Questions are saved to this LIVE.' });
-    questionCard.appendChild(questionInput);
-    questionCard.appendChild(button('Submit question', async function () {
-      var result = await safeAction(function () { return api('/questions', { method: 'POST', body: { body: questionInput.value } }); }, questionStatus, 'Question submitted.');
-      if (result) { questionInput.value = ''; await loadQuestions(); }
-    }, 'btn primary block'));
-    questionCard.appendChild(questionStatus);
-    var questionList = el('div', { style: 'display:grid;gap:8px;margin-top:8px' }); questionCard.appendChild(questionList);
-    async function loadQuestions() {
-      var data = await api('/questions'); if (currentRoomId !== roomId) return;
-      questionList.textContent = '';
-      (data.questions || []).forEach(function (q) {
-        var item = el('div', { class: 'live-tool-subcard', style: 'padding:9px;border:1px solid var(--border,#333);border-radius:9px;min-width:0' });
-        item.appendChild(el('div', { style: 'overflow-wrap:anywhere', text: (q.pinned ? '📌 ' : '') + q.body }));
-        item.appendChild(el('div', { class: 'sub', text: ((q.profile && (q.profile.displayName || q.profile.username)) || 'Member') + ' · ' + (q.status || 'open') }));
-        if (isHost && q.status !== 'answered') item.appendChild(button(q.pinned ? 'Unpin' : 'Pin', async function () {
-          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id) + '/pin', { method: 'POST', body: { pinned: !q.pinned } }); }, questionStatus); await loadQuestions();
-        }));
-        if (isHost && q.status !== 'answered') item.appendChild(button('Answered', async function () {
-          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id) + '/answer', { method: 'POST', body: {} }); }, questionStatus, 'Question marked answered.'); await loadQuestions();
-        }));
-        if (isHost) item.appendChild(button('Delete', async function () {
-          await safeAction(function () { return api('/questions/' + encodeURIComponent(q.id), { method: 'DELETE' }); }, questionStatus, 'Question removed.'); await loadQuestions();
-        }));
-        questionList.appendChild(item);
-      });
-      if (!(data.questions || []).length) label(questionList, 'No questions yet.');
-    }
-
-    // Gift activity and backend-derived analytics.
-    var giftEventsCard = card('Gift activity');
-    var giftEventsStatus = el('div', { class: 'sub', text: 'Recent successful gifts appear here.' });
-    var giftEventsList = el('div', { style: 'display:grid;gap:6px;margin-top:8px' });
-    giftEventsCard.appendChild(giftEventsStatus); giftEventsCard.appendChild(giftEventsList);
-    async function loadGiftEvents() {
-      var data = await api('/gift-events'); if (currentRoomId !== roomId) return;
-      giftEventsList.textContent = '';
-      (data.events || []).slice(-12).reverse().forEach(function (g) {
-        var row = el('div', { class: 'row', style: 'gap:8px;align-items:center;min-width:0' });
-        var img = g.animationUrl || g.assetKey ? el('img', { src: g.animationUrl || ('/assets/gifts/art/' + g.assetKey + '.svg'), alt: g.giftName || 'Gift', style: 'width:42px;height:42px;object-fit:contain;flex:0 0 auto' }) : null;
-        if (img) row.appendChild(img);
-        row.appendChild(el('span', { style: 'overflow-wrap:anywhere', text: (g.sender && (g.sender.displayName || g.sender.username) || 'Creator') + ' sent ' + (g.giftName || 'a gift') + (g.coinCost == null ? '' : ' · ' + g.coinCost + ' coins') }));
-        giftEventsList.appendChild(row);
-      });
-      if (!(data.events || []).length) giftEventsStatus.textContent = 'No completed gift transactions for this LIVE yet.';
-      else giftEventsStatus.textContent = 'Showing saved gift transactions only.';
-    }
-
-    // Host-only recording management. Media is stored privately and downloads
-    // use short-lived presigned URLs; no URL is shown before the backend confirms readiness.
-    var recordingCard = card('Recordings — host only');
-    var recordingStatus = el('div', { class: 'sub', text: 'Recording needs LiveKit Egress and private storage configured on the backend.' });
-    var recordingButtons = el('div', { class: 'row wrap', style: 'gap:6px;margin-top:8px' });
-    recordingButtons.appendChild(button('Start recording', async function () {
-      var r = await safeAction(function () { return api('/recordings/start', { method: 'POST', body: {} }); }, recordingStatus, 'Recording started.'); if (r) await loadRecordings();
-    }, 'btn primary'));
-    recordingButtons.appendChild(button('Refresh recordings', function () { loadRecordings(); }));
-    var recordingList = el('div', { style: 'display:grid;gap:8px;margin-top:8px' });
-    var analyticsStatus = el('div', { class: 'sub', style: 'margin-top:12px', text: 'Analytics are calculated from stored chat, guest and gift records.' });
-    recordingCard.appendChild(recordingStatus); recordingCard.appendChild(recordingButtons); recordingCard.appendChild(recordingList); recordingCard.appendChild(analyticsStatus);
-    async function loadRecordings() {
-      var data = await api('/recordings'); if (currentRoomId !== roomId) return;
-      recordingList.textContent = '';
-      (data.recordings || []).forEach(function (rec) {
-        var row = el('div', { style: 'padding:9px;border:1px solid var(--border,#333);border-radius:9px;overflow-wrap:anywhere' });
-        row.appendChild(el('div', { style: 'font-weight:700', text: 'Recording · ' + rec.status }));
-        row.appendChild(el('div', { class: 'sub', text: 'Started ' + (rec.started_at ? new Date(rec.started_at).toLocaleString() : 'pending') + (rec.file_size_bytes ? ' · ' + Math.round(rec.file_size_bytes / 1024 / 1024) + ' MB' : '') }));
-        if (['recording','processing'].indexOf(rec.status) >= 0) row.appendChild(button('Stop / finalize', async function () {
-          await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id) + '/stop', { method: 'POST', body: {} }); }, recordingStatus, 'Recording is finalizing.'); await loadRecordings();
-        }));
-        if (rec.status === 'ready') row.appendChild(button('Download / save', async function () {
-          var result = await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id) + '/download'); }, recordingStatus, 'Secure download link created.');
-          if (result && result.downloadUrl) {
-            var oldLink = row.querySelector('[data-recording-download]');
-            if (oldLink) oldLink.remove();
-            var a = el('a', { class: 'btn primary', href: result.downloadUrl, target: '_blank', rel: 'noopener noreferrer', download: 'creator-hub-live-' + rec.id + '.mp4', 'data-recording-download': 'true', style: 'display:inline-flex;margin-top:6px' }, 'Open download'); row.appendChild(a);
-          }
-        }, 'btn'));
-        if (rec.status !== 'deleted') row.appendChild(button('Delete recording', async function () {
-          if (!window.confirm('Permanently delete this recording file?')) return;
-          var result = await safeAction(function () { return api('/recordings/' + encodeURIComponent(rec.id), { method: 'DELETE' }); }, recordingStatus, 'Recording deleted.'); if (result) await loadRecordings();
-        }, 'btn danger'));
-        recordingList.appendChild(row);
-      });
-      if (!(data.recordings || []).length) label(recordingList, 'No recordings saved for this LIVE yet.');
-    }
-    async function loadAnalytics() {
-      var data = await api('/analytics'); if (!data.analytics) return; var a = data.analytics;
-      analyticsStatus.textContent = 'Chat: ' + a.chatMessages + ' · Stage guests: ' + a.activeGuests + ' · Gifts: ' + a.giftsReceived + ' · Gift coins: ' + a.giftCoins + ' · Gift diamonds: ' + a.giftDiamonds + (a.durationSeconds == null ? '' : ' · Duration: ' + Math.floor(a.durationSeconds/60) + ' min');
-    }
-
-    // Room settings (only shown to the host) save to the API; DB RLS blocks direct client writes.
-    var settingsCard = card('LIVE room settings — host only');
-    var settingTitle = el('input', { class: 'input', type: 'text', maxlength: '200', placeholder: 'LIVE title', style: 'width:100%;margin-bottom:6px' });
-    var settingCategory = el('input', { class: 'input', type: 'text', maxlength: '60', placeholder: 'Category', style: 'width:100%;margin-bottom:6px' });
-    var settingAudience = el('select', { class: 'input', style: 'width:100%;margin-bottom:6px' });
-    [['public','Public'],['followers','Followers'],['private','Private']].forEach(function (x) { settingAudience.appendChild(el('option', { value: x[0], text: x[1] })); });
-    var settingCoverUrl = el('input', { class: 'input', type: 'url', maxlength: '500', placeholder: 'Optional HTTPS cover image URL', style: 'width:100%;margin-bottom:6px' });
-    var settingGuests = el('input', { type: 'checkbox', checked: true });
-    var settingGuestLabel = el('label', { style: 'display:flex;align-items:center;gap:8px;margin:6px 0' }, [settingGuests, el('span', { text: 'Allow guest stage requests' })]);
-    var settingsStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'Settings are loaded from the server.' });
-    settingsCard.appendChild(settingTitle); settingsCard.appendChild(settingCategory); settingsCard.appendChild(settingAudience); settingsCard.appendChild(settingCoverUrl); settingsCard.appendChild(settingGuestLabel);
-    settingsCard.appendChild(button('Save room settings', async function () {
-      await safeAction(function () { return api('/settings', { method: 'PATCH', body: { title: settingTitle.value, category: settingCategory.value, audience: settingAudience.value, allowGuests: settingGuests.checked, coverImageUrl: settingCoverUrl.value } }); }, settingsStatus, 'Room settings saved.');
-    }, 'btn primary block'));
-    settingsCard.appendChild(settingsStatus);
-    async function loadSettings() {
-      var data = await api('/settings'); var s = data.settings || {};
-      if (currentRoomId !== roomId) return;
-      if (!settingTitle.value) settingTitle.value = s.title || '';
-      if (!settingCategory.value) settingCategory.value = s.category || '';
-      settingAudience.value = s.audience || 'public'; settingGuests.checked = s.allowGuests !== false;
-      if (!settingCoverUrl.value) settingCoverUrl.value = s.coverImageUrl || '';
-    }
-
-    // Moderator management (host only); the server confirms account existence and authority.
-    var moderatorCard = card('Moderators — host only');
-    var moderatorInput = el('input', { class: 'input', type: 'text', maxlength: '100', placeholder: 'Creator user ID', style: 'width:100%;margin-bottom:6px' });
-    var moderatorStatus = el('div', { class: 'sub', style: 'margin-top:6px', text: 'No moderator changes loaded yet.' });
-    var moderatorList = el('div', { style: 'display:grid;gap:6px;margin-top:8px' });
-    moderatorCard.appendChild(moderatorInput);
-    moderatorCard.appendChild(button('Add moderator', async function () {
-      var r = await safeAction(function () { return api('/moderators', { method: 'POST', body: { userId: moderatorInput.value } }); }, moderatorStatus, 'Moderator added.'); if (r) { moderatorInput.value=''; await loadModerators(); }
-    }, 'btn primary'));
-    moderatorCard.appendChild(moderatorStatus); moderatorCard.appendChild(moderatorList);
-    async function loadModerators() {
-      var data = await api('/moderators'); if (currentRoomId !== roomId) return; moderatorList.textContent = '';
-      (data.moderators || []).forEach(function (m) {
-        var row = el('div', { class: 'row wrap', style: 'gap:6px;align-items:center' });
-        row.appendChild(el('span', { style: 'flex:1;overflow-wrap:anywhere', text: (m.profile && (m.profile.displayName || m.profile.username)) || m.user_id }));
-        row.appendChild(button('Remove', async function () { var r=await safeAction(function () { return api('/moderators/' + encodeURIComponent(m.user_id), { method: 'DELETE' }); }, moderatorStatus, 'Moderator removed.'); if(r) await loadModerators(); }));
-        moderatorList.appendChild(row);
-      });
-      if (!(data.moderators || []).length) label(moderatorList, 'No moderators assigned.');
-    }
-
-    function updateAccess() {
-      [recordingCard, settingsCard, moderatorCard].forEach(function (node) { node.style.display = isHost ? '' : 'none'; });
-      [createPollButton, createQaPromptButton].forEach(function (node) { node.style.display = isHost ? '' : 'none'; });
-    }
-    async function refresh() {
-      if (!roomId || currentRoomId !== roomId) return;
-      var jobs = [loadReactions, loadPolls, loadQuestions, loadGiftEvents];
-      if (isHost) jobs.push(loadRecordings, loadAnalytics, loadSettings, loadModerators);
-      await Promise.allSettled(jobs.map(function (fn) { return fn(); }));
-    }
-    return { refresh: refresh, updateAccess: updateAccess };
+  function trackKind(track) {
+    var kind = String(track && track.kind || '').toLowerCase();
+    var source = String(track && track.source || '').toLowerCase();
+    if (source.indexOf('microphone') >= 0 || kind.indexOf('audio') >= 0) return 'audio';
+    return 'video';
   }
 
-  /* Render gift cards with real prices when available. */
-  function renderGifts(giftGrid, giftStatus, roomId) {
-    giftGrid.textContent = '';
+  function isCameraPublication(publication) {
+    if (!publication || !publication.track) return false;
+    var source = publication.source || publication.track.source;
+    try {
+      if (window.LivekitClient && window.LivekitClient.Track && window.LivekitClient.Track.Source && source === window.LivekitClient.Track.Source.Camera) return true;
+      if (window.LivekitClient && window.LivekitClient.Track && window.LivekitClient.Track.Source && source === window.LivekitClient.Track.Source.ScreenShare) return false;
+    } catch (_) {}
+    var label = String(source || '').toLowerCase();
+    if (label.indexOf('screen') >= 0) return false;
+    if (label.indexOf('camera') >= 0) return true;
+    return trackKind(publication.track) === 'video';
+  }
 
-    var availableGifts = GIFTS.filter(function (gift) {
-      return gift.active !== false;
+  function participantKey(participant, local) {
+    return String((participant && participant.identity) || (local && CHL.user && CHL.user.id) || 'unknown');
+  }
+
+  function ensureParticipantTile(participant, local) {
+    var key = participantKey(participant, local);
+    var tile = participantTiles.get(key);
+    if (tile) { tile.participant = participant || tile.participant; return tile; }
+    var media = el('div', { class: 'live-participant-media' });
+    var name = (participant && (participant.name || participant.identity)) || (local ? 'You' : 'Participant');
+    var title = el('span', { class: 'live-participant-name', text: String(name).slice(0, 80) });
+    var state = el('span', { class: 'live-participant-state', text: local ? 'YOU' : 'CONNECTED' });
+    var footer = el('div', { class: 'live-participant-footer' }, [title, state]);
+    var tileElement = el('article', { class: 'live-participant-tile' + (local ? ' is-local' : ''), 'data-participant-id': key });
+    media.appendChild(el('div', { class: 'live-camera-off', text: local ? 'Camera starting…' : 'Waiting for media…' }));
+    tileElement.appendChild(media); tileElement.appendChild(footer);
+    var tile = { key: key, participant: participant, local: !!local, element: tileElement, media: media, name: title, state: state, audio: [], videoSid: null, audioSid: null, mutedByHost: false };
+    var spotlight = el('button', { class: 'live-spotlight-toggle', type: 'button', text: 'Spotlight', 'aria-label': 'Spotlight ' + name, onclick: function () { toggleSpotlight(tile, spotlight); } });
+    footer.appendChild(spotlight); tile.spotlightButton = spotlight;
+    if (!local) {
+      var volumeRow = el('label', { class: 'live-participant-volume' });
+      volumeRow.appendChild(el('span', { text: 'Volume' }));
+      var volume = el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: '1', 'aria-label': 'Local playback volume for ' + name });
+      volume.addEventListener('input', function () { tile.audio.forEach(function (audio) { audio.volume = Number(volume.value); }); });
+      volumeRow.appendChild(volume); tileElement.appendChild(volumeRow); tile.volumeInput = volume;
+      if (isHost) {
+        var hostControls = el('div', { class: 'live-participant-host-controls' });
+        var mute = el('button', { class: 'btn', type: 'button', text: 'Mute guest', onclick: function () { controlGuestTrack(tile, 'audio'); } });
+        var stopVideo = el('button', { class: 'btn', type: 'button', text: 'Stop video', onclick: function () { controlGuestTrack(tile, 'video'); } });
+        var remove = el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: function () { removeGuest(tile); } });
+        hostControls.appendChild(mute); hostControls.appendChild(stopVideo); hostControls.appendChild(remove); tileElement.appendChild(hostControls);
+        tile.hostMuteButton = mute; tile.hostVideoButton = stopVideo;
+      }
+    }
+    participantTiles.set(key, tile);
+    var empty = liveStageGrid && liveStageGrid.querySelector('.live-stage-empty'); if (empty) empty.remove();
+    if (liveStageGrid) liveStageGrid.appendChild(tileElement);
+    return tile;
+  }
+
+  function attachTrackToTile(track, publication, participant, local) {
+    if (!track) return;
+    var tile = ensureParticipantTile(participant, local);
+    var kind = trackKind(track);
+    var placeholder = tile.media.querySelector('.live-camera-off'); if (placeholder) placeholder.remove();
+    var mediaElement = null;
+    try { mediaElement = local ? CHL.attachLocalTrack(track, tile.media) : CHL.attachRemoteTrack(track, tile.media); } catch (_) {}
+    if (!mediaElement) return;
+    if (kind === 'audio') {
+      mediaElement.classList.add('live-remote-audio');
+      mediaElement.autoplay = true; mediaElement.playsInline = true;
+      if (tile.volumeInput) mediaElement.volume = Number(tile.volumeInput.value);
+      tile.audio.push(mediaElement); tile.audioSid = publication && (publication.trackSid || publication.sid) || null;
+      try { var audioPlayback = mediaElement.play(); if (audioPlayback && audioPlayback.catch) audioPlayback.catch(function () {}); } catch (_) {}
+      if (tile.hostMuteButton) tile.hostMuteButton.textContent = tile.mutedByHost ? 'Unmute guest' : 'Mute guest';
+    } else {
+      mediaElement.classList.add('live-participant-video');
+      mediaElement.muted = true; mediaElement.playsInline = true;
+      tile.videoSid = publication && (publication.trackSid || publication.sid) || null;
+    }
+    if (tile.media.querySelector('video')) tile.state.textContent = tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON';
+  }
+
+  function toggleSpotlight(tile, button) {
+    if (!tile || !liveStageGrid) return;
+    var already = tile.element.classList.contains('is-spotlight');
+    participantTiles.forEach(function (other) {
+      other.element.classList.remove('is-spotlight');
+      if (other.spotlightButton) { other.spotlightButton.textContent = 'Spotlight'; other.spotlightButton.setAttribute('aria-pressed', 'false'); }
     });
+    liveStageGrid.classList.toggle('has-spotlight', !already);
+    if (!already) {
+      tile.element.classList.add('is-spotlight');
+      if (button) { button.textContent = 'Unspotlight'; button.setAttribute('aria-pressed', 'true'); }
+    }
+  }
 
-    if (!availableGifts.length) {
-      giftStatus.textContent = 'No active gifts are currently available.';
+  function removeTrackFromTile(track, participant) {
+    var tile = participantTiles.get(participantKey(participant, false));
+    if (!tile) return;
+    if (trackKind(track) === 'audio') { tile.audio = tile.audio.filter(function (audio) { return audio && audio.isConnected; }); tile.audioSid = null; }
+    else { tile.videoSid = null; tile.state.textContent = tile.local ? 'YOU · CAMERA OFF' : 'CAMERA OFF'; }
+  }
+
+  function removeParticipantTile(participant) {
+    var key = participantKey(participant, false); var tile = participantTiles.get(key);
+    if (tile) { tile.element.remove(); participantTiles.delete(key); if (liveStageGrid && !liveStageGrid.querySelector('.is-spotlight')) liveStageGrid.classList.remove('has-spotlight'); }
+    if (!participantTiles.size && liveStageGrid) liveStageGrid.appendChild(el('div', { class: 'live-stage-empty', text: 'Waiting for participants…' }));
+  }
+
+  function refreshLocalVideoTile() {
+    var key = String(CHL.user && CHL.user.id || ''); var tile = participantTiles.get(key);
+    var room = CHL.getActiveLiveKitRoom();
+    if (!tile || !room || !room.localParticipant) return;
+    Array.from(tile.media.querySelectorAll('video')).forEach(function (video) { try { video.remove(); } catch (_) {} });
+    var cameraTrack = null; var cameraPublication = null;
+    try { room.localParticipant.trackPublications.forEach(function (publication) { if (publication && publication.track && isCameraPublication(publication)) { cameraTrack = publication.track; cameraPublication = publication; } }); } catch (_) {}
+    if (cameraTrack) attachTrackToTile(cameraTrack, cameraPublication, room.localParticipant, true);
+    else {
+      tile.videoSid = null;
+      if (!tile.media.querySelector('.live-camera-off')) tile.media.appendChild(el('div', { class: 'live-camera-off', text: 'Camera is off' }));
+      tile.state.textContent = 'YOU · CAMERA OFF';
+    }
+  }
+
+  function updateActiveSpeakers(speakers) {
+    var active = new Set(speakers.map(function (participant) { return participantKey(participant, false); }));
+    participantTiles.forEach(function (tile, key) {
+      tile.element.classList.toggle('is-speaking', active.has(key));
+      if (active.has(key)) tile.state.textContent = tile.local ? 'YOU · SPEAKING' : 'SPEAKING';
+      else if (tile.media.querySelector('video')) tile.state.textContent = tile.local ? 'YOU · CAMERA ON' : 'CAMERA ON';
+      else tile.state.textContent = tile.local ? 'YOU' : 'CONNECTED';
+    });
+  }
+
+  function syncMediaButtons() {
+    var room = CHL.getActiveLiveKitRoom(); if (!room || !room.localParticipant) return;
+    var participant = room.localParticipant;
+    var mic = !!participant.isMicrophoneEnabled; var camera = !!participant.isCameraEnabled;
+    if (liveMicButton) { liveMicButton.textContent = mic ? 'Mic: ON' : 'Mic: MUTED'; liveMicButton.classList.toggle('is-active', mic); liveMicButton.setAttribute('aria-pressed', String(mic)); }
+    if (liveCameraButton) { liveCameraButton.textContent = camera ? 'Camera: ON' : 'Camera: OFF'; liveCameraButton.classList.toggle('is-active', camera); liveCameraButton.setAttribute('aria-pressed', String(camera)); }
+  }
+
+  function updateZoomButtons() {
+    var room = CHL.getActiveLiveKitRoom(); var supports = false;
+    try { room.localParticipant.trackPublications.forEach(function (pub) { if (pub.track && trackKind(pub.track) === 'video' && pub.track.mediaStreamTrack && pub.track.mediaStreamTrack.getCapabilities) supports = !!pub.track.mediaStreamTrack.getCapabilities().zoom; }); } catch (_) {}
+    if (liveZoomControls) liveZoomControls.querySelectorAll('button').forEach(function (button) { button.disabled = !supports; button.title = supports ? 'Set hardware camera zoom' : 'Hardware zoom is not available on this camera'; });
+  }
+
+  function stopEchoMonitor() {
+    if (!echoMonitor) return;
+    try { echoMonitor.source.disconnect(); } catch (_) {}
+    try { echoMonitor.gain.disconnect(); } catch (_) {}
+    try { echoMonitor.cloneTrack.stop(); } catch (_) {}
+    try { echoMonitor.context.close(); } catch (_) {}
+    echoMonitor = null;
+  }
+
+  async function setEchoMonitor(enabled, button) {
+    if (!enabled) {
+      stopEchoMonitor(); button.textContent = 'Echo Monitor: OFF'; button.setAttribute('aria-pressed', 'false'); button.classList.remove('is-active'); return;
+    }
+    var room = CHL.getActiveLiveKitRoom(); var micTrack = null;
+    try { if (room && room.localParticipant) room.localParticipant.trackPublications.forEach(function (pub) { if (pub.track && trackKind(pub.track) === 'audio') micTrack = pub.track.mediaStreamTrack; }); } catch (_) {}
+    if (!micTrack || !micTrack.clone) { CHL.toast('Enable your microphone before turning on local monitoring. Headphones are recommended.'); return; }
+    try {
+      stopEchoMonitor();
+      var clone = micTrack.clone(); var context = new (window.AudioContext || window.webkitAudioContext)();
+      var source = context.createMediaStreamSource(new MediaStream([clone])); var gain = context.createGain(); gain.gain.value = 0.7;
+      source.connect(gain); gain.connect(context.destination); if (context.state === 'suspended') await context.resume();
+      echoMonitor = { context: context, source: source, gain: gain, cloneTrack: clone };
+      button.textContent = 'Echo Monitor: ON'; button.setAttribute('aria-pressed', 'true'); button.classList.add('is-active');
+      CHL.toast('Local voice monitoring is on. Headphones help prevent feedback.');
+    } catch (error) { stopEchoMonitor(); CHL.toast('Local monitoring could not start: ' + (error.message || 'audio device unavailable')); }
+  }
+
+  function broadcastLiveEvent(type, data) {
+    if (!currentRoomId || typeof CHL.publishLiveData !== 'function') return Promise.resolve(false);
+    return CHL.publishLiveData({ version: 1, roomId: currentRoomId, type: type, data: data || {}, sentAt: Date.now() }).catch(function (error) { console.warn('[Creator Hub LIVE] event not sent', error); return false; });
+  }
+
+  function floatReaction(emoji, sender) {
+    var item = el('span', { class: 'live-floating-reaction', text: emoji, 'aria-hidden': 'true' });
+    item.style.left = (12 + Math.random() * 72) + '%'; item.title = sender || '';
+    var stage = liveStageGrid && liveStageGrid.parentNode; if (stage) stage.appendChild(item); window.setTimeout(function () { item.remove(); }, 2300);
+  }
+
+  function sendReaction(emoji) {
+    var now = Date.now(); if (now - lastReactionAt < 250) return; lastReactionAt = now;
+    floatReaction(emoji, 'You'); broadcastLiveEvent('reaction', { emoji: emoji });
+  }
+
+  var SOUND_CUES = { applause: 'applause.wav', 'celebration-fireworks': 'celebration-fireworks.wav', balloon: 'balloon.wav' };
+  function playSoundCue(key) {
+    if (!SOUND_CUES[key]) return;
+    try { var audio = new Audio('assets/gifts/sounds/' + SOUND_CUES[key]); audio.volume = 0.5; var result = audio.play(); if (result && result.catch) result.catch(function () {}); } catch (_) {}
+  }
+  function sendSoundCue(key) {
+    if (!isHost || !SOUND_CUES[key]) return;
+    playSoundCue(key); broadcastLiveEvent('sound', { key: key });
+  }
+
+  function launchPoll(question) {
+    if (!isHost) return;
+    question = String(question || '').trim().slice(0, 120);
+    if (!question) { CHL.toast('Enter a poll question first.'); return; }
+    var poll = { id: CHL.uuid(), question: question, options: ['Yes', 'No'], expiresAt: Date.now() + 30000 };
+    activePoll = { poll: poll, votes: Object.create(null), ended: false };
+    renderPoll(livePollDisplay);
+    if (pollRefreshTimer) window.clearInterval(pollRefreshTimer);
+    pollRefreshTimer = window.setInterval(function () { if (activePoll && Date.now() >= activePoll.poll.expiresAt) activePoll.ended = true; renderPoll(livePollDisplay); if (activePoll && activePoll.ended && pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; } }, 1000);
+    broadcastLiveEvent('poll-start', poll);
+  }
+
+  function renderPoll(container) {
+    if (!container) container = livePollDisplay;
+    if (!container) return;
+    container.textContent = '';
+    if (!activePoll) return;
+    var poll = activePoll.poll;
+    container.appendChild(el('div', { class: 'live-poll-question', text: poll.question }));
+    var counts = [0, 0]; Object.keys(activePoll.votes).forEach(function (id) { var index = activePoll.votes[id]; if (index === 0 || index === 1) counts[index]++; });
+    poll.options.forEach(function (option, index) {
+      var percent = counts[0] + counts[1] ? Math.round(counts[index] / (counts[0] + counts[1]) * 100) : 0;
+      var button = el('button', { class: 'btn live-poll-option', type: 'button', disabled: activePoll.ended || Date.now() >= poll.expiresAt || Object.prototype.hasOwnProperty.call(activePoll.votes, String(CHL.user && CHL.user.id)), onclick: function () {
+        if (!activePoll || activePoll.ended || Object.prototype.hasOwnProperty.call(activePoll.votes, String(CHL.user && CHL.user.id))) return;
+        activePoll.votes[String(CHL.user.id)] = index; renderPoll(container); broadcastLiveEvent('poll-vote', { pollId: poll.id, optionIndex: index });
+      } });
+      var bar = el('span', { class: 'live-poll-bar' }); bar.style.width = percent + '%';
+      button.appendChild(el('span', { text: option })); button.appendChild(el('span', { text: counts[index] + ' · ' + percent + '%' })); button.appendChild(bar); container.appendChild(button);
+    });
+    container.appendChild(el('p', { class: 'sub', text: activePoll.ended ? 'Poll ended' : Math.max(0, Math.ceil((poll.expiresAt - Date.now()) / 1000)) + ' seconds left · live room poll' }));
+  }
+
+  function startChallenge(title) {
+    if (!isHost) return;
+    clearChallengeTimer(); var payload = { title: String(title || 'Creator challenge').trim().slice(0, 100), endsAt: Date.now() + 60000 };
+    showChallenge(payload, liveChallengeDisplay); broadcastLiveEvent('challenge-start', payload);
+  }
+
+  function clearChallengeTimer() { if (activeChallengeTimer) { window.clearInterval(activeChallengeTimer); activeChallengeTimer = null; } }
+  function showChallenge(payload, container) {
+    if (!container) container = liveChallengeDisplay;
+    if (!container) return;
+    clearChallengeTimer(); container.textContent = '';
+    var title = el('strong', { text: payload.title || 'Creator challenge' }); var countdown = el('span', { class: 'live-challenge-countdown' });
+    container.appendChild(title); container.appendChild(countdown);
+    function tick() { var remaining = Math.max(0, Math.ceil((Number(payload.endsAt) - Date.now()) / 1000)); countdown.textContent = remaining ? remaining + 's remaining' : 'Challenge complete!'; if (!remaining) clearChallengeTimer(); }
+    tick(); activeChallengeTimer = window.setInterval(tick, 1000);
+  }
+
+  function handleLiveData(payload, participant, pollContainer, challengeContainer) {
+    try {
+      if (payload instanceof ArrayBuffer) payload = new Uint8Array(payload);
+      if (payload instanceof Uint8Array) payload = new TextDecoder().decode(payload);
+      if (typeof payload === 'string') payload = JSON.parse(payload);
+      if (!payload || payload.version !== 1 || String(payload.roomId) !== String(currentRoomId)) return;
+      var senderId = String(participant && participant.identity || '');
+      var data = payload.data || {};
+      if (payload.type === 'reaction' && ['❤️','👏','🔥','😂','🎉','😍'].indexOf(data.emoji) >= 0) floatReaction(data.emoji, senderId);
+      if (payload.type === 'sound' && senderId === String(roomHostId) && SOUND_CUES[data.key]) playSoundCue(data.key);
+      if (payload.type === 'gift' && senderId !== String(CHL.user && CHL.user.id)) {
+        var now = Date.now(); var recent = giftEventsBySender[senderId] || [];
+        recent = recent.filter(function (time) { return now - time < 5000; });
+        if (recent.length >= 2) return;
+        recent.push(now); giftEventsBySender[senderId] = recent;
+        var key = String(data.assetKey || '').replace(/[^a-z0-9-]/gi, '').slice(0, 90);
+        if (key) showGiftAnimation({ name: String(data.name || 'Gift').slice(0, 90), animationUrl: 'assets/gifts/animations/' + key + '.svg', soundUrl: 'assets/gifts/sounds/' + key + '.wav' });
+      }
+      if (payload.type === 'poll-start' && senderId === String(roomHostId)) {
+        activePoll = { poll: { id: String(data.id || ''), question: String(data.question || '').slice(0,120), options: ['Yes','No'], expiresAt: Number(data.expiresAt) || Date.now() + 30000 }, votes: Object.create(null), ended: false }; renderPoll(pollContainer); if (pollRefreshTimer) window.clearInterval(pollRefreshTimer); pollRefreshTimer = window.setInterval(function () { if (activePoll && Date.now() >= activePoll.poll.expiresAt) activePoll.ended = true; renderPoll(pollContainer); if (activePoll && activePoll.ended && pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; } }, 1000);
+      }
+      if (payload.type === 'poll-vote' && activePoll && String(data.pollId) === String(activePoll.poll.id) && (data.optionIndex === 0 || data.optionIndex === 1) && senderId) {
+        activePoll.votes[senderId] = data.optionIndex; renderPoll(pollContainer);
+      }
+      if (payload.type === 'challenge-start' && senderId === String(roomHostId)) showChallenge({ title: String(data.title || 'Creator challenge').slice(0,100), endsAt: Number(data.endsAt) || Date.now() + 60000 }, challengeContainer);
+    } catch (error) { console.warn('[Creator Hub LIVE] ignored invalid room event', error); }
+  }
+
+  async function requestGuest(roomId, button) {
+    button.disabled = true;
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/request', { method: 'POST', body: {} });
+      button.textContent = 'Request sent'; CHL.toast('Guest request sent to the host.');
+    } catch (error) { CHL.toast(error.message || 'Guest request failed.'); button.disabled = false; }
+  }
+
+  async function refreshGuestQueue(roomId, container, host, guestButton, guestStatus) {
+    if (!container) return;
+    if (!host) {
+      try {
+        var own = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/status', { method: 'GET' });
+        if (own && own.guest && own.guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = 'You have been accepted. Camera and microphone controls are available above.'; }
+        else if (own && own.guest && own.guest.status === 'requested') { guestButton.textContent = 'Request pending'; guestButton.disabled = true; }
+        else if (own && own.guest && own.guest.status === 'rejected') { guestButton.textContent = 'Request again'; guestButton.disabled = false; guestStatus.textContent = 'The previous request was declined. You can request again.'; }
+      } catch (_) {}
       return;
     }
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests', { method: 'GET' });
+      container.textContent = '';
+      var guests = result && Array.isArray(result.guests) ? result.guests : [];
+      if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests yet.' })); return; }
+      guests.forEach(function (guest) {
+        var profile = guest.profile || {}; var label = profile.display_name || profile.username || guest.user_id;
+        var row = el('div', { class: 'live-guest-queue-row' }); row.appendChild(el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) })); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
+        if (guest.status === 'requested') {
+          row.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Accept', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/accept', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest accepted.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not accept guest.'); } } }));
+          row.appendChild(el('button', { class: 'btn', type: 'button', text: 'Reject', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/reject', { method: 'POST', body: { userId: guest.user_id } }); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not reject guest.'); } } }));
+        } else if (guest.status === 'accepted') row.appendChild(el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/remove', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest removed from stage.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not remove guest.'); } } }));
+        container.appendChild(row);
+      });
+    } catch (error) { container.textContent = ''; container.appendChild(el('p', { class: 'sub', text: 'Guest queue unavailable: ' + (error.message || 'check database migration') })); }
+  }
 
-    availableGifts.forEach(function (gift) {
-      var priceLabel = Number.isFinite(Number(gift.coinPrice)) &&
-        gift.coinPrice !== null
-        ? Number(gift.coinPrice).toLocaleString() + ' coins'
-        : 'Price unavailable';
+  function stopGuestPolling() { if (guestPollTimer) { window.clearInterval(guestPollTimer); guestPollTimer = null; } }
 
-      var giftTile = el('button', {
-        class: 'gift gift-button',
-        type: 'button',
-        'aria-label': gift.k + ', ' + priceLabel,
-        onclick: function () {
-          if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
-            CHL.toast('This gift price is not available yet.');
-            return;
-          }
-          sendGift(roomId, gift);
-        }
-      }, [
-        makeGiftArt(gift),
-        el('div', { text: gift.k }),
-        el('div', {
-          class: 'sub',
-          style: 'font-size:12px;margin-top:4px',
-          text: priceLabel
-        })
-      ]);
+  async function controlGuestTrack(tile, kind) {
+    var sid = kind === 'audio' ? tile.audioSid : tile.videoSid;
+    if (!sid) { CHL.toast(kind === 'audio' ? 'This guest has no active microphone track.' : 'This guest has no active camera track.'); return; }
+    try {
+      var nextMuted = kind === 'audio' ? !tile.mutedByHost : !tile.videoMutedByHost;
+      await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(currentRoomId) + '/guests/mute-track', { method: 'POST', body: { userId: tile.key, trackSid: sid, muted: nextMuted } });
+      if (kind === 'audio') { tile.mutedByHost = nextMuted; tile.hostMuteButton.textContent = tile.mutedByHost ? 'Unmute guest' : 'Mute guest'; }
+      else { tile.videoMutedByHost = nextMuted; tile.hostVideoButton.textContent = tile.videoMutedByHost ? 'Resume video' : 'Stop video'; }
+    } catch (error) { CHL.toast(error.message || 'Guest control failed.'); }
+  }
 
-      giftGrid.appendChild(giftTile);
-    });
+  async function removeGuest(tile) {
+    try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(currentRoomId) + '/guests/remove', { method: 'POST', body: { userId: tile.key } }); CHL.toast('Guest removed from stage.'); }
+    catch (error) { CHL.toast(error.message || 'Could not remove guest.'); }
   }
 
   function giftAssetKey(name) {
@@ -736,21 +856,69 @@
       .replace(/^-|-$/g, '').slice(0, 90) || 'gift';
   }
 
-  function makeGiftArt(gift) {
-    var key = String(gift.assetKey || giftAssetKey(gift.k));
-    if (!/^[a-z0-9-]+$/.test(key)) key = giftAssetKey(gift.k);
-    var url = gift.graphicUrl || '/assets/gifts/art/' + key + '.svg';
-    var image = el('img', {
-      src: url,
-      alt: '',
-      loading: 'lazy',
-      style: 'display:block;width:42px;height:42px;object-fit:contain;margin:0 auto 4px',
-      onerror: function () {
-        var fallback = el('div', { style: 'font-size:24px', text: gift.em || '🎁' });
-        if (image.parentNode) image.parentNode.replaceChild(fallback, image);
-      }
+  /* Render real database-priced gifts as accessible, tappable buttons. */
+  function renderGifts(giftGrid, giftStatus, roomId) {
+    giftGrid.textContent = '';
+    var availableGifts = GIFTS.filter(function (gift) {
+      return gift && gift.active !== false;
     });
-    return image;
+    if (!availableGifts.length) {
+      giftStatus.textContent = 'No active gifts are available in the database.';
+      return;
+    }
+    availableGifts.forEach(function (gift) {
+      var priceLabel = Number.isFinite(Number(gift.coinPrice)) && gift.coinPrice !== null
+        ? Number(gift.coinPrice).toLocaleString() + ' coins' : 'Price unavailable';
+      var assetKey = gift.assetKey || giftAssetKey(gift.k);
+      gift.assetKey = assetKey;
+      gift.graphicUrl = gift.graphicUrl || 'assets/gifts/art/' + assetKey + '.svg';
+      gift.animationUrl = gift.animationUrl || 'assets/gifts/animations/' + assetKey + '.svg';
+      gift.soundUrl = gift.soundUrl || 'assets/gifts/sounds/' + assetKey + '.wav';
+      var giftTile = el('button', {
+        class: 'gift', type: 'button',
+        'aria-label': 'Send ' + gift.k + ', ' + priceLabel,
+        onclick: function () {
+          if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+            CHL.toast('This gift price is not available yet.'); return;
+          }
+          sendGift(roomId, gift);
+        }
+      });
+      if (gift.coinPrice === null || !Number.isFinite(Number(gift.coinPrice))) {
+        giftTile.disabled = true;
+      }
+      var artwork = el('img', {
+        class: 'gift-art', src: gift.graphicUrl, alt: gift.k,
+        loading: 'lazy', decoding: 'async'
+      });
+      artwork.onerror = function () {
+        artwork.onerror = null;
+        artwork.style.display = 'none';
+        artwork.alt = gift.k + ' artwork unavailable';
+      };
+      giftTile.appendChild(artwork);
+      giftTile.appendChild(el('span', { class: 'nm', text: gift.k }));
+      giftTile.appendChild(el('span', { class: 'px', text: priceLabel }));
+      giftGrid.appendChild(giftTile);
+    });
+  }
+
+  function showGiftAnimation(gift) {
+    if (!gift || !gift.animationUrl) return;
+    var overlay = el('div', { class: 'gift-animation-overlay', 'aria-hidden': 'true' });
+    var art = el('img', { src: gift.animationUrl, alt: '' });
+    art.onerror = function () { overlay.remove(); };
+    overlay.appendChild(art);
+    document.body.appendChild(overlay);
+    window.setTimeout(function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 3200);
+    if (gift.soundUrl) {
+      try {
+        var audio = new Audio(gift.soundUrl);
+        audio.preload = 'auto'; audio.volume = 0.65;
+        var playback = audio.play();
+        if (playback && typeof playback.catch === 'function') playback.catch(function () {});
+      } catch (_) { /* Audio is optional; successful gift delivery must not depend on playback. */ }
+    }
   }
 
   /* Fetch active gift names/prices from the database-backed API. */
@@ -772,23 +940,27 @@
         return;
       }
 
+      var emojiByName = Object.create(null);
+
       var databaseGifts = rows
         .filter(function (gift) {
           return gift && gift.name;
         })
         .map(function (gift) {
           var name = String(gift.name);
-          var price = Number(gift.coinPrice);
-          var assetKey = String(gift.assetKey || giftAssetKey(name));
+          var rawPrice = gift.coinPrice;
+          var price = Number(rawPrice);
+          var validPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && Number.isFinite(price) && price >= 0;
 
+          var assetKey = giftAssetKey(name);
           return {
             k: name,
-            em: gift.emoji || '🎁',
+            em: emojiByName[name.toLowerCase()] || '🎁',
             assetKey: assetKey,
-            graphicUrl: gift.graphicUrl || '/assets/gifts/art/' + assetKey + '.svg',
-            animationUrl: gift.animationUrl || '/assets/gifts/animations/' + assetKey + '.svg',
-            soundUrl: gift.soundUrl || '/assets/gifts/sounds/' + assetKey + '.wav',
-            coinPrice: Number.isFinite(price) && price > 0 ? price : null,
+            graphicUrl: 'assets/gifts/art/' + assetKey + '.svg',
+            animationUrl: 'assets/gifts/animations/' + assetKey + '.svg',
+            soundUrl: 'assets/gifts/sounds/' + assetKey + '.wav',
+            coinPrice: validPrice ? price : null,
             active: gift.active !== false
           };
         })
@@ -806,11 +978,14 @@
       giftStatus.textContent = 'Gift prices from the database.';
       renderGifts(giftGrid, giftStatus, roomId);
     } catch (e) {
-      // Do not show sample gifts or guessed prices when the real catalogue fails.
-      GIFTS = [];
+      // Do not invent prices if the API is unavailable.
+      GIFTS.forEach(function (gift) {
+        gift.coinPrice = null;
+      });
+
       renderGifts(giftGrid, giftStatus, roomId);
       giftStatus.textContent =
-        'Gift catalogue unavailable. Prices are not loaded; try again when the connection is restored.';
+        'Gift prices could not be loaded. Check the backend /api/gifts endpoint.';
       console.warn(
         '[Creator Hub LIVE gifts] Catalog load failed:',
         e.message || e
@@ -823,10 +998,6 @@
     if (chatPollTimer) {
       window.clearInterval(chatPollTimer);
       chatPollTimer = null;
-    }
-    if (liveToolsPollTimer) {
-      window.clearInterval(liveToolsPollTimer);
-      liveToolsPollTimer = null;
     }
   }
 
@@ -959,76 +1130,6 @@
     }
   }
 
-  async function loadGuests(roomId, guestStatus, guestList, requestButton, inviteInput, inviteButton) {
-    if (!roomId || currentRoomId !== roomId || guestRefreshInFlight[roomId]) return;
-    guestRefreshInFlight[roomId] = true;
-    try {
-      var data = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests');
-      if (currentRoomId !== roomId) return;
-      var guests = Array.isArray(data && data.guests) ? data.guests : [];
-      guestList.textContent = '';
-      var mine = guests.find(function (g) { return CHL.user && String(g.user_id) === String(CHL.user.id); });
-      if (requestButton) {
-        var hasInvitation = !!mine && mine.status === 'invited' && !isHost;
-        requestButton.style.display = isHost || (mine && ['requested','accepted'].indexOf(mine.status) >= 0) ? 'none' : '';
-        requestButton.textContent = hasInvitation ? 'Accept guest invitation' : (mine && mine.status === 'rejected' ? 'Request to join stage again' : 'Request to join stage');
-        requestButton.onclick = hasInvitation
-          ? function () { updateGuestStage(roomId, mine.user_id, 'accept', guestStatus, guestList, requestButton); }
-          : function () { requestGuestStage(roomId, guestStatus, guestList); };
-      }
-      if (inviteInput) inviteInput.style.display = isHost ? '' : 'none';
-      if (inviteButton) inviteButton.style.display = isHost ? '' : 'none';
-      if (!guests.length) guestList.appendChild(el('div', { class: 'sub', text: 'No guest requests or stage guests yet.' }));
-      guests.forEach(function (guest) {
-        var profile = guest.profile || {};
-        var label = profile.display_name || profile.username || 'Creator';
-        var row = el('div', { class: 'note', style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0' });
-        row.appendChild(el('span', { style: 'flex:1;min-width:100px;overflow-wrap:anywhere', text: label + ' · ' + guest.status }));
-        if (isHost && ['requested','invited'].indexOf(guest.status) >= 0) {
-          row.appendChild(el('button', { class: 'btn primary', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'accept', guestStatus, guestList, requestButton); } }, 'Accept'));
-          row.appendChild(el('button', { class: 'btn', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'reject', guestStatus, guestList, requestButton); } }, 'Decline'));
-        } else if (guest.status === 'accepted' && (isHost || (CHL.user && String(guest.user_id) === String(CHL.user.id)))) {
-          row.appendChild(el('button', { class: 'btn', type: 'button', onclick: function () { updateGuestStage(roomId, guest.user_id, 'remove', guestStatus, guestList, requestButton); } }, isHost ? 'Remove' : 'Leave stage'));
-        }
-        guestList.appendChild(row);
-      });
-      guestStatus.textContent = 'Guest requests and stage membership are synchronized with the server.';
-    } catch (e) {
-      guestStatus.textContent = 'Guest stage unavailable: ' + (e.message || 'backend request failed');
-    } finally { delete guestRefreshInFlight[roomId]; }
-  }
-
-  async function requestGuestStage(roomId, guestStatus, guestList) {
-    var button = guestStatus && guestStatus.parentNode ? guestStatus.parentNode.querySelector('button') : null;
-    if (!CHL.user) { CHL.navigate('#/login'); return; }
-    if (button) button.disabled = true;
-    try {
-      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/request', { method: 'POST', body: {} });
-      guestStatus.textContent = result.accepted ? 'You are already approved for the stage.' : 'Guest request sent. The host must approve you before your camera and microphone can publish.';
-      await loadGuests(roomId, guestStatus, guestList, button);
-    } catch (e) { guestStatus.textContent = e.message || 'Guest request failed.'; }
-    finally { if (button) button.disabled = false; }
-  }
-
-  async function updateGuestStage(roomId, userId, action, guestStatus, guestList, requestButton) {
-    try {
-      await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/' + encodeURIComponent(userId) + '/' + action, { method: 'POST', body: {} });
-      await loadGuests(roomId, guestStatus, guestList, requestButton);
-    } catch (e) { CHL.toast(e.message || 'Guest stage update failed.'); }
-  }
-
-  function playGiftSound(url) {
-    if (!url || !/^\/assets\/gifts\/sounds\/[a-z0-9-]+\.wav$/i.test(String(url))) return;
-    try {
-      var audio = new Audio(String(url));
-      audio.volume = 0.45;
-      var playing = audio.play();
-      if (playing && typeof playing.catch === 'function') playing.catch(function () {});
-    } catch (_) {
-      // Audio playback is optional; a blocked sound must not affect the gift transaction.
-    }
-  }
-
   /* Send a gift through the authenticated wallet API. */
   function sendGift(roomId, gift) {
     if (!CHL.user) {
@@ -1072,8 +1173,8 @@
       .then(function (result) {
         var chargedGift = result && result.gift ? result.gift : null;
 
-        ui.flyGift(gift.em, gift.animationUrl || gift.graphicUrl);
-        playGiftSound(gift.soundUrl);
+        showGiftAnimation(gift);
+        broadcastLiveEvent('gift', { assetKey: gift.assetKey || giftAssetKey(gift.k), name: gift.k });
 
         if (chargedGift && Number.isFinite(Number(chargedGift.coinPrice))) {
           CHL.toast(
@@ -1108,6 +1209,10 @@
       );
 
       stopChatPolling();
+      stopGuestPolling();
+      stopEchoMonitor();
+      clearChallengeTimer();
+      if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
       CHL.disconnectLiveKit();
     } catch (e) {
       CHL.toast(e.message || 'Unable to end LIVE session.');
@@ -1123,6 +1228,10 @@
   window.addEventListener('hashchange', function () {
     if (CHL.current && CHL.current.base !== '/live') {
       stopChatPolling();
+      stopGuestPolling();
+      stopEchoMonitor();
+      clearChallengeTimer();
+      if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
       currentRoomId = null;
       roomHostId = null;
       liveStarted = false;
