@@ -17,7 +17,7 @@ const requiredDirs = [
 ];
 
 const requiredFiles = [
-  // Frontend (v3.3.0)
+  // Frontend (v3.2.0)
   'frontend/index.html',
   'frontend/config.js',
   'frontend/config.example.js',

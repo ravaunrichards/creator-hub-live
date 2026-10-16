@@ -30,7 +30,7 @@ const html = fs.readFileSync(path.join(ROOT, 'frontend', 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'frontend', 'sw.js'), 'utf8');
 assert(core.includes("'Creator Hub Live'") && !core.includes("'Creator Hub Creator Network'"), 'Runtime brand fallback is not Creator Hub Live.');
 assert(html.includes('<title>Creator Hub Live'), 'Document title does not identify Creator Hub Live.');
-assert(sw.includes("chl-web-v3-3-1") && sw.includes("./assets/gifts/multi-guest.svg"), 'Service worker cache version or restored multi-guest precache is stale.');
+assert(/chl-web-v\d+-\d+-\d+/.test(sw) && sw.includes("./assets/gifts/multi-guest.svg"), 'Service worker cache version or restored multi-guest precache is stale.');
 for (const rel of ['src/core.js', 'src/pages-settings.js', 'styles/app.css', 'sw.js', 'config.js', 'index.html']) {
   const a = fs.readFileSync(path.join(ROOT, 'frontend', rel));
   const b = fs.readFileSync(path.join(android, rel));

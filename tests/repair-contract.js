@@ -43,7 +43,7 @@ assert(LIVE_LIST.includes(".eq('status','live').is('ended_at', null)"), 'Live di
 assert(SERVER.includes('.is("ended_at", null)'), 'Backend live-room API can include ended sessions.');
 assert(LIVE_LIST.includes('window.setInterval(refresh, 10000)'), 'Live discovery does not refresh ended broadcasts automatically.');
 assert(LIVE_CSS.includes('font-weight: 800') && LIVE_CSS.includes('prefers-contrast: more'), 'Readable bold typography and high-contrast support are missing.');
-assert(LIVE_SW.includes('chl-web-v3-3-1'), 'Service worker cache was not invalidated after UI repairs.');
+assert(LIVE_SW.includes('chl-web-v6-0-4'), 'Service worker cache was not invalidated for the LIVE room update.');
 assert(SERVER.includes('"/api/wallet/gift"'), 'Server-authoritative gift endpoint is missing.');
 assert(SERVER.includes('"/api/wallet/transactions"'), 'Wallet transaction endpoint is missing.');
 
