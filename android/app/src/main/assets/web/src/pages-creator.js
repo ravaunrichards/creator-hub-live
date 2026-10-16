@@ -1,4 +1,4 @@
-/* Creator Hub Creator Network \u2014 creator center, teams, leagues, rankings, subscriptions, gifts. */
+/* Creator Hub Creator Network — creator center, teams, leagues, rankings, subscriptions, gifts. */
 (function(){
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
@@ -30,7 +30,7 @@
     if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to open Creator Center.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
     o.appendChild(subnav(CREATOR_NAV));
     var stat=el('div',{class:'grid stat'}); o.appendChild(stat);
-    stat.appendChild(ui.statCard('\u2026','Followers')); stat.appendChild(ui.statCard('\u2026','Streams')); stat.appendChild(ui.statCard('\u2026','Diamonds'));
+    stat.appendChild(ui.statCard('…','Followers')); stat.appendChild(ui.statCard('…','Streams')); stat.appendChild(ui.statCard('…','Diamonds'));
     Promise.all([
       sb.from('follows').select('*',{count:'exact',head:true}).eq('followee_id',CHL.user.id),
       sb.from('live_sessions').select('*',{count:'exact',head:true}).eq('host_id',CHL.user.id),
@@ -41,28 +41,38 @@
       stat.appendChild(ui.statCard(CHL.fmt((res[2].data&&res[2].data.diamond_balance)||0),'Diamonds'));
     }).catch(function(e){stat.innerHTML='';stat.appendChild(el('div',{class:'note',text:'Creator metrics could not be loaded: '+(e.message||'request failed')}));});
     o.appendChild(el('div',{class:'row wrap',style:'gap:10px;margin-top:16px'},[
-      el('a',{href:'#/create',class:'btn primary'},'\u25B6 Go LIVE'),
+      el('a',{href:'#/create',class:'btn primary'},'▶ Go LIVE'),
       el('a',{href:'#/creator/analytics',class:'btn'},'View analytics')
     ]));
   });
-CHL.route('/creator/analytics', function(o){
+
+  CHL.route('/creator/analytics', function(o){
     if (guard(o,'Creator Analytics','Real metrics from your account — calculated from saved posts, follows, LIVE sessions and the verified gift ledger.')) return;
     o.appendChild(subnav(CREATOR_NAV));
     if (!CHL.user) { o.appendChild(ui.empty('🔐','Sign in required','Sign in to view your private creator analytics.',el('a',{href:'#/login',class:'btn primary'},'Sign in'))); return; }
     var grid=el('div',{class:'grid stat'});o.appendChild(grid);grid.appendChild(ui.spinner());
     sb.rpc('get_my_creator_metrics').then(function(r){
-      if(r.error)throw r.error;var m=r.data||{};grid.innerHTML='';
-      [['followers','Followers'],['following','Following'],['posts','Published posts'],['views','Post views'],['likes','Likes'],['comments','Comments'],['streams','LIVE sessions'],['live_now','Live now'],['viewer_events','Recorded LIVE viewers'],['gifts_received','Gifts received'],['diamonds_from_gifts','Diamonds from gifts'],['coins_spent_gifting','Coins spent gifting']].forEach(function(x){grid.appendChild(ui.statCard(CHL.fmt(Number(m[x[0]])||0),x[1]));});
-      o.appendChild(el('div',{class:'note',text:'These are cumulative totals from available database records, not estimated reach or third-party TikTok analytics. Watch time and external platform metrics are unavailable unless a verified provider integration supplies them.'}));
-    }).catch(function(e){grid.innerHTML='';grid.appendChild(el('div',{class:'note',text:'Analytics unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 and access to get_my_creator_metrics().' }));});
+      if(r.error)throw r.error;
+      var m=r.data||{};
+      grid.innerHTML='';
+      [['followers','Followers'],['following','Following'],['posts','Published posts'],['views','Post views'],['likes','Likes'],['comments','Comments'],['streams','LIVE sessions'],['live_now','Live now'],['viewer_events','Recorded LIVE viewers'],['gifts_received','Gifts received'],['diamonds_from_gifts','Diamonds from gifts'],['coins_spent_gifting','Coins spent gifting']].forEach(function(x){
+        grid.appendChild(ui.statCard(CHL.fmt(Number(m[x[0]])||0),x[1]));
+      });
+      o.appendChild(el('div',{class:'note',text:'Your Creator Journey, at a Glance. Track your creator activity, review your performance trends, and follow your progress over time. Your analytics reflect the data currently available for your account.'}));
+    }).catch(function(e){
+      grid.innerHTML='';
+      grid.appendChild(el('div',{class:'note',text:'Analytics unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 and access to get_my_creator_metrics().'}));
+    });
   });
+
   CHL.route('/creator/live', function(o){
     if (guard(o,'LIVE Center','Start a broadcast and manage your current stream.')) return;
     if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in before starting or managing a LIVE.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
     o.appendChild(subnav(CREATOR_NAV));
-    o.appendChild(el('a',{href:'#/create',class:'btn primary'},'\u25B6 Start a new LIVE'));
+    o.appendChild(el('a',{href:'#/create',class:'btn primary'},'▶ Start a new LIVE'));
   });
-CHL.route('/creator/live/history', function(o){
+
+  CHL.route('/creator/live/history', function(o){
     if (guard(o,'LIVE Session History','Real past sessions only. Replay controls appear when a verified recording provider is connected.')) return;
     o.appendChild(subnav(CREATOR_NAV));
     if (!CHL.user) { o.appendChild(ui.empty('🔐','Sign in required','Sign in to view your LIVE session history.',el('a',{href:'#/login',class:'btn primary'},'Sign in'))); return; }
@@ -71,10 +81,16 @@ CHL.route('/creator/live/history', function(o){
       if(r.error)throw r.error;list.innerHTML='';var rows=r.data||[];
       if(!rows.length){list.appendChild(ui.empty('📺','No LIVE sessions yet','Your saved broadcast sessions appear after you start a LIVE.'));return;}
       rows.forEach(function(x){list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[
-        el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:x.title||'Untitled LIVE'}),el('div',{class:'u',text:(x.started_at?new Date(x.started_at).toLocaleString():'Start time unavailable')+' · '+String(x.status||'unknown').toUpperCase()}),el('div',{class:'u',text:CHL.fmt(Number(x.viewer_count)||0)+' recorded viewer count'+(x.ended_at?' · Ended '+new Date(x.ended_at).toLocaleString():'')})]),el('a',{href:'#/live/'+x.id,class:'btn small'},'Open session')
+        el('div',{class:'meta',style:'min-width:0'},[
+          el('div',{class:'t',text:x.title||'Untitled LIVE'}),
+          el('div',{class:'u',text:(x.started_at?new Date(x.started_at).toLocaleString():'Start time unavailable')+' · '+String(x.status||'unknown').toUpperCase()}),
+          el('div',{class:'u',text:CHL.fmt(Number(x.viewer_count)||0)+' recorded viewer count'+(x.ended_at?' · Ended '+new Date(x.ended_at).toLocaleString():'')})
+        ]),
+        el('a',{href:'#/live/'+x.id,class:'btn small'},'Open session')
       ]));});
     }).catch(function(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'LIVE history could not be loaded: '+(e.message||'request failed')}));});
   });
+
   CHL.route('/creator/live/schedule', function(o){
     if (guard(o,'LIVE Schedule','Create and cancel upcoming LIVE plans. Scheduling notifies followers in the app; it never starts a broadcast automatically.')) return;
     o.appendChild(subnav(CREATOR_NAV));
@@ -90,11 +106,13 @@ CHL.route('/creator/live/history', function(o){
     function loadSchedules(){schedules.innerHTML='';schedules.appendChild(ui.spinner());sb.from('live_schedules').select('id,title,description,category,starts_at,audience,status,notify_followers').eq('creator_id',CHL.user.id).eq('status','scheduled').order('starts_at',{ascending:true}).limit(50).then(function(r){if(r.error)throw r.error;schedules.innerHTML='';var rows=r.data||[];if(!rows.length){schedules.appendChild(ui.empty('📅','Nothing scheduled','Your saved upcoming broadcasts appear here.'));return;}rows.forEach(function(x){var cancel=el('button',{class:'btn small',type:'button',text:'Cancel schedule',onclick:async function(e){var b=e.currentTarget;if(!window.confirm('Cancel this scheduled LIVE?'))return;b.disabled=true;try{var u=await sb.from('live_schedules').update({status:'cancelled'}).eq('id',x.id).eq('creator_id',CHL.user.id);if(u.error)throw u.error;CHL.toast('Schedule cancelled.');loadSchedules();}catch(err){CHL.toast(err.message||'Could not cancel schedule.');b.disabled=false;}}});schedules.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:x.title}),el('div',{class:'u',text:new Date(x.starts_at).toLocaleString()+' · '+x.category+' · '+x.audience}),x.description?el('div',{class:'u',text:x.description}):null]),cancel]));});}).catch(function(e){schedules.innerHTML='';schedules.appendChild(el('div',{class:'note',text:'Schedules unavailable: '+(e.message||'request failed')}));});}
     loadSchedules();
   });
+
   CHL.route('/schedule', function(o){
     if (guard(o,'LIVE Schedule','Upcoming public creator broadcasts published by real accounts.')) return;
     o.appendChild(el('div',{class:'row wrap',style:'gap:8px;margin-bottom:12px'},[el('a',{href:'#/creator/live/schedule',class:'btn primary'},'＋ Schedule a LIVE'),el('a',{href:'#/discover',class:'btn'},'Live now')]));var list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(list);list.appendChild(ui.spinner());
     sb.from('live_schedules').select('id,creator_id,title,description,category,starts_at,creator:profiles!live_schedules_creator_id_fkey(username,display_name)').eq('status','scheduled').eq('audience','public').gte('starts_at',new Date().toISOString()).order('starts_at',{ascending:true}).limit(60).then(function(r){if(r.error)throw r.error;list.innerHTML='';var rows=r.data||[];if(!rows.length){list.appendChild(ui.empty('📅','No public LIVE schedules yet','When creators publish upcoming broadcasts, they will appear here.'));return;}rows.forEach(function(x){var p=x.creator||{};list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:x.title}),el('div',{class:'u',text:(p.display_name||p.username||'Creator')+' · '+new Date(x.starts_at).toLocaleString()+' · '+x.category}),x.description?el('div',{class:'u',text:x.description}):null]),el('a',{href:'#/profile/'+encodeURIComponent(p.username||''),class:'btn small'},'Creator profile')]));});}).catch(function(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Public schedule unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));});
   });
+
   CHL.route('/creator/earnings', function(o){
     if (guard(o,'Earnings','Diamond balance and creator payout requests from the server-authoritative ledger.')) return;
     if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to view balances and payout requests.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
@@ -150,7 +168,8 @@ CHL.route('/creator/live/history', function(o){
     }
     loadBalance();loadHistory();
   });
-CHL.route('/creator/subscriptions', function(o){
+
+  CHL.route('/creator/subscriptions', function(o){
     if (guard(o,'Subscribers & Membership Tiers','Manage public tier information and review subscriptions stored in the database.')) return;
     o.appendChild(subnav(CREATOR_NAV));if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to manage creator tiers.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
     var formCard=el('div',{class:'card',style:'max-width:780px;min-width:0;margin-bottom:14px'});formCard.appendChild(el('h3',{class:'section-title',text:'Create a membership tier'}));var f=el('form',{class:'form-stack'});f.appendChild(ui.field('Tier name','name','Supporter'));f.appendChild(ui.field('Monthly price (USD)','price','4.99','number'));f.elements.price.min='0.5';f.elements.price.max='10000';f.elements.price.step='0.01';f.appendChild(ui.field('Badge (optional)','badge','Supporter'));f.appendChild(ui.field('Emoji (optional)','emoji','⭐'));var perks=el('textarea',{class:'input',name:'perks',rows:'3',maxlength:'1000',placeholder:'One perk per line'});f.appendChild(el('label',{class:'field'},[el('span',{text:'Perks — one per line'}),perks]));var msg=el('div',{});var save=el('button',{class:'btn primary',type:'submit'},'Save tier');f.appendChild(save);f.appendChild(msg);formCard.appendChild(f);o.appendChild(formCard);
@@ -159,24 +178,86 @@ CHL.route('/creator/subscriptions', function(o){
     function loadTiers(){tiers.innerHTML='';tiers.appendChild(ui.spinner());sb.from('subscription_tiers').select('id,name,price,currency,badge,emoji,perks,active').eq('creator_id',CHL.user.id).order('price',{ascending:true}).then(async function(r){if(r.error)throw r.error;tiers.innerHTML='';var rows=r.data||[];if(!rows.length){tiers.appendChild(ui.empty('⭐','No tiers yet','Create a tier above. Active tiers are listed publicly.'));return;}for(var i=0;i<rows.length;i++){var x=rows[i],sr=await sb.from('subscriptions').select('id,status,subscriber_id,created_at').eq('tier_id',x.id).order('created_at',{ascending:false}).limit(100);if(sr.error)throw sr.error;var count=(sr.data||[]).filter(function(y){return y.status==='active';}).length;var toggle=el('button',{class:'btn small',type:'button',text:x.active?'Deactivate':'Activate',onclick:async function(tier,e){var b=e.currentTarget;b.disabled=true;try{var u=await sb.from('subscription_tiers').update({active:!tier.active}).eq('id',tier.id).eq('creator_id',CHL.user.id);if(u.error)throw u.error;loadTiers();}catch(err){CHL.toast(err.message||'Could not update tier.');b.disabled=false;}}.bind(null,x)});tiers.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:(x.emoji||'⭐')+' '+x.name+' · '+x.currency+' '+Number(x.price).toFixed(2)+'/month'}),el('div',{class:'u',text:(x.active?'Public offer':'Inactive offer')+' · '+count+' active recorded subscription(s)'}),el('div',{class:'u',text:(Array.isArray(x.perks)?x.perks:[]).join(' · ')||'No perks listed'})]),el('div',{class:'row wrap',style:'gap:6px'},[toggle])]));}}).catch(function(e){tiers.innerHTML='';tiers.appendChild(el('div',{class:'note',text:'Tier list unavailable: '+(e.message||'request failed')}));});}
     loadTiers();
   });
+
   CHL.route('/creator/gifts', function(o){renderGiftHistory(o,'received');});
   CHL.route('/gifts', function(o){renderGiftHistory(o,'both');});
+
   async function renderGiftHistory(o,mode){
     if (guard(o,mode==='received'?'Gifts Received':'Gift History','Real gift transactions only. Wallet changes come from the server-authoritative gift ledger.')) return;
     if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to view gift history.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
     var totals=el('div',{class:'grid stat'});o.appendChild(totals);var list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(list);list.appendChild(ui.spinner());
-    try{var q=sb.from('gift_transactions').select('id,gift_id,sender_id,recipient_id,coin_cost,diamond_value,created_at');q=mode==='received'?q.eq('recipient_id',CHL.user.id):q.or('sender_id.eq.'+CHL.user.id+',recipient_id.eq.'+CHL.user.id);var r=await q.order('created_at',{ascending:false}).limit(100);if(r.error)throw r.error;var rows=r.data||[];var coins=rows.reduce(function(a,x){return a+(x.sender_id===CHL.user.id?Number(x.coin_cost)||0:0);},0),diamonds=rows.reduce(function(a,x){return a+(x.recipient_id===CHL.user.id?Number(x.diamond_value)||0:0);},0);totals.appendChild(ui.statCard(CHL.fmt(rows.length),'Gift transactions'));totals.appendChild(ui.statCard(CHL.fmt(coins),'Coins sent'));totals.appendChild(ui.statCard(CHL.fmt(diamonds),'Diamonds received'));if(!rows.length){list.appendChild(ui.empty('🎁','No gifts recorded yet','Transactions appear here after successful server-confirmed gifts.'));return;}var giftIds=[...new Set(rows.map(function(x){return x.gift_id;}))],userIds=[...new Set(rows.map(function(x){return x.sender_id===CHL.user.id?x.recipient_id:x.sender_id;}))];var gs=await sb.from('gifts').select('id,name,graphic_url,coin_price,diamond_value').in('id',giftIds);if(gs.error)throw gs.error;var ps=await sb.from('profiles').select('id,username,display_name').in('id',userIds);if(ps.error)throw ps.error;var gm={},pm={};(gs.data||[]).forEach(function(x){gm[x.id]=x;});(ps.data||[]).forEach(function(x){pm[x.id]=x;});rows.forEach(function(x){var g=gm[x.gift_id]||{},otherId=x.sender_id===CHL.user.id?x.recipient_id:x.sender_id,p=pm[otherId]||{},label=x.sender_id===CHL.user.id?'Sent to ':'Received from ';list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[el('div',{style:'font-size:22px',text:'🎁'}),el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:(g.name||'Gift')+' · '+label+(p.display_name||p.username||'Creator')}),el('div',{class:'u',text:(x.sender_id===CHL.user.id?x.coin_cost+' coins spent':x.diamond_value+' diamonds earned')+' · '+new Date(x.created_at).toLocaleString()}),el('div',{class:'u',text:'Reference '+x.id})])]));});}
-    catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Gift history unavailable: '+(e.message||'request failed')+'. Check migration 0020 and gift row security.'}));}
+    try{
+      var q=sb.from('gift_transactions').select('id,gift_id,sender_id,recipient_id,coin_cost,diamond_value,created_at');
+      q=mode==='received'?q.eq('recipient_id',CHL.user.id):q.or('sender_id.eq.'+CHL.user.id+',recipient_id.eq.'+CHL.user.id);
+      var r=await q.order('created_at',{ascending:false}).limit(100);
+      if(r.error)throw r.error;
+      var rows=r.data||[];
+      var coins=rows.reduce(function(a,x){return a+(x.sender_id===CHL.user.id?Number(x.coin_cost)||0:0);},0);
+      var diamonds=rows.reduce(function(a,x){return a+(x.recipient_id===CHL.user.id?Number(x.diamond_value)||0:0);},0);
+      totals.appendChild(ui.statCard(CHL.fmt(rows.length),'Gift transactions'));
+      totals.appendChild(ui.statCard(CHL.fmt(coins),'Coins sent'));
+      totals.appendChild(ui.statCard(CHL.fmt(diamonds),'Diamonds received'));
+      if(!rows.length){list.appendChild(ui.empty('🎁','No gifts recorded yet','Transactions appear here after successful server-confirmed gifts.'));return;}
+      var giftIds=[...new Set(rows.map(function(x){return x.gift_id;}))],userIds=[...new Set(rows.map(function(x){return x.sender_id===CHL.user.id?x.recipient_id:x.sender_id;}))];
+      var gs=await sb.from('gifts').select('id,name,graphic_url,coin_price,diamond_value').in('id',giftIds);if(gs.error)throw gs.error;
+      var ps=await sb.from('profiles').select('id,username,display_name').in('id',userIds);if(ps.error)throw ps.error;
+      var gm={},pm={};(gs.data||[]).forEach(function(x){gm[x.id]=x;});(ps.data||[]).forEach(function(x){pm[x.id]=x;});
+      rows.forEach(function(x){
+        var g=gm[x.gift_id]||{},otherId=x.sender_id===CHL.user.id?x.recipient_id:x.sender_id,p=pm[otherId]||{},label=x.sender_id===CHL.user.id?'Sent to ':'Received from ';
+        list.appendChild(el('div',{class:'tile',style:'min-width:0;overflow-wrap:anywhere'},[
+          el('div',{style:'font-size:22px',text:'🎁'}),
+          el('div',{class:'meta',style:'min-width:0'},[
+            el('div',{class:'t',text:(g.name||'Gift')+' · '+label+(p.display_name||p.username||'Creator')}),
+            el('div',{class:'u',text:(x.sender_id===CHL.user.id?x.coin_cost+' coins spent':x.diamond_value+' diamonds earned')+' · '+new Date(x.created_at).toLocaleString()}),
+            el('div',{class:'u',text:'Reference '+x.id})
+          ])
+        ]));
+      });
+    }catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Gift history unavailable: '+(e.message||'request failed')+'. Check migration 0020 and gift row security.'}));}
   }
+
   CHL.route('/subscriptions', async function(o){
     if (guard(o,'Creator Memberships','Browse creator tiers and review recorded membership history. No recurring payment is simulated.')) return;
     if(!CHL.user){o.appendChild(ui.empty('🔐','Sign in required','Sign in to review your memberships.',el('a',{href:'#/login',class:'btn primary'},'Sign in')));return;}
     var owned=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Your subscriptions'}));o.appendChild(owned);owned.appendChild(ui.spinner());
-    try{var sr=await sb.from('subscriptions').select('id,tier_id,status,current_period_end,created_at').eq('subscriber_id',CHL.user.id).order('created_at',{ascending:false}).limit(100);if(sr.error)throw sr.error;owned.innerHTML='';var subs=sr.data||[];if(!subs.length)owned.appendChild(ui.empty('⭐','No subscription records','Checkout becomes available after a real billing provider and cancellation/webhook flow are configured. No payment is taken on this screen.'));else{var tids=[...new Set(subs.map(function(x){return x.tier_id;}))];var tr=await sb.from('subscription_tiers').select('id,name,price,currency,creator_id').in('id',tids);if(tr.error)throw tr.error;var creators=[...new Set((tr.data||[]).map(function(x){return x.creator_id;}))];var pr=await sb.from('profiles').select('id,username,display_name').in('id',creators);if(pr.error)throw pr.error;var tm={},pm={};(tr.data||[]).forEach(function(x){tm[x.id]=x;});(pr.data||[]).forEach(function(x){pm[x.id]=x;});subs.forEach(function(x){var t=tm[x.tier_id]||{},p=pm[t.creator_id]||{};owned.appendChild(el('div',{class:'tile'},[el('div',{class:'meta'},[el('div',{class:'t',text:(t.name||'Tier')+' · '+(p.display_name||p.username||'Creator')}),el('div',{class:'u',text:(t.currency||'USD')+' '+Number(t.price||0).toFixed(2)+' · '+String(x.status).toUpperCase()+(x.current_period_end?' · Ends '+new Date(x.current_period_end).toLocaleDateString():'')})])]));});}}
-    catch(e){owned.innerHTML='';owned.appendChild(el('div',{class:'note',text:'Subscriptions unavailable: '+(e.message||'request failed')}));}
+    try{
+      var sr=await sb.from('subscriptions').select('id,tier_id,status,current_period_end,created_at').eq('subscriber_id',CHL.user.id).order('created_at',{ascending:false}).limit(100);
+      if(sr.error)throw sr.error;owned.innerHTML='';var subs=sr.data||[];
+      if(!subs.length)owned.appendChild(ui.empty('⭐','No subscription records','Checkout becomes available after a real billing provider and cancellation/webhook flow are configured. No payment is taken on this screen.'));
+      else{
+        var tids=[...new Set(subs.map(function(x){return x.tier_id;}))];
+        var tr=await sb.from('subscription_tiers').select('id,name,price,currency,creator_id').in('id',tids);if(tr.error)throw tr.error;
+        var creators=[...new Set((tr.data||[]).map(function(x){return x.creator_id;}))];
+        var pr=await sb.from('profiles').select('id,username,display_name').in('id',creators);if(pr.error)throw pr.error;
+        var tm={},pm={};(tr.data||[]).forEach(function(x){tm[x.id]=x;});(pr.data||[]).forEach(function(x){pm[x.id]=x;});
+        subs.forEach(function(x){var t=tm[x.tier_id]||{},p=pm[t.creator_id]||{};owned.appendChild(el('div',{class:'tile'},[
+          el('div',{class:'meta'},[
+            el('div',{class:'t',text:(t.name||'Tier')+' · '+(p.display_name||p.username||'Creator')}),
+            el('div',{class:'u',text:(t.currency||'USD')+' '+Number(t.price||0).toFixed(2)+' · '+String(x.status).toUpperCase()+(x.current_period_end?' · Ends '+new Date(x.current_period_end).toLocaleDateString():'')})
+          ])
+        ]));});
+      }
+    }catch(e){owned.innerHTML='';owned.appendChild(el('div',{class:'note',text:'Subscriptions unavailable: '+(e.message||'request failed')}));}
     var catalog=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(el('h3',{class:'section-title',text:'Available creator tiers'}));o.appendChild(catalog);catalog.appendChild(ui.spinner());
-    try{var r=await sb.from('subscription_tiers').select('id,creator_id,name,price,currency,badge,emoji,perks').eq('active',true).neq('creator_id',CHL.user.id).order('price',{ascending:true}).limit(100);if(r.error)throw r.error;catalog.innerHTML='';var rows=r.data||[];if(!rows.length){catalog.appendChild(ui.empty('⭐','No active tiers available','Creators have not published active membership tiers yet.'));return;}var ids=[...new Set(rows.map(function(x){return x.creator_id;}))];var ps=await sb.from('profiles').select('id,username,display_name').in('id',ids);if(ps.error)throw ps.error;var map={};(ps.data||[]).forEach(function(x){map[x.id]=x;});rows.forEach(function(x){var p=map[x.creator_id]||{};catalog.appendChild(el('div',{class:'tile',style:'min-width:0'},[el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:(x.emoji||'⭐')+' '+x.name+' · '+x.currency+' '+Number(x.price).toFixed(2)+'/month'}),el('div',{class:'u',text:'By '+(p.display_name||p.username||'Creator')+(x.badge?' · '+x.badge:'')}),el('div',{class:'u',text:(Array.isArray(x.perks)?x.perks:[]).join(' · ')||'No perks listed'})]),el('a',{href:'#/profile/'+encodeURIComponent(p.username||''),class:'btn small'},'View creator'),el('div',{class:'u',text:'Checkout is unavailable until a billing provider, verified webhooks and cancellation/refund flow are implemented.'})]));});}catch(e){catalog.innerHTML='';catalog.appendChild(el('div',{class:'note',text:'Membership catalog unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}
+    try{
+      var r=await sb.from('subscription_tiers').select('id,creator_id,name,price,currency,badge,emoji,perks').eq('active',true).neq('creator_id',CHL.user.id).order('price',{ascending:true}).limit(100);
+      if(r.error)throw r.error;catalog.innerHTML='';var rows=r.data||[];
+      if(!rows.length){catalog.appendChild(ui.empty('⭐','No active tiers available','Creators have not published active membership tiers yet.'));return;}
+      var ids=[...new Set(rows.map(function(x){return x.creator_id;}))];
+      var ps=await sb.from('profiles').select('id,username,display_name').in('id',ids);if(ps.error)throw ps.error;
+      var map={};(ps.data||[]).forEach(function(x){map[x.id]=x;});
+      rows.forEach(function(x){var p=map[x.creator_id]||{};catalog.appendChild(el('div',{class:'tile',style:'min-width:0'},[
+        el('div',{class:'meta',style:'min-width:0'},[
+          el('div',{class:'t',text:(x.emoji||'⭐')+' '+x.name+' · '+x.currency+' '+Number(x.price).toFixed(2)+'/month'}),
+          el('div',{class:'u',text:'By '+(p.display_name||p.username||'Creator')+(x.badge?' · '+x.badge:'')}),
+          el('div',{class:'u',text:(Array.isArray(x.perks)?x.perks:[]).join(' · ')||'No perks listed'})
+        ]),
+        el('a',{href:'#/profile/'+encodeURIComponent(p.username||''),class:'btn small'},'View creator'),
+        el('div',{class:'u',text:'Checkout is unavailable until a billing provider, verified webhooks and cancellation/refund flow are implemented.'})
+      ]));});
+    }catch(e){catalog.innerHTML='';catalog.appendChild(el('div',{class:'note',text:'Membership catalog unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}
   });
+
   var divisionTier = {
     D5:'Bronze III', D4:'Bronze II', D3:'Bronze I',
     D2:'Silver III', D1:'Silver II', C5:'Silver I',
@@ -184,6 +265,7 @@ CHL.route('/creator/subscriptions', function(o){
     B5:'Platinum IV', B4:'Platinum III', B3:'Platinum II', B2:'Platinum I',
     B1:'Diamond IV', A3:'Heroic', A2:'Master', A1:'Grandmaster'
   };
+
   CHL.route('/leagues', function(o,r){
     if (guard(o,'Leagues','Server-managed competition. Results and standings are calculated from recorded matches.')) return;
     var div=r.params && r.params.length ? r.params[0] : null;
@@ -200,7 +282,10 @@ CHL.route('/creator/subscriptions', function(o){
       Object.keys(grouped).sort().forEach(function(code){
         box.appendChild(el('h3',{text:code+' · '+(divisionTier[code] || 'Division'),style:'margin:18px 0 8px;overflow-wrap:anywhere'}));
         grouped[code].forEach(function(x){ var t=x.teams||{}; box.appendChild(el('div',{class:'tile'},[
-          el('div',{class:'meta',style:'min-width:0'},[el('div',{class:'t',text:(x.position||'-')+'. '+(t.name||'Team')}),el('div',{class:'u',text:x.played+' MP · '+x.wins+'W '+x.draws+'D '+x.losses+'L · GD '+(x.goals_for-x.goals_against)})]),
+          el('div',{class:'meta',style:'min-width:0'},[
+            el('div',{class:'t',text:(x.position||'-')+'. '+(t.name||'Team')}),
+            el('div',{class:'u',text:x.played+' MP · '+x.wins+'W '+x.draws+'D '+x.losses+'L · GD '+(x.goals_for-x.goals_against)})
+          ]),
           el('div',{style:'font-weight:900'},x.points+' pts')
         ])); });
       });
@@ -230,14 +315,32 @@ CHL.route('/creator/subscriptions', function(o){
     });
     o.appendChild(el('div',{class:'note',text:'Standings are calculated on the server from completed match results. Points, rankings, promotion and relegation are not client-editable.'}));
   });
-CHL.route('/rankings', function(o){
+
+  CHL.route('/rankings', function(o){
     if (guard(o,'Creator Rankings','Leaderboards read from real public creator activity. No seeded scores or purchased placements.')) return;
     var selected='followers',tabs=el('div',{class:'row wrap',style:'gap:7px;margin-bottom:12px'}),list=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:8px'});o.appendChild(tabs);o.appendChild(list);
     var defs=[['followers','Followers'],['views','Post views'],['gifts_sent','Coins spent gifting'],['diamonds_received','Diamonds received'],['live_viewers','Live now viewers']];
     defs.forEach(function(x){tabs.appendChild(el('button',{class:'btn small'+(x[0]===selected?' primary':''),type:'button',text:x[1],onclick:function(){selected=x[0];Array.from(tabs.children).forEach(function(b){b.classList.toggle('primary',b.textContent===x[1]);});load();}}));});
-    async function load(){list.innerHTML='';list.appendChild(ui.spinner());try{var r=await sb.rpc('get_public_creator_rankings',{p_metric:selected,p_limit:30});if(r.error)throw r.error;list.innerHTML='';var rows=(r.data||[]).filter(function(x){return Number(x.score)>0;});if(!rows.length){list.appendChild(ui.empty('🏆','No ranking activity yet','This leaderboard needs real '+(selected==='followers'?'follower':selected==='views'?'view':selected==='gifts_sent'?'gift transaction':selected==='diamonds_received'?'diamond ledger':'LIVE viewer')+' records. No sample scores are inserted.'));return;}rows.forEach(function(x,i){list.appendChild(el('a',{class:'tile',href:'#/profile/'+encodeURIComponent(x.username),style:'text-decoration:none;min-width:0'},[el('div',{class:'rank-number',text:'#'+(i+1)}),el('div',{class:'ava',text:CHL.initials(x.display_name||x.username).toUpperCase()}),el('div',{class:'meta',style:'min-width:0;flex:1'},[el('div',{class:'t',text:x.display_name||x.username}),el('div',{class:'u',text:'@'+x.username})]),el('div',{style:'font-weight:800;white-space:nowrap'},CHL.fmt(Number(x.score)||0))]));});}catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Rankings unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}}
+    async function load(){
+      list.innerHTML='';list.appendChild(ui.spinner());
+      try{
+        var r=await sb.rpc('get_public_creator_rankings',{p_metric:selected,p_limit:30});if(r.error)throw r.error;
+        list.innerHTML='';var rows=(r.data||[]).filter(function(x){return Number(x.score)>0;});
+        if(!rows.length){list.appendChild(ui.empty('🏆','No ranking activity yet','This leaderboard needs real '+(selected==='followers'?'follower':selected==='views'?'view':selected==='gifts_sent'?'gift transaction':selected==='diamonds_received'?'diamond ledger':'LIVE viewer')+' records. No sample scores are inserted.'));return;}
+        rows.forEach(function(x,i){list.appendChild(el('a',{class:'tile',href:'#/profile/'+encodeURIComponent(x.username),style:'text-decoration:none;min-width:0'},[
+          el('div',{class:'rank-number',text:'#'+(i+1)}),
+          el('div',{class:'ava',text:CHL.initials(x.display_name||x.username).toUpperCase()}),
+          el('div',{class:'meta',style:'min-width:0;flex:1'},[
+            el('div',{class:'t',text:x.display_name||x.username}),
+            el('div',{class:'u',text:'@'+x.username})
+          ]),
+          el('div',{style:'font-weight:800;white-space:nowrap'},CHL.fmt(Number(x.score)||0))
+        ]));});
+      }catch(e){list.innerHTML='';list.appendChild(el('div',{class:'note',text:'Rankings unavailable: '+(e.message||'request failed')+'. Confirm migration 0023 is applied.'}));}
+    }
     load();
   });
+
   /* ---- public profile /profile/:username ---- */
   CHL.route('/profile', function(o,r){
     if (!CHL.configured){ o.appendChild(ui.pageHead('Profile')); o.appendChild(ui.setupNotice()); return; }
@@ -261,21 +364,56 @@ CHL.route('/rankings', function(o){
       if(CHL.user&&CHL.user.id!==p.id){
         var followBtn=el('button',{class:'btn primary',type:'button',text:relation?(relation.status==='pending'?'Requested':'Following'):'＋ Follow',onclick:async function(){
           if(!CHL.user){CHL.navigate('#/login');return;}followBtn.disabled=true;
-          try{if(relation){var d=await sb.from('follows').delete().eq('follower_id',CHL.user.id).eq('followee_id',p.id);if(d.error)throw d.error;relation=null;followBtn.textContent='＋ Follow';CHL.toast('Unfollowed @'+p.username);}else{var privacy=(p.privacy&&p.privacy.account)||'public';var status=privacy==='public'?'accepted':'pending';var ins=await sb.from('follows').insert({follower_id:CHL.user.id,followee_id:p.id,status:status});if(ins.error)throw ins.error;relation={status:status};followBtn.textContent=status==='pending'?'Requested':'Following';CHL.toast(status==='pending'?'Follow request sent':'Following @'+p.username);}}
-          catch(e){CHL.toast(e.message||'Could not update follow.');}finally{followBtn.disabled=false;}
-        }});actions.appendChild(followBtn);actions.appendChild(el('button',{class:'btn',type:'button',onclick:async function(){if(!CHL.user){CHL.navigate('#/login');return;}try{var dm=await sb.rpc('create_or_get_direct_conversation',{p_other_user:p.id});if(dm.error)throw dm.error;CHL.navigate('#/messages/'+dm.data);}catch(e){CHL.toast(e.message||'Could not start a conversation. Confirm migration 0021 and the recipient messaging settings.');}}},'Message'));actions.appendChild(el('a',{href:'#/report/user/'+p.id,class:'btn'},'Report'));
+          try{
+            if(relation){var d=await sb.from('follows').delete().eq('follower_id',CHL.user.id).eq('followee_id',p.id);if(d.error)throw d.error;relation=null;followBtn.textContent='＋ Follow';CHL.toast('Unfollowed @'+p.username);}
+            else{var privacy=(p.privacy&&p.privacy.account)||'public';var status=privacy==='public'?'accepted':'pending';var ins=await sb.from('follows').insert({follower_id:CHL.user.id,followee_id:p.id,status:status});if(ins.error)throw ins.error;relation={status:status};followBtn.textContent=status==='pending'?'Requested':'Following';CHL.toast(status==='pending'?'Follow request sent':'Following @'+p.username);}
+          }catch(e){CHL.toast(e.message||'Could not update follow.');}finally{followBtn.disabled=false;}
+        }});
+        actions.appendChild(followBtn);
+        actions.appendChild(el('button',{class:'btn',type:'button',onclick:async function(){
+          if(!CHL.user){CHL.navigate('#/login');return;}
+          try{var dm=await sb.rpc('create_or_get_direct_conversation',{p_other_user:p.id});if(dm.error)throw dm.error;CHL.navigate('#/messages/'+dm.data);}
+          catch(e){CHL.toast(e.message||'Could not start a conversation. Confirm migration 0021 and the recipient messaging settings.');}
+        }},'Message'));
+        actions.appendChild(el('a',{href:'#/report/user/'+p.id,class:'btn'},'Report'));
       }
       var pic=p.avatar_url&&/^https:\/\//.test(p.avatar_url)?el('img',{src:p.avatar_url,alt:'',loading:'lazy',style:'width:72px;height:72px;object-fit:cover;border-radius:50%'}):el('div',{class:'ava',style:'width:72px;height:72px;font-size:26px;display:flex;align-items:center;justify-content:center',text:CHL.initials(who).toUpperCase()});
       var headCard=el('section',{class:'card profile-header'},[
-        el('div',{class:'row wrap',style:'gap:14px;align-items:center'},[pic,el('div',{style:'flex:1;min-width:150px'},[el('div',{style:'font-size:21px;font-weight:800',text:who+(isVerifiedCreator?' ✓':'' )}),isVerifiedCreator?el('span',{class:'chip',text:'Verified Creator'}):null,el('div',{class:'u',text:'@'+p.username}),p.bio?el('p',{style:'margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere',text:p.bio}):null]),actions]),
-        el('div',{class:'row wrap',style:'gap:20px;margin-top:14px'},[el('div',{},[el('b',{text:CHL.fmt(p.posts_count||0)}),el('span',{class:'u',text:' Posts',style:'margin-left:4px'})]),el('div',{},[el('b',{text:CHL.fmt(p.followers_count||0)}),el('span',{class:'u',text:' Followers',style:'margin-left:4px'})]),el('div',{},[el('b',{text:CHL.fmt(p.following_count||0)}),el('span',{class:'u',text:' Following',style:'margin-left:4px'})])])
+        el('div',{class:'row wrap',style:'gap:14px;align-items:center'},[
+          pic,
+          el('div',{style:'flex:1;min-width:150px'},[
+            el('div',{style:'font-size:21px;font-weight:800',text:who+(isVerifiedCreator?' ✓':'' )}),
+            isVerifiedCreator?el('span',{class:'chip',text:'Verified Creator'}):null,
+            el('div',{class:'u',text:'@'+p.username}),
+            p.bio?el('p',{style:'margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere',text:p.bio}):null
+          ]),
+          actions
+        ]),
+        el('div',{class:'row wrap',style:'gap:20px;margin-top:14px'},[
+          el('div',{},[el('b',{text:CHL.fmt(p.posts_count||0)}),el('span',{class:'u',text:' Posts',style:'margin-left:4px'})]),
+          el('div',{},[el('b',{text:CHL.fmt(p.followers_count||0)}),el('span',{class:'u',text:' Followers',style:'margin-left:4px'})]),
+          el('div',{},[el('b',{text:CHL.fmt(p.following_count||0)}),el('span',{class:'u',text:' Following',style:'margin-left:4px'})])
+        ])
       ]);o.appendChild(headCard);
       var wall=el('div',{class:'grid',style:'grid-template-columns:minmax(0,1fr);gap:12px;max-width:820px;margin-top:12px'});o.appendChild(el('h3',{class:'section-title',text:'Public posts'}));o.appendChild(wall);wall.appendChild(ui.spinner());
       var posts=await sb.from('posts').select('id,author_id,kind,caption,media,cover_url,hashtags,sound_id,allow_comments,allow_repost,like_count,comment_count,created_at,author:profiles!posts_author_id_fkey(id,username,display_name)').eq('author_id',p.id).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).limit(30);
-      if(posts.error)throw posts.error;wall.innerHTML='';var rows=posts.data||[];if(!rows.length)wall.appendChild(ui.empty('📝','No public posts yet','This creator has not published any public posts.'));rows.forEach(function(x){wall.appendChild(el('div',{},[CHL.el('a',{href:'#/post/'+x.id,class:'chip',style:'display:inline-flex;margin-bottom:6px'},'Open post'),profilePostPreview(x)]));});
+      if(posts.error)throw posts.error;wall.innerHTML='';var rows=posts.data||[];
+      if(!rows.length)wall.appendChild(ui.empty('📝','No public posts yet','This creator has not published any public posts.'));
+      rows.forEach(function(x){wall.appendChild(el('div',{},[CHL.el('a',{href:'#/post/'+x.id,class:'chip',style:'display:inline-flex;margin-bottom:6px'},'Open post'),profilePostPreview(x)]));});
     }catch(e){o.innerHTML='';o.appendChild(el('div',{class:'note',text:e.message||'Could not load this creator profile.'}));}
   }
-  function profilePostPreview(p){var who=(p.author&&(p.author.display_name||p.author.username))||'Creator';var box=el('article',{class:'card'});box.appendChild(el('div',{class:'u',text:'@'+(p.author&&p.author.username||'creator')+' · '+CHL.ago(p.created_at)}));box.appendChild(el('div',{style:'white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px',text:p.caption||''}));(Array.isArray(p.media)?p.media:[]).filter(function(m){return m&&typeof m.url==='string'&&/^https:\/\//.test(m.url);}).slice(0,2).forEach(function(m){box.appendChild(el(m.type&&m.type.indexOf('video')===0?'video':'img',{src:m.url,controls:m.type&&m.type.indexOf('video')===0?'controls':null,alt:'Post media',loading:'lazy',style:'width:100%;max-height:360px;object-fit:contain;border-radius:10px;margin-top:8px'}));});if(Array.isArray(p.hashtags)&&p.hashtags.length)box.appendChild(el('div',{class:'u',text:p.hashtags.map(function(t){return '#'+t;}).join(' '),style:'margin-top:8px'}));return box;}
+
+  function profilePostPreview(p){
+    var who=(p.author&&(p.author.display_name||p.author.username))||'Creator';
+    var box=el('article',{class:'card'});
+    box.appendChild(el('div',{class:'u',text:'@'+(p.author&&p.author.username||'creator')+' · '+CHL.ago(p.created_at)}));
+    box.appendChild(el('div',{style:'white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px',text:p.caption||''}));
+    (Array.isArray(p.media)?p.media:[]).filter(function(m){return m&&typeof m.url==='string'&&/^https:\/\//.test(m.url);}).slice(0,2).forEach(function(m){
+      box.appendChild(el(m.type&&m.type.indexOf('video')===0?'video':'img',{src:m.url,controls:m.type&&m.type.indexOf('video')===0?'controls':null,alt:'Post media',loading:'lazy',style:'width:100%;max-height:360px;object-fit:contain;border-radius:10px;margin-top:8px'}));
+    });
+    if(Array.isArray(p.hashtags)&&p.hashtags.length)box.appendChild(el('div',{class:'u',text:p.hashtags.map(function(t){return '#'+t;}).join(' '),style:'margin-top:8px'}));
+    return box;
+  }
 
   CHL.renderOwnProfileRef = null; // own-profile handler lives in pages-wallet; delegate
   function renderOwnProfile(o){ if (CHL.ownProfile) CHL.ownProfile(o); }
