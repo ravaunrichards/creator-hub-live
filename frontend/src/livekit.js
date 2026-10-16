@@ -1070,41 +1070,19 @@
   /*
    * Convenience participant handlers.
    */
-  CHL.handleParticipantConnected =
-    function (participant) {
-      try {
-        var identity =
-          participant &&
-          participant.identity
-            ? participant.identity
-            : 'viewer';
+  CHL.handleParticipantConnected = function (participant) {
+    try {
+      var publicName = String(participant && participant.name || '').trim() || 'Account name unavailable';
+      if (CHL.toast) CHL.toast(publicName + ' joined.');
+    } catch (_) {}
+  };
 
-        if (CHL.toast) {
-          CHL.toast(
-            'Participant joined: ' +
-            identity
-          );
-        }
-      } catch (_) {}
-    };
-
-  CHL.handleParticipantDisconnected =
-    function (participant) {
-      try {
-        var identity =
-          participant &&
-          participant.identity
-            ? participant.identity
-            : 'viewer';
-
-        if (CHL.toast) {
-          CHL.toast(
-            'Participant left: ' +
-            identity
-          );
-        }
-      } catch (_) {}
-    };
+  CHL.handleParticipantDisconnected = function (participant) {
+    try {
+      var publicName = String(participant && participant.name || '').trim() || 'Account name unavailable';
+      if (CHL.toast) CHL.toast(publicName + ' exited.');
+    } catch (_) {}
+  };
 
   CHL.handleActiveSpeaker =
     function (speakers) {

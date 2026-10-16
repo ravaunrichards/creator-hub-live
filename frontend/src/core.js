@@ -527,51 +527,59 @@
      AUTHENTICATED API REQUESTS
      ============================================================ */
 
-  CHL.authenticatedApiRequest =
-    async function (
-      path,
-      options
-    ) {
-      var token =
-        await CHL.getAccessToken();
+  var sessionRefreshInFlight = null;
 
-      if (!token) {
-        var e =
-          new Error(
-            'Please sign in to continue.'
-          );
+  CHL.refreshAccessToken = async function () {
+    if (!sb || !sb.auth || typeof sb.auth.refreshSession !== 'function') return null;
+    if (!sessionRefreshInFlight) {
+      sessionRefreshInFlight = (async function () {
+        try {
+          var refreshed = await sb.auth.refreshSession();
+          if (refreshed && refreshed.error) throw refreshed.error;
+          return refreshed && refreshed.data && refreshed.data.session
+            ? refreshed.data.session.access_token || null
+            : null;
+        } catch (error) {
+          console.warn('Supabase session refresh failed; a fresh sign-in may be required.', error && error.message || error);
+          return null;
+        } finally {
+          sessionRefreshInFlight = null;
+        }
+      })();
+    }
+    return sessionRefreshInFlight;
+  };
 
-        e.code =
-          'AUTH_REQUIRED';
+  CHL.authenticatedApiRequest = async function (path, options) {
+    var opts = Object.assign({}, options || {});
+    var requestHeaders = Object.assign({}, opts.headers || {});
+    var token = await CHL.getAccessToken();
 
-        e.status =
-          401;
+    // A missing token gets one refresh attempt. Never weaken backend auth.
+    if (!token) token = await CHL.refreshAccessToken();
+    if (!token) {
+      var missing = new Error('Your session has expired. Please sign in again.');
+      missing.code = 'AUTH_REQUIRED';
+      missing.status = 401;
+      throw missing;
+    }
 
-        throw e;
-      }
-
-      var opts =
-        Object.assign(
-          {},
-          options || {}
-        );
-
-      opts.headers =
-        Object.assign(
-          {},
-          opts.headers || {},
-          {
-            Authorization:
-              'Bearer ' +
-              token
-          }
-        );
-
-      return CHL.apiRequest(
-        path,
-        opts
-      );
-    };
+    requestHeaders.Authorization = 'Bearer ' + token;
+    opts.headers = requestHeaders;
+    try {
+      return await CHL.apiRequest(path, opts);
+    } catch (error) {
+      // The backend checks bearer authentication before any mutation. Retry
+      // exactly once after a 401; do not loop or retry other status codes.
+      if (!error || Number(error.status) !== 401) throw error;
+      var refreshedToken = await CHL.refreshAccessToken();
+      if (!refreshedToken || refreshedToken === token) throw error;
+      var retryOptions = Object.assign({}, opts, {
+        headers: Object.assign({}, requestHeaders, { Authorization: 'Bearer ' + refreshedToken })
+      });
+      return CHL.apiRequest(path, retryOptions);
+    }
+  };
 
   /* ============================================================
      PUBLIC BACKEND CONFIG

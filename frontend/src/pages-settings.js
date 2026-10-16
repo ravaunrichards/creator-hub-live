@@ -2,6 +2,8 @@
 (function(){
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
+  var lastLoadedSettings = null;
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed'}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
   var SNAV=[
     {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/notifications',label:'Notifications'},
@@ -11,13 +13,24 @@
   function head(o,title,sub){ o.appendChild(ui.pageHead(title,sub)); if(!CHL.configured){ o.appendChild(ui.setupNotice()); return true;} o.appendChild(snav()); return false; }
   async function loadSettings(){
     if(!CHL.user) throw new Error('Authentication required.');
-    var r=await sb.from('user_settings').select('privacy,notifications,live').eq('user_id',CHL.user.id).maybeSingle();
+    var r=await sb.from('user_settings').select('privacy,notifications,live,appearance').eq('user_id',CHL.user.id).maybeSingle();
     if(r.error) throw r.error;
-    return r.data || {privacy:{account:'public',messages:'everyone',comments:'everyone'},notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true},live:{audience:'public',guest_permissions:'allowed'}};
+    var stored = r.data || {};
+    lastLoadedSettings = { privacy:Object.assign({},SETTING_DEFAULTS.privacy,stored.privacy||{}), notifications:Object.assign({},SETTING_DEFAULTS.notifications,stored.notifications||{}), live:Object.assign({},SETTING_DEFAULTS.live,stored.live||{}), appearance:Object.assign({},SETTING_DEFAULTS.appearance,stored.appearance||{}) };
+    return lastLoadedSettings;
   }
   async function saveSettings(value){
-    var r=await sb.from('user_settings').upsert({user_id:CHL.user.id,privacy:value.privacy,notifications:value.notifications,live:value.live,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    var base = lastLoadedSettings || SETTING_DEFAULTS;
+    // The floating appearance panel can change after this page loaded. Use its
+    // latest state when saving an unrelated settings category to avoid racing
+    // and overwriting newer layout/color/font choices with stale JSON.
+    var currentAppearance = window.CHLStyleSystem && typeof window.CHLStyleSystem.get === 'function'
+      ? window.CHLStyleSystem.get()
+      : base.appearance;
+    var payload = {user_id:CHL.user.id,privacy:value.privacy||base.privacy,notifications:value.notifications||base.notifications,live:value.live||base.live,appearance:value.appearance||currentAppearance||base.appearance,updated_at:new Date().toISOString()};
+    var r=await sb.from('user_settings').upsert(payload,{onConflict:'user_id'});
     if(r.error) throw r.error;
+    lastLoadedSettings = {privacy:payload.privacy,notifications:payload.notifications,live:payload.live,appearance:payload.appearance};
     CHL.toast('Settings saved');
   }
   function check(name,label,checked){ return el('label',{class:'row',style:'gap:8px;margin:10px 0'},[el('input',{type:'checkbox',name:name,checked:!!checked}),el('span',{text:label})]); }
