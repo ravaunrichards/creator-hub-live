@@ -75,9 +75,76 @@
     outlet.appendChild(el('div', { class: 'note', text: 'PayPal is the only wallet recharge provider. The browser never supplies the payable amount or credits coins directly.' }));
     await renderCurrencyConversion(outlet, stat);
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
+    await renderGiftEarnings(outlet);
     renderDiamondPayouts(outlet);
     handlePaypalReturn();
   });
+
+  async function renderGiftEarnings(outlet) {
+    var panel = el('section', { class: 'card', style: 'max-width:900px;margin-top:18px' });
+    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Gift earnings' }));
+    panel.appendChild(el('p', { class: 'sub', text: 'Your confirmed gift history includes gifts received as a LIVE host or accepted stage guest. The existing gift catalogue controls diamond credits.' }));
+    var note = el('div', { class: 'note', 'aria-live': 'polite', text: 'Loading gift earnings…' });
+    panel.appendChild(note);
+    var stats = el('div', { class: 'grid stat', style: 'margin:12px 0' });
+    var recent = el('div', { style: 'display:grid;gap:8px;margin-top:10px' });
+    panel.appendChild(stats); panel.appendChild(recent); outlet.appendChild(panel);
+
+    try {
+      if (!CHL.sb || typeof CHL.sb.rpc !== 'function') throw new Error('Secure gift-earnings lookup is unavailable.');
+      var response = await CHL.sb.rpc('creator_gift_earnings_summary', { p_limit: 20 });
+      if (response && response.error) throw response.error;
+      var data = response && response.data || {};
+      stats.appendChild(ui.statCard(formatBalance(data.diamondsEarned), 'Diamonds credited'));
+      stats.appendChild(ui.statCard(formatBalance(data.hostDiamondsEarned), 'Earned as host'));
+      stats.appendChild(ui.statCard(formatBalance(data.guestDiamondsEarned), 'Earned as guest'));
+      stats.appendChild(ui.statCard(formatBalance(data.creatorShareCoinUnits), 'Creator share · coin units'));
+      stats.appendChild(ui.statCard(formatBalance(data.totalGiftsReceived), 'Gifts received'));
+      note.textContent = String(data.financialNote || 'Coin shares are virtual accounting units; diamonds are not cash and do not convert 1:1 to coins.');
+      var rows = Array.isArray(data.recent) ? data.recent : [];
+      if (!rows.length) recent.appendChild(el('div', { class: 'note', text: 'No gift earnings have been recorded for this account yet.' }));
+      rows.forEach(function (item) {
+        var role = String(item.recipient_role || 'creator').toUpperCase();
+        var card = el('div', { class: 'card', style: 'padding:10px 12px' });
+        card.appendChild(el('div', { style: 'font-weight:750', text: String(item.gift_name || 'Gift') + ' · ' + role }));
+        card.appendChild(el('div', { class: 'sub', style: 'margin-top:4px', text: 'Gift cost: ' + formatBalance(item.coin_cost) + ' coins · Your recorded share: ' + formatBalance(item.creator_share_coins) + ' virtual coin units · Diamond credit: ' + formatBalance(item.creator_diamonds) }));
+        if (item.created_at) card.appendChild(el('div', { class: 'sub', style: 'margin-top:3px;font-size:12px', text: new Date(item.created_at).toLocaleString() }));
+        recent.appendChild(card);
+      });
+    } catch (error) {
+      note.textContent = error && error.message ? error.message : 'Gift earnings are temporarily unavailable. Existing wallet balances and PayPal payout records were not changed.';
+      recent.appendChild(el('div', { class: 'note', text: 'No new earnings values are being estimated or invented.' }));
+    }
+
+    // Admin overview is separately permission-checked by the database function.
+    try {
+      if (!CHL.sb || !CHL.user) return;
+      var profileResult = await CHL.sb.from('profiles').select('is_admin').eq('id', CHL.user.id).maybeSingle();
+      if (!profileResult || profileResult.error || !profileResult.data || profileResult.data.is_admin !== true) return;
+      var adminResult = await CHL.sb.rpc('admin_gift_commission_summary', { p_limit: 20 });
+      if (adminResult && adminResult.error) throw adminResult.error;
+      var adminData = adminResult && adminResult.data || {};
+      var commission = adminData.giftCommission || {};
+      var adminPanel = el('section', { class: 'card', style: 'max-width:900px;margin-top:14px' });
+      adminPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'CHL platform gift commissions' }));
+      adminPanel.appendChild(el('p', { class: 'sub', text: 'This is recorded virtual coin-unit commission, not fiat revenue. Real PayPal receipts, provider fees, tax, refunds, chargebacks and operating costs are separate.' }));
+      var adminStats = el('div', { class: 'grid stat', style: 'margin:12px 0' });
+      adminStats.appendChild(ui.statCard(formatBalance(commission.platformCommissionCoins), 'Platform commission · coin units'));
+      adminStats.appendChild(ui.statCard(formatBalance(commission.coinsSpent), 'Gift coins spent'));
+      adminStats.appendChild(ui.statCard(formatBalance(commission.creatorDiamondsCredited), 'Creator diamonds credited'));
+      adminStats.appendChild(ui.statCard(formatBalance(commission.giftCount), 'Gift transactions'));
+      adminPanel.appendChild(adminStats);
+      if (Array.isArray(adminData.byRecipientRole) && adminData.byRecipientRole.length) {
+        adminData.byRecipientRole.forEach(function (role) {
+          adminPanel.appendChild(el('div', { class: 'sub', style: 'margin-top:5px', text: String(role.recipient_role || 'unknown').toUpperCase() + ': ' + formatBalance(role.gift_count) + ' gifts · ' + formatBalance(role.platform_commission_coins) + ' commission coin units · ' + formatBalance(role.creator_diamonds_credited) + ' creator diamonds' }));
+        });
+      }
+      adminPanel.appendChild(el('div', { class: 'note', style: 'margin-top:8px', text: String(adminData.financialNote || 'Virtual coin ledger only; not a cash revenue statement.') }));
+      outlet.appendChild(adminPanel);
+    } catch (error) {
+      console.warn('[Creator Hub wallet] Admin commission overview unavailable:', error && error.message || error);
+    }
+  }
 
   function formatBalance(value) {
     var amount = Number(value);
