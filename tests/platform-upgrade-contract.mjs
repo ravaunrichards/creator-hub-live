@@ -16,6 +16,13 @@ const auth = read('frontend/src/pages-auth.js');
 const migration = read('database/migrations/0028_live_modes_appearance.sql');
 const env = read('backend/.env.example');
 const walletUi = read('frontend/src/pages-wallet.js');
+const settingsPage = read('frontend/src/pages-settings.js');
+const creatorPage = read('frontend/src/pages-creator.js');
+const extraPages = read('frontend/src/pages-extra.js');
+const androidWallet = read('android/app/src/main/assets/web/src/pages-wallet.js');
+const androidSettings = read('android/app/src/main/assets/web/src/pages-settings.js');
+const androidCreator = read('android/app/src/main/assets/web/src/pages-creator.js');
+const androidExtra = read('android/app/src/main/assets/web/src/pages-extra.js');
 
 assert(server.includes('media_mode: mediaMode'), 'Room creation must persist its selected media mode.');
 assert(server.includes('audience,') && server.includes('assertLiveRoomAccess'), 'LIVE audience must be server-enforced.');
@@ -23,7 +30,7 @@ assert(server.includes('.eq("audience", "public")'), 'The public LIVE discovery 
 assert(server.includes('handleTeamsRoute') && server.includes('pathname === "/api/teams"'), 'The existing Teams API module must be wired into the server router.');
 assert(server.includes('pathname === "/api/payments/coin-quote"'), 'A server-authoritative custom coin quote route is required.');
 assert(server.includes('coinPriceForAmount(client, coins)'), 'Checkout must recalculate the custom amount on the server.');
-assert(server.includes('paypal=success#/wallet') && server.includes('paypal=cancelled#/wallet') && walletUi.includes("q.get('paypal') !== 'success'"), 'PayPal redirects must match the wallet SPA callback contract.');
+assert(server.includes('paypal=success#/wallet') && server.includes('paypal=cancelled#/wallet') && walletUi.includes("returnState !== 'success'") && walletUi.includes("returnState === 'cancelled'"), 'PayPal redirects must match the wallet SPA callback contract.');
 assert(server.includes('SCREEN_LIVE_HAS_NO_GUEST_STAGE'), 'Screen-only LIVE must not grant guest publishing.');
 assert(token.includes("mode === 'audio' ? [2]"), 'Audio-only token must publish microphone only.');
 assert(token.includes("mode === 'screen' ? (isHost ? [3, 4] : [])"), 'Screen token must restrict screen publishing to the host.');
@@ -42,6 +49,22 @@ assert(auth.includes('STEP 1 OF 2') && auth.includes("'STEP ' + step + ' OF 2'")
 assert(migration.includes("'requested','invited','accepted','rejected','removed','left'"), 'Forward migration must include the requested guest state.');
 assert(migration.includes('add column if not exists media_mode'), 'Forward migration must add the LIVE mode column.');
 assert(migration.includes('add column if not exists appearance'), 'Forward migration must add account appearance preferences.');
+// Wallet, profile, messages and notification regression checks. These remain
+// against the existing app modules so the website and Android WebView stay in sync.
+assert(server.includes('const approvalLink = Array.isArray(order.links)') && server.includes('approveUrl: approvalLink.href'), 'PayPal order creation must return the approval URL needed to continue checkout.');
+assert(server.includes('savedApproval.href') && server.includes('PAYMENT_APPROVAL_LINK_MISSING'), 'Idempotent order retries must recover the saved PayPal approval URL safely.');
+assert(walletUi.includes("'/api/payments/coin-quote?coins='") && walletUi.includes('Continue to PayPal') && walletUi.includes('location.href = d.approveUrl'), 'Wallet recharge must use a server quote and redirect to the PayPal approval URL.');
+assert(!walletUi.includes('var PACKAGES') && walletUi.includes("min: '1', max: '50000'"), 'Wallet recharge should offer one custom coin quantity input, not a fixed package grid.');
+assert(settingsPage.includes("'/api/payments/paypal/info',{method:'PUT'") && settingsPage.includes('Save PayPal email'), 'Payment settings must save the PayPal payout email through the backend.');
+assert(creatorPage.includes("status:privateProfile?'pending':'accepted'") && creatorPage.includes("'/api/messages/conversations'"), 'Profile actions must create real follow/request and conversation actions.');
+assert(!extraPages.includes('conversation_members') && extraPages.includes("'/api/messages/conversations/'+encodeURIComponent(id)+'/messages'"), 'Messaging UI must use authenticated message endpoints instead of direct unrestricted writes.');
+assert(server.includes('pathname === "/api/messages/conversations" && method === "GET"') && server.includes('MESSAGING_NOT_ALLOWED') && server.includes('MESSAGING_BLOCKED'), 'Messaging API must validate identity, privacy, and blocks.');
+assert(extraPages.includes("select('id,type,actor_id,data,read,created_at')") && !extraPages.includes("select('id,type,body,created_at')"), 'Notifications must use the actual data/read schema rather than a nonexistent body column.');
+assert(extraPages.includes('Mark all as read') && extraPages.includes('update({read:true})'), 'Notifications must support marking read state.');
+assert(!creatorPage.includes('comment_count') && !creatorPage.includes('periodComments') && creatorPage.includes('Message bodies and LIVE chat comments are not used as analytics data.'), 'Creator analytics must not aggregate comments into analytics.');
+assert(creatorPage.includes('Number(wallet.diamondBalance) : 0'), 'Missing current diamond balance should display zero rather than unavailable.');
+assert(walletUi === androidWallet && settingsPage === androidSettings && creatorPage === androidCreator && extraPages === androidExtra, 'All changed website pages must be mirrored byte-for-byte to the Android WebView.');
+
 const privateCredentialLines = env.split(/\r?\n/).filter(line => /^(SUPABASE_SERVICE_ROLE_KEY|LIVEKIT_API_SECRET|PAYPAL_CLIENT_SECRET)=/.test(line));
 assert(privateCredentialLines.length === 3 && privateCredentialLines.every(line => line.split('=', 2)[1].startsWith('YOUR_')), 'Private credential template values must be obvious placeholders.');
 console.log('PASS — LIVE modes, server-side permissions, and media verification');
@@ -54,3 +77,7 @@ console.log('PASS — limited session refresh retry');
 console.log('PASS — two-step signup preserves Creator Hub auth metadata');
 console.log('PASS — forward migration for guest requests, LIVE modes, and account appearance');
 console.log('PASS — example env file contains placeholders, not credentials');
+console.log('PASS — PayPal approval URL, idempotent retry, and custom amount recharge');
+console.log('PASS — editable PayPal payout email and website/Android parity');
+console.log('PASS — authenticated messaging, profile requests, and notification read controls');
+console.log('PASS — creator analytics excludes comment data and defaults diamonds to zero');

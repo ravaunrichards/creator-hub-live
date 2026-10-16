@@ -6,7 +6,7 @@ const lk = read('../frontend/src/livekit.js');
 const backend = read('../backend/src/server.js');
 const token = read('../backend/src/livekit-token.js');
 const css = read('../frontend/styles/app.css');
-const migration = read('../database/migrations/0013_live_guest_requests_and_stage_controls.sql');
+const migration = read('../database/migrations/0028_live_modes_appearance.sql');
 assert.match(lk, /CHL\.switchCamera\s*=\s*async function/);
 assert.match(lk, /CHL\.setCameraZoom\s*=\s*async function/);
 assert.match(lk, /ParticipantPermissionsChanged/);
