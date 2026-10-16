@@ -89,6 +89,7 @@ export async function createLiveKitToken({
   userId,
   roomName,
   canPublish = false,
+  participantName = null,
   ttlSeconds = 3600
 }) {
   const apiKey = process.env.LIVEKIT_API_KEY;
@@ -118,7 +119,7 @@ export async function createLiveKitToken({
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: String(userId),
-    name: canPublish ? 'Host' : 'Viewer',
+    name: String(participantName || (canPublish ? 'Creator' : 'Viewer')).trim().slice(0, 128),
     ttl: boundedTtlSeconds
   });
 
