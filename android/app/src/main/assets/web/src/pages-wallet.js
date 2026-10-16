@@ -9,10 +9,34 @@
     stat.appendChild(ui.statCard('…', 'Coins')); stat.appendChild(ui.statCard('…', 'Diamonds')); stat.appendChild(ui.statCard('…', 'Lifetime gifts')); outlet.appendChild(stat);
     try {
       var w = await CHL.authenticatedApiRequest('/api/wallet');
-      stat.innerHTML = ''; stat.appendChild(ui.statCard(CHL.fmt(w.coinBalance), 'Coins')); stat.appendChild(ui.statCard(CHL.fmt(w.diamondBalance), 'Diamonds')); stat.appendChild(ui.statCard(CHL.fmt(w.lifetimeGiftsSent), 'Lifetime gifts')); ui.refreshCoins();
+      stat.innerHTML = ''; stat.appendChild(ui.statCard(formatBalance(w.coinBalance), 'Coins')); stat.appendChild(ui.statCard(formatBalance(w.diamondBalance), 'Diamonds')); stat.appendChild(ui.statCard(formatBalance(w.lifetimeGiftsSent), 'Lifetime gifts')); ui.refreshCoins();
     } catch (e) { outlet.appendChild(el('div', { class: 'note', text: e.code === 'BACKEND_UNAVAILABLE' ? 'WALLET_UNAVAILABLE: the wallet backend is unreachable.' : (e.message || 'Wallet unavailable.') })); }
 
     outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Recharge wallet' }));
+    var packagePanel = el('section', { class: 'card', style: 'max-width:900px;margin-top:8px' });
+    packagePanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Available coin packages' }));
+    packagePanel.appendChild(el('p', { class: 'sub', text: 'Your saved packages and prices are loaded from the active wallet catalogue. Checkout remains PayPal-only.' }));
+    var packageGrid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px' });
+    packageGrid.appendChild(el('div', { class: 'note', text: 'Loading your coin packages…' }));
+    packagePanel.appendChild(packageGrid); outlet.appendChild(packagePanel);
+    try {
+      var packageData = await CHL.authenticatedApiRequest('/api/wallet/packages');
+      var packages = packageData && Array.isArray(packageData.packages) ? packageData.packages : [];
+      packageGrid.innerHTML = '';
+      if (!packages.length) packageGrid.appendChild(el('div', { class: 'note', text: 'No active coin packages are currently available. Your custom coin amount remains available below.' }));
+      packages.forEach(function(pkg) {
+        var coins = Number(pkg.coins), price = Number(pkg.priceUsd);
+        if (!Number.isSafeInteger(coins) || coins <= 0 || !Number.isFinite(price) || price <= 0) return;
+        var card = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
+        card.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(coins) + ' coins' }));
+        card.appendChild(el('div', { style: 'font-size:17px;font-weight:800', text: formatMoney(price, pkg.currency || 'USD') }));
+        var buyPackage = el('button', { class: 'btn primary block', type: 'button', text: 'Buy package', onclick: function(){ buy({coins:coins}); } });
+        card.appendChild(buyPackage); packageGrid.appendChild(card);
+      });
+      if (!packageGrid.children.length) packageGrid.appendChild(el('div', { class: 'note', text: 'The package catalogue did not return any valid prices. No checkout was started.' }));
+    } catch (packageError) {
+      packageGrid.innerHTML = ''; packageGrid.appendChild(el('div', { class: 'note', text: packageError.message || 'Your packages could not be loaded. You can still request a server-priced custom amount below.' }));
+    }
     var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:8px' });
     customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your coin amount' }));
     customPanel.appendChild(el('p', { class: 'sub', text: 'Enter any whole-number amount from 1 to 50,000 coins. The secure server calculates the price and PayPal is the checkout provider.' }));
@@ -34,7 +58,9 @@
       try {
         var quote = await CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(value));
         if (seq !== quoteSequence || Number(customInput.value) !== value) return;
-        currentQuote = quote; customPriceValue.textContent = quote.currency + ' $' + Number(quote.amountUsd).toFixed(2);
+        var quotePrice = Number(quote && quote.amountUsd);
+        if (!Number.isFinite(quotePrice) || quotePrice <= 0) throw new Error('The wallet service returned an invalid price. No checkout was started.');
+        currentQuote = quote; customPriceValue.textContent = formatMoney(quotePrice, quote.currency || 'USD');
         customNote.textContent = quote.custom ? 'The server-priced custom amount will be checked again during PayPal checkout.' : 'This amount uses its active server-managed coin price.';
         customBuy.disabled = false;
       } catch (error) {
@@ -47,10 +73,69 @@
     customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value }); });
 
     outlet.appendChild(el('div', { class: 'note', text: 'PayPal is the only wallet recharge provider. The browser never supplies the payable amount or credits coins directly.' }));
+    await renderCurrencyConversion(outlet, stat);
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
     renderDiamondPayouts(outlet);
     handlePaypalReturn();
   });
+
+  function formatBalance(value) {
+    var amount = Number(value);
+    return CHL.fmt(Number.isFinite(amount) && amount >= 0 ? amount : 0);
+  }
+  function formatMoney(value, currency) {
+    var amount = Number(value);
+    return Number.isFinite(amount) && amount > 0 ? String(currency || 'USD') + ' $' + amount.toFixed(2) : 'Price unavailable';
+  }
+
+  async function renderCurrencyConversion(outlet, stat) {
+    var panel = el('section', { class: 'card', style: 'max-width:720px;margin-top:18px' });
+    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Convert coins ↔ diamonds' }));
+    panel.appendChild(el('p', { class: 'sub', text: 'Conversions change both balances together and are recorded in your wallet ledger.' }));
+    var notice = el('div', { class: 'note', text: 'Checking the platform conversion rate…', 'aria-live': 'polite' }); panel.appendChild(notice);
+    var form = el('form', { style: 'display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px' });
+    var directionLabel = el('label', { class: 'field' }, [el('span', { text: 'Conversion direction' })]);
+    var direction = el('select', { class: 'input', name: 'direction' });
+    [['coins_to_diamonds','Coins → Diamonds'],['diamonds_to_coins','Diamonds → Coins']].forEach(function(item){direction.appendChild(el('option',{value:item[0]},item[1]));});
+    directionLabel.appendChild(direction); form.appendChild(directionLabel);
+    var amountLabel = el('label', { class: 'field' }, [el('span', { text: 'Amount to convert' })]);
+    var amount = el('input', { class: 'input', type: 'number', name: 'amount', min: '1', max: '1000000000', step: '1', required: 'required', placeholder: 'Whole-number amount' });
+    amountLabel.appendChild(amount); form.appendChild(amountLabel);
+    var submit = el('button', { class: 'btn primary', type: 'submit', text: 'Convert balance' }); submit.disabled = true; form.appendChild(submit); panel.appendChild(form); outlet.appendChild(panel);
+    var config;
+    try { config = await CHL.authenticatedApiRequest('/api/wallet/conversion-config'); }
+    catch (error) { notice.textContent = error.message || 'The conversion settings could not be loaded.'; return; }
+    if (!config || config.enabled !== true || !Number.isSafeInteger(Number(config.coinsPerDiamond)) || Number(config.coinsPerDiamond) < 1) {
+      notice.textContent = 'Conversions are safely disabled until the platform exchange rate is configured. Your balances have not been changed.';
+      return;
+    }
+    var rate = Number(config.coinsPerDiamond); submit.disabled = false;
+    function showDirection() {
+      var label = amountLabel.querySelector('span');
+      label.textContent = direction.value === 'coins_to_diamonds' ? 'Coins to convert (multiples of ' + rate.toLocaleString('en-US') + ')' : 'Diamonds to convert';
+      notice.textContent = direction.value === 'coins_to_diamonds'
+        ? rate.toLocaleString('en-US') + ' coins = 1 diamond. Coins must be an exact multiple of the configured rate.'
+        : '1 diamond = ' + rate.toLocaleString('en-US') + ' coins. The same platform rate applies in reverse.';
+    }
+    direction.addEventListener('change', showDirection); showDirection();
+    form.addEventListener('submit', async function(event){
+      event.preventDefault(); var value = Number(amount.value);
+      if (!Number.isSafeInteger(value) || value < 1 || value > 1000000000) { CHL.toast('Enter a whole number from 1 to 1,000,000,000.'); return; }
+      if (direction.value === 'coins_to_diamonds' && value % rate !== 0) { CHL.toast('Coin amounts must be a multiple of ' + rate.toLocaleString('en-US') + '.'); return; }
+      submit.disabled = true; submit.textContent = 'Converting…';
+      try {
+        var result = await CHL.authenticatedApiRequest('/api/wallet/convert', { method:'POST', headers:{'Idempotency-Key':'wallet-convert:' + CHL.uuid()}, body:{direction:direction.value,amount:value} });
+        var conversion = result && result.conversion || {};
+        notice.textContent = 'Conversion complete. New balance: ' + formatBalance(conversion.coinBalance) + ' coins · ' + formatBalance(conversion.diamondBalance) + ' diamonds.';
+        amount.value = ''; await refreshWallet(); CHL.toast('Wallet conversion completed.');
+      } catch (error) { notice.textContent = error.message || 'Conversion failed. No balance change was confirmed.'; CHL.toast(notice.textContent); }
+      finally { submit.disabled = false; submit.textContent = 'Convert balance'; }
+    });
+    async function refreshWallet() {
+      try { var wallet = await CHL.authenticatedApiRequest('/api/wallet'); stat.innerHTML=''; stat.appendChild(ui.statCard(formatBalance(wallet.coinBalance),'Coins')); stat.appendChild(ui.statCard(formatBalance(wallet.diamondBalance),'Diamonds')); stat.appendChild(ui.statCard(formatBalance(wallet.lifetimeGiftsSent),'Lifetime gifts')); ui.refreshCoins(); }
+      catch (_) {}
+    }
+  }
 
   async function renderDiamondPayouts(outlet) {
     var panel = el('section', { class: 'card', style: 'margin-top:18px' });
