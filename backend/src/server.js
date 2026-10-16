@@ -329,6 +329,13 @@ async function profileFor(user) {
   return data || { id: user.id, is_admin: false };
 }
 
+async function requireAdminUser(req) {
+  const user = await requireSupabaseUser(req);
+  const profile = await profileFor(user);
+  if (!profile.is_admin) throw fail(403, "ADMIN_REQUIRED", "Administrator access is required.");
+  return { ...user, is_admin: true };
+}
+
 // ============================================================================
 // LIVE helpers
 // ============================================================================
@@ -1279,6 +1286,92 @@ const server = http.createServer(async (req, res) => {
         isVerified: data.is_verified,
         updatedAt: data.updated_at,
       });
+    }
+
+    // Creator diamond payout requests. Diamond reservation and review are atomic DB RPCs.
+    if (pathname === "/api/payouts" && method === "GET") {
+      const user = await requireSupabaseUser(req);
+      const client = db();
+      const limit = clampLimit(url.searchParams.get("limit"), 20, 100);
+      const { data, error } = await client.from("diamond_payout_requests")
+        .select("id,diamond_amount,status,paypal_email,fiat_amount,fiat_currency,admin_note,payment_reference,created_at,updated_at,paid_at,rejected_at")
+        .eq("user_id", user.id).order("created_at", { ascending: false }).limit(limit);
+      if (error) throw error;
+      return ok(res, { requests: data || [] });
+    }
+
+    if (pathname === "/api/payouts" && method === "POST") {
+      const user = await requireSupabaseUser(req);
+      const idem = requireIdem(req);
+      const body = await readJson(req);
+      const amount = Number(body.diamondAmount);
+      if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 1000000000) {
+        throw fail(400, "INVALID_DIAMOND_AMOUNT", "Enter a whole-number diamond amount greater than zero.");
+      }
+      const client = db();
+      const { data: payoutInfo, error: infoError } = await client.from("paypal_payout_info")
+        .select("paypal_email").eq("user_id", user.id).maybeSingle();
+      if (infoError) throw fail(503, "PAYOUT_SETUP_UNAVAILABLE", "PayPal payout settings are unavailable. Please try again later.");
+      const email = String(payoutInfo?.paypal_email || "").trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw fail(400, "PAYPAL_PAYOUT_NOT_CONFIGURED", "Save a valid PayPal email in Payment Settings before requesting a payout.");
+      }
+      const { data, error } = await client.rpc("request_diamond_payout", {
+        p_user_id: user.id,
+        p_diamond_amount: amount,
+        p_paypal_email: email,
+        p_idempotency_key: idem,
+      });
+      if (error) {
+        if (/insufficient diamonds/i.test(error.message || "")) throw fail(400, "INSUFFICIENT_DIAMONDS", "You do not have enough available diamonds for this request.");
+        throw error;
+      }
+      return send(res, 201, { ok: true, request: data, message: "Payout request submitted. The fiat amount is not calculated until an authorized administrator confirms it." });
+    }
+
+    if (pathname === "/api/admin/payouts" && method === "GET") {
+      await requireAdminUser(req);
+      const client = db();
+      const status = String(url.searchParams.get("status") || "").trim();
+      const limit = clampLimit(url.searchParams.get("limit"), 50, 100);
+      let query = client.from("diamond_payout_requests")
+        .select("id,user_id,diamond_amount,status,paypal_email,fiat_amount,fiat_currency,admin_note,payment_reference,created_at,updated_at,paid_at,rejected_at")
+        .order("created_at", { ascending: false }).limit(limit);
+      if (status && ["pending", "approved", "rejected", "paid"].includes(status)) query = query.eq("status", status);
+      const { data, error } = await query;
+      if (error) throw error;
+      return ok(res, { requests: data || [] });
+    }
+
+    const adminPayoutMatch = pathname.match(/^\/api\/admin\/payouts\/([0-9a-f-]{36})$/i);
+    if (adminPayoutMatch && method === "PATCH") {
+      const admin = await requireAdminUser(req);
+      const body = await readJson(req);
+      const action = String(body.action || "").trim().toLowerCase();
+      if (!["approve", "reject", "mark_paid"].includes(action)) throw fail(400, "INVALID_PAYOUT_ACTION", "Action must be approve, reject, or mark_paid.");
+      const fiatAmount = body.fiatAmount == null || body.fiatAmount === "" ? null : Number(body.fiatAmount);
+      if (action === "approve" && (!Number.isFinite(fiatAmount) || fiatAmount <= 0 || Math.round(fiatAmount * 100) !== fiatAmount * 100)) {
+        throw fail(400, "FIAT_AMOUNT_REQUIRED", "Enter the exact administrator-confirmed fiat amount, to two decimal places.");
+      }
+      const currency = String(body.fiatCurrency || "").trim().toUpperCase();
+      if (action === "approve" && !/^[A-Z]{3}$/.test(currency)) throw fail(400, "FIAT_CURRENCY_REQUIRED", "Enter a valid three-letter fiat currency code.");
+      const paymentReference = String(body.paymentReference || "").trim();
+      if (action === "mark_paid" && (paymentReference.length < 3 || paymentReference.length > 200)) throw fail(400, "PAYMENT_REFERENCE_REQUIRED", "Enter the PayPal transaction/reference ID after sending the payout.");
+      const client = db();
+      const { data, error } = await client.rpc("admin_review_diamond_payout", {
+        p_request_id: adminPayoutMatch[1], p_admin_id: admin.id, p_action: action,
+        p_fiat_amount: action === "approve" ? fiatAmount : null,
+        p_fiat_currency: action === "approve" ? currency : null,
+        p_admin_note: String(body.adminNote || "").trim().slice(0, 1000) || null,
+        p_payment_reference: action === "mark_paid" ? paymentReference : null,
+      });
+      if (error) {
+        const message = error.message || "Payout review failed.";
+        if (/not found/i.test(message)) throw fail(404, "PAYOUT_NOT_FOUND", "Payout request not found.");
+        if (/already|status|transition/i.test(message)) throw fail(409, "PAYOUT_STATE_CONFLICT", message);
+        throw error;
+      }
+      return ok(res, { request: data, message: action === "reject" ? "Request rejected and diamonds refunded by the server ledger." : action === "approve" ? "Fiat amount confirmed. Send the PayPal payout separately, then mark it paid with its PayPal reference." : "Payout marked paid and audit recorded." });
     }
 
     // PayPal Webhook - signature verification + idempotent credit
