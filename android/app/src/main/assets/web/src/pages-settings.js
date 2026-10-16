@@ -3,7 +3,7 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
   var lastLoadedSettings = null;
-  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8,guest_layout_enabled:true,guest_layout_orientation:'horizontal'}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
   var SNAV=[
     {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/blocked',label:'Blocked accounts'},{h:'#/settings/notifications',label:'Notifications'},
@@ -16,7 +16,14 @@
     var r=await sb.from('user_settings').select('privacy,notifications,live,appearance').eq('user_id',CHL.user.id).maybeSingle();
     if(r.error) throw r.error;
     var stored = r.data || {};
-    lastLoadedSettings = { privacy:Object.assign({},SETTING_DEFAULTS.privacy,stored.privacy||{}), notifications:Object.assign({},SETTING_DEFAULTS.notifications,stored.notifications||{}), live:Object.assign({},SETTING_DEFAULTS.live,stored.live||{}), appearance:Object.assign({},SETTING_DEFAULTS.appearance,stored.appearance||{}) };
+    var live = Object.assign({},SETTING_DEFAULTS.live,stored.live||{});
+    var savedLimit = Number(live.max_guests);
+    if (!Number.isSafeInteger(savedLimit) || savedLimit < 1 || savedLimit > 8) {
+      if (savedLimit === 0 && !(stored.live && Object.prototype.hasOwnProperty.call(stored.live,'guest_layout_enabled'))) live.guest_layout_enabled = false;
+      live.max_guests = 8;
+    }
+    live.guest_layout_orientation = live.guest_layout_orientation === 'vertical' ? 'vertical' : 'horizontal';
+    lastLoadedSettings = { privacy:Object.assign({},SETTING_DEFAULTS.privacy,stored.privacy||{}), notifications:Object.assign({},SETTING_DEFAULTS.notifications,stored.notifications||{}), live:live, appearance:Object.assign({},SETTING_DEFAULTS.appearance,stored.appearance||{}) };
     return lastLoadedSettings;
   }
   async function saveSettings(value){
@@ -27,9 +34,14 @@
       ? window.CHLStyleSystem.get()
       : base.appearance;
     var payload = {user_id:CHL.user.id,privacy:value.privacy||base.privacy,notifications:value.notifications||base.notifications,live:value.live||base.live,appearance:value.appearance||currentAppearance||base.appearance,updated_at:new Date().toISOString()};
-    var r=await sb.from('user_settings').upsert(payload,{onConflict:'user_id'});
+    var r=await sb.from('user_settings').upsert(payload,{onConflict:'user_id'}).select('user_id').single();
     if(r.error) throw r.error;
-    if(value.privacy){var profilePrivacy=await sb.from('profiles').update({privacy:payload.privacy}).eq('id',CHL.user.id);if(profilePrivacy.error)throw profilePrivacy.error;}
+    if(!r.data || String(r.data.user_id)!==String(CHL.user.id)) throw new Error('The server did not confirm that your settings were saved. Please retry.');
+    if(value.privacy){
+      var profilePrivacy=await sb.from('profiles').update({privacy:payload.privacy,updated_at:new Date().toISOString()}).eq('id',CHL.user.id).select('id').maybeSingle();
+      if(profilePrivacy.error)throw profilePrivacy.error;
+      if(!profilePrivacy.data)throw new Error('Settings were saved, but the profile privacy update was not confirmed. Reopen Privacy settings and retry.');
+    }
     lastLoadedSettings = {privacy:payload.privacy,notifications:payload.notifications,live:payload.live,appearance:payload.appearance};
     CHL.toast('Settings saved');
   }
@@ -39,7 +51,27 @@
 
   CHL.route('/settings/profile', function(o){ if(head(o,'Profile settings','Customize the public identity people see when they visit your account.')) return; var p=CHL.profile||{}; var f=el('form',{style:'max-width:620px',onsubmit:function(e){e.preventDefault();saveProfile(f);}}); f.appendChild(CHL._field('Display name','display_name','Your public display name')); f.appendChild(CHL._field('Username','username','unique_username')); f.appendChild(labelArea('Bio','bio')); f.appendChild(CHL._field('Profile photo HTTPS URL','avatar_url','https://…')); f.appendChild(CHL._field('Profile cover HTTPS URL','cover_url','https://…')); f.appendChild(el('p',{class:'sub',text:'Use direct HTTPS image URLs you own or are authorized to use. Your username is unique and case-insensitive; unavailable names are rejected by the database.'})); f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save profile')); f.display_name.value=p.display_name||''; f.username.value=p.username||''; if(f.bio) f.bio.value=p.bio||''; f.avatar_url.value=p.avatar_url||''; f.cover_url.value=p.cover_url||''; o.appendChild(f); });
   function labelArea(label,name){ var w=el('label',{class:'field'},[el('span',{text:label})]); w.appendChild(el('textarea',{class:'input',name:name,rows:'3'})); return w; }
-  function saveProfile(f){ var u=CHL.user; if(!u) return; var patch={display_name:f.display_name.value.trim(),username:f.username.value.trim(),bio:f.bio?f.bio.value.trim():'',avatar_url:String(f.avatar_url.value||'').trim()||null,cover_url:String(f.cover_url.value||'').trim()||null}; if(!/^[a-z0-9_.]{3,30}$/i.test(patch.username)){CHL.toast('Username: 3-30 letters, numbers, underscores or periods.');return;} for(var key of ['avatar_url','cover_url']){if(patch[key]){try{var parsed=new URL(patch[key]);if(parsed.protocol!=='https:')throw new Error();}catch(_){CHL.toast('Profile photo and cover URLs must be valid HTTPS URLs.');return;}}} sb.from('profiles').update(patch).eq('id',u.id).then(function(r){if(r&&r.error){CHL.toast(r.error.code==='23505'?'That username is already taken. Choose another one.':r.error.message);return;} CHL.refreshAuth().then(function(){CHL.toast('Profile saved');CHL.navigate('#/profile');});}); }
+  async function saveProfile(f){
+    var user=CHL.user; if(!user){CHL.toast('Sign in again before saving your profile.');return;}
+    var submit=f.querySelector('button[type="submit"]');
+    var patch={display_name:String(f.display_name.value||'').trim(),username:String(f.username.value||'').trim(),bio:f.bio?String(f.bio.value||'').trim():'',avatar_url:String(f.avatar_url.value||'').trim()||null,cover_url:String(f.cover_url.value||'').trim()||null,updated_at:new Date().toISOString()};
+    if(patch.display_name.length>80){CHL.toast('Display name must be 80 characters or fewer.');return;}
+    if(patch.bio.length>500){CHL.toast('Bio must be 500 characters or fewer.');return;}
+    if(!/^[a-z0-9_.]{3,30}$/i.test(patch.username)){CHL.toast('Username: 3-30 letters, numbers, underscores or periods.');return;}
+    for(var key of ['avatar_url','cover_url']){if(patch[key]){try{var parsed=new URL(patch[key]);if(parsed.protocol!=='https:')throw new Error();}catch(_){CHL.toast('Profile photo and cover URLs must be valid HTTPS URLs.');return;}}}
+    var fields=Array.from(f.elements); fields.forEach(function(field){field.disabled=true;});
+    if(submit)submit.textContent='Saving profile…';
+    try{
+      var result=await sb.from('profiles').update(patch).eq('id',user.id).select('id,display_name,username,bio,avatar_url,cover_url,updated_at').maybeSingle();
+      if(result.error){if(result.error.code==='23505')throw new Error('That username is already taken. Choose another one.');throw new Error(result.error.message||'The profile could not be saved.');}
+      if(!result.data || String(result.data.id)!==String(user.id))throw new Error('The server did not confirm a saved profile row. Check your session and profile permissions, then retry.');
+      CHL.profile=Object.assign({},CHL.profile||{},result.data);
+      try{await CHL.refreshAuth();}catch(refreshError){console.warn('[Profile] Database save succeeded but auth refresh failed:',refreshError);}
+      CHL.toast('Profile saved successfully.');
+      CHL.navigate('#/profile');
+    }catch(error){CHL.toast(error.message||'Profile could not be saved. Please retry.');}
+    finally{fields.forEach(function(field){field.disabled=false;});if(submit)submit.textContent='Save profile';}
+  }
 
   CHL.route('/settings/security', function(o){ if(head(o,'Security','Password, sessions and 2FA.')) return; o.appendChild(el('div',{class:'card'},[el('div',{style:'font-weight:700;margin-bottom:8px',text:'Password'}),el('button',{class:'btn',onclick:function(){if(CHL.user&&CHL.user.email){sb.auth.resetPasswordForEmail(CHL.user.email).then(function(r){CHL.toast(r.error?r.error.message:'Reset email sent');});}}},'Send password reset email'),el('div',{style:'font-weight:700;margin:16px 0 8px',text:'Sessions'}),el('button',{class:'btn',onclick:function(){sb.auth.signOut().then(function(){CHL.navigate('#/login');});}},'Log out') ])); });
 
@@ -91,11 +123,11 @@
       var s=await loadSettings(); card.innerHTML='';
       var f=el('form',{onsubmit:async function(e){
         e.preventDefault();
-        var v={privacy:s.privacy,notifications:s.notifications,live:{
+        var v={privacy:s.privacy,notifications:s.notifications,live:Object.assign({},s.live,{
           audience:f.elements.audience.value,
           guest_permissions:f.elements.guest_permissions.value,
           max_guests:Number(f.elements.max_guests.value)
-        }};
+        })};
         try{await saveSettings(v);}catch(err){CHL.toast(err.message||'Could not save settings.');}
       }});
       f.appendChild(selectField('Default audience','audience',['public','followers','private'],s.live.audience));
@@ -103,8 +135,8 @@
         {value:'allowed',label:'Allow viewers to request to join'},
         {value:'host_only',label:'Host-only: accept invited guests, close viewer requests'}
       ],s.live.guest_permissions));
-      f.appendChild(selectField('Maximum accepted guests','max_guests',[0,1,2,3,4,5,6,7,8].map(function(n){return {value:String(n),label:n===0?'0 guests — host only':String(n)+' guest'+(n===1?'':'s')};}),String(Number.isInteger(Number(s.live.max_guests))?Number(s.live.max_guests):8)));
-      f.appendChild(el('p',{class:'sub',text:'The host can review requests, accept or reject viewers, invite a creator by username, mute their published audio, stop video, and remove a guest. The host remains on stage separately from the guest limit.'}));
+      f.appendChild(selectField('Maximum accepted guests','max_guests',[1,2,3,4,5,6,7,8].map(function(n){return {value:String(n),label:String(n)+' guest'+(n===1?'':'s')};}),String(Number.isInteger(Number(s.live.max_guests))&&Number(s.live.max_guests)>=1&&Number(s.live.max_guests)<=8?Number(s.live.max_guests):8)));
+      f.appendChild(el('p',{class:'sub',text:'The LIVE stage can use horizontal or vertical layouts with one to eight guest slots. Deselect Show guest boxes on the LIVE screen to safely close the stage; active guests must be disconnected first. The host remains on stage separately from the guest limit.'}));
       f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save LIVE settings')); card.appendChild(f);
     }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}
   });

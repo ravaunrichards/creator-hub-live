@@ -27,6 +27,17 @@
   var lastReactionAt = 0;
   var giftEventsBySender = Object.create(null);
   var liveStageGrid = null;
+  var liveHostGrid = null;
+  var liveGuestStage = null;
+  var liveGuestGrid = null;
+  var guestLayoutState = { enabled: true, maxGuests: 8, orientation: 'horizontal' };
+  var guestLayoutEnabledInput = null;
+  var guestLayoutCapacitySelect = null;
+  var guestLayoutOrientationSelect = null;
+  var guestLayoutSaveStatus = null;
+  var liveGuestActionButton = null;
+  var liveGuestInviteForm = null;
+  var liveGuestInviteInput = null;
   var liveMicButton = null;
   var liveCameraButton = null;
   var liveZoomControls = null;
@@ -51,6 +62,10 @@
     clearChallengeTimer();
     if (pollRefreshTimer) { window.clearInterval(pollRefreshTimer); pollRefreshTimer = null; }
     participantTiles.clear();
+    liveStageGrid = null; liveHostGrid = null; liveGuestStage = null; liveGuestGrid = null;
+    guestLayoutEnabledInput = null; guestLayoutCapacitySelect = null; guestLayoutOrientationSelect = null; guestLayoutSaveStatus = null;
+    liveGuestActionButton = null; liveGuestInviteForm = null; liveGuestInviteInput = null;
+    guestLayoutState = { enabled: true, maxGuests: 8, orientation: 'horizontal' };
     activePoll = null;
     liveMediaRequestPanel = null;
     pendingGuestMediaRequest = null;
@@ -132,9 +147,20 @@
       text: 'CONNECTING'
     });
 
-    var stageGrid = el('div', { class: 'live-stage-grid', 'aria-label': 'LIVE participant stage' });
+    // Keep the host area and guest area structurally separate. Guest slots can never cover the host.
+    var stageGrid = el('div', { class: 'live-stage-layout' });
     liveStageGrid = stageGrid;
-    stageGrid.appendChild(el('div', { class: 'live-stage-empty', text: 'Connecting to the LIVE stage…' }));
+    liveHostGrid = el('div', { class: 'live-stage-grid live-host-grid', 'aria-label': 'Host video' });
+    liveHostGrid.appendChild(el('div', { class: 'live-stage-empty live-host-placeholder', text: 'Connecting to the host video…' }));
+    liveGuestStage = el('section', { class: 'live-guest-stage', 'aria-label': 'Guest stage', style: 'display:none' });
+    liveGuestStage.appendChild(el('div', { class: 'live-guest-stage-heading' }, [
+      el('strong', { text: 'Guest stage' }),
+      el('span', { class: 'sub', text: 'Available slots appear here; only connected guests show live media.' })
+    ]));
+    liveGuestGrid = el('div', { class: 'live-stage-grid live-guest-grid is-horizontal', 'aria-label': 'Guest video slots' });
+    liveGuestStage.appendChild(liveGuestGrid);
+    stageGrid.appendChild(liveHostGrid);
+    stageGrid.appendChild(liveGuestStage);
     stage.appendChild(stageGrid);
     stage.appendChild(status);
     video.appendChild(stage);
@@ -175,6 +201,15 @@
     var shareButton = el('button', { class: 'btn', type: 'button', onclick: function () {
       CHL.startScreenShare().then(function () { CHL.toast('Screen sharing started. End sharing from the browser’s sharing control or end the LIVE session.'); }).catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); });
     } }, 'Share screen');
+    var fullScreenButton = el('button', { class: 'btn', type: 'button', text: 'Full screen', onclick: async function () {
+      try {
+        var target = video;
+        if (document.fullscreenElement) await document.exitFullscreen();
+        else if (target && target.requestFullscreen) await target.requestFullscreen();
+        else if (target && target.webkitRequestFullscreen) target.webkitRequestFullscreen();
+        else throw new Error('Full screen is not supported by this browser or WebView.');
+      } catch (error) { CHL.toast(error.message || 'Could not change full screen mode.'); }
+    } });
     var screenStartButton = el('button', { class: 'btn primary', type: 'button', style: 'display:none', text: 'Choose screen and Go LIVE', onclick: function () {
       startScreenBroadcast(roomId, status, screenStartButton);
     } });
@@ -191,6 +226,8 @@
     var endButton = el('button', { class: 'btn danger', type: 'button', onclick: function () { endLive(roomId); } }, 'End LIVE');
     endButton.style.display = 'none';
     [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, screenStartButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
+    /* Full screen is a room-view control, not a host-publishing control. */
+    if (roomHeader.children && roomHeader.children[1]) roomHeader.children[1].appendChild(fullScreenButton);
     video.appendChild(controls);
 
     var funPanel = el('section', { class: 'card live-fun-panel', 'aria-label': 'LIVE entertainment tools' });
@@ -232,13 +269,37 @@
     side.appendChild(funPanel);
 
     var guestCard = el('section', { class: 'card live-guest-card', style: 'margin-top:14px;min-width:0' });
-    guestCard.appendChild(el('div', { class: 'live-panel-heading', text: 'Guest stage' }));
+    guestCard.appendChild(el('div', { class: 'live-panel-heading', text: 'Guest stage controls' }));
+    var guestLayoutControls = el('section', { class: 'live-guest-layout-controls', 'aria-label': 'Guest layout settings', style:'display:none' });
+    var guestLayoutSwitchLabel = el('label', { class: 'live-guest-layout-toggle' });
+    guestLayoutEnabledInput = el('input', { type: 'checkbox', name: 'guest_layout_enabled', checked: true, 'aria-label': 'Enable guest layout' });
+    guestLayoutSwitchLabel.appendChild(guestLayoutEnabledInput);
+    guestLayoutSwitchLabel.appendChild(el('span', { text: 'Show guest boxes' }));
+    guestLayoutControls.appendChild(guestLayoutSwitchLabel);
+    var guestLayoutFields = el('div', { class: 'live-guest-layout-fields' });
+    var guestCapacityLabel = el('label', { class: 'field' }, [el('span', { text: 'Maximum guest slots' })]);
+    guestLayoutCapacitySelect = el('select', { class: 'input', name: 'guest_layout_capacity', 'aria-label': 'Maximum guest slots' });
+    for (var guestCapacity = 1; guestCapacity <= 8; guestCapacity++) guestLayoutCapacitySelect.appendChild(el('option', { value: String(guestCapacity), text: String(guestCapacity) + ' guest slot' + (guestCapacity === 1 ? '' : 's') }));
+    guestLayoutCapacitySelect.value = '8'; guestCapacityLabel.appendChild(guestLayoutCapacitySelect);
+    var guestOrientationLabel = el('label', { class: 'field' }, [el('span', { text: 'Guest arrangement' })]);
+    guestLayoutOrientationSelect = el('select', { class: 'input', name: 'guest_layout_orientation', 'aria-label': 'Guest arrangement' });
+    guestLayoutOrientationSelect.appendChild(el('option', { value: 'horizontal', text: 'Horizontal — side-by-side rows' }));
+    guestLayoutOrientationSelect.appendChild(el('option', { value: 'vertical', text: 'Vertical — stacked rows' }));
+    guestOrientationLabel.appendChild(guestLayoutOrientationSelect);
+    guestLayoutFields.appendChild(guestCapacityLabel); guestLayoutFields.appendChild(guestOrientationLabel);
+    guestLayoutControls.appendChild(guestLayoutFields);
+    guestLayoutSaveStatus = el('p', { class: 'sub live-guest-layout-save-status', 'aria-live': 'polite', text: 'Select Show guest boxes to display the chosen slots.' });
+    guestLayoutControls.appendChild(guestLayoutSaveStatus);
+    guestCard.appendChild(guestLayoutControls);
     var guestAction = el('button', { class: 'btn primary block', type: 'button', text: 'Request to Join', onclick: function () { requestGuest(roomId, guestAction, controls, leaveStageButton); } });
+    liveGuestActionButton = guestAction;
     var guestStatus = el('p', { class: 'sub', text: 'Ask the host to add you to the live guest boxes. Host approval is required.' });
     guestCard.appendChild(guestAction); guestCard.appendChild(guestStatus);
     var guestInviteForm = el('form', { class: 'row wrap', style: 'display:none;gap:8px;margin:8px 0;align-items:end' });
+    liveGuestInviteForm = guestInviteForm;
     var guestInviteLabel = el('label', { class: 'field', style: 'flex:1;min-width:170px' }, [el('span', { text: 'Invite creator by username' })]);
     var guestInviteInput = el('input', { class: 'input', type: 'text', name: 'guestUsername', maxlength: '200', autocomplete: 'off', placeholder: 'Creator username' });
+    liveGuestInviteInput = guestInviteInput;
     guestInviteLabel.appendChild(guestInviteInput); guestInviteForm.appendChild(guestInviteLabel);
     var guestInviteButton = el('button', { class: 'btn', type: 'submit', text: 'Invite guest' }); guestInviteForm.appendChild(guestInviteButton);
     guestInviteForm.addEventListener('submit', async function(event){
@@ -262,6 +323,60 @@
     // side rail instead of below entertainment controls or the chat panel.
     side.insertBefore(guestCard, funPanel);
     side.insertBefore(liveMediaRequestPanel, funPanel);
+
+    var guestLayoutSaveInFlight = false;
+    function syncGuestLayoutControls(settings) {
+      var configuredMax = Number(settings && settings.maxGuests);
+      var capacity = Number.isSafeInteger(configuredMax) && configuredMax >= 1 && configuredMax <= 8 ? configuredMax : 8;
+      var orientation = settings && settings.guestLayoutOrientation === 'vertical' ? 'vertical' : 'horizontal';
+      var enabled = !!(settings && settings.guestLayoutEnabled === true && capacity > 0);
+      guestLayoutState = { enabled: enabled, maxGuests: capacity, orientation: orientation };
+      if (guestLayoutEnabledInput) guestLayoutEnabledInput.checked = enabled;
+      if (guestLayoutCapacitySelect) guestLayoutCapacitySelect.value = String(capacity);
+      if (guestLayoutOrientationSelect) guestLayoutOrientationSelect.value = orientation;
+      if (guestLayoutSaveStatus) guestLayoutSaveStatus.textContent = enabled ? 'Saved. Guest boxes are visible and ready for participants.' : 'Guest boxes are hidden until Show guest boxes is selected.';
+      renderGuestSlots();
+    }
+    async function changeGuestLayout() {
+      if (guestLayoutSaveInFlight || !isHost || currentMediaMode === 'screen') return;
+      var desiredMax = Number(guestLayoutCapacitySelect.value);
+      var desiredOrientation = guestLayoutOrientationSelect.value === 'vertical' ? 'vertical' : 'horizontal';
+      var desiredEnabled = !!guestLayoutEnabledInput.checked && desiredMax > 0;
+      if (!Number.isSafeInteger(desiredMax) || desiredMax < 1 || desiredMax > 8) { syncGuestLayoutControls(guestLayoutState); CHL.toast('Choose between 1 and 8 guest slots.'); return; }
+      guestLayoutSaveInFlight = true;
+      [guestLayoutEnabledInput,guestLayoutCapacitySelect,guestLayoutOrientationSelect].forEach(function(control){if(control)control.disabled=true;});
+      if (guestLayoutSaveStatus) guestLayoutSaveStatus.textContent = 'Saving guest layout…';
+      try {
+        var queue = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests', { method:'GET' });
+        var accepted = (queue && queue.guests || []).filter(function(guest){return guest.status==='accepted';});
+        if (desiredMax < accepted.length) throw new Error('Remove guests first; ' + accepted.length + ' guest(s) are currently connected.');
+        if (!desiredEnabled && accepted.length) {
+          if (!window.confirm('Turning off the guest layout will disconnect ' + accepted.length + ' active guest(s) from this LIVE room. Continue?')) {
+            syncGuestLayoutControls(guestLayoutState); return;
+          }
+          for (var i=0;i<accepted.length;i++) {
+            var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/remove', { method:'POST', body:{userId:accepted[i].user_id} });
+            if (!result || result.removedFromRoom !== true) throw new Error('A guest disconnect was not confirmed. The guest layout remains enabled so you can retry safely.');
+          }
+        }
+        var saved = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/layout', { method:'POST', body:{enabled:desiredEnabled,maxGuests:desiredMax,orientation:desiredOrientation} });
+        if (!saved || !saved.saved || !saved.guestSettings) throw new Error('The server did not confirm the saved guest layout.');
+        syncGuestLayoutControls(saved.guestSettings);
+        await broadcastLiveEvent('guest-layout-update', {guestLayoutEnabled:guestLayoutState.enabled,maxGuests:guestLayoutState.maxGuests,guestLayoutOrientation:guestLayoutState.orientation});
+        CHL.toast(guestLayoutState.enabled ? 'Guest layout saved.' : 'Guest layout turned off.');
+        await refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
+      } catch (error) {
+        syncGuestLayoutControls(guestLayoutState);
+        if (guestLayoutSaveStatus) guestLayoutSaveStatus.textContent = error.message || 'Guest layout could not be saved.';
+        CHL.toast(error.message || 'Guest layout could not be saved.');
+      } finally {
+        guestLayoutSaveInFlight = false;
+        [guestLayoutEnabledInput,guestLayoutCapacitySelect,guestLayoutOrientationSelect].forEach(function(control){if(control)control.disabled=false;});
+      }
+    }
+    guestLayoutEnabledInput.addEventListener('change',changeGuestLayout);
+    guestLayoutCapacitySelect.addEventListener('change',changeGuestLayout);
+    guestLayoutOrientationSelect.addEventListener('change',changeGuestLayout);
 
     /* Chat panel. Its messages scroll independently of the video/page. */
     var chat = el('div', {
@@ -449,12 +564,15 @@
       if (currentMediaMode === 'screen') {
         guestCard.style.display = 'none';
       } else if (isHost) {
+        guestCard.style.display = '';
         guestAction.style.display = 'none';
         guestInviteForm.style.display = 'flex';
-        guestStatus.textContent = 'Review requests, invite creators by username, and manage accepted guests individually.';
+        guestLayoutControls.style.display = '';
+        guestStatus.textContent = 'Configure the guest layout, then manage requests and invited creators here.';
       } else {
         guestInviteForm.style.display = 'none';
         guestQueueContainer.style.display = 'none';
+        guestLayoutControls.style.display = 'none';
       }
       if (currentMediaMode !== 'screen') refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
       guestPollTimer = window.setInterval(function () {
@@ -704,13 +822,14 @@
     var title = el('span', { class: 'live-participant-name', text: String(name).slice(0, 80) });
     var state = el('span', { class: 'live-participant-state', text: local ? 'YOU' : 'CONNECTED' });
     var footer = el('div', { class: 'live-participant-footer' }, [title, state]);
-    var tileElement = el('article', { class: 'live-participant-tile' + (local ? ' is-local' : ''), 'data-participant-id': key });
+    var isHostTile = String(key) === String(roomHostId);
+    var tileElement = el('article', { class: 'live-participant-tile' + (local ? ' is-local' : '') + (isHostTile ? ' is-host' : ' is-guest'), 'data-participant-id': key });
     media.appendChild(el('div', { class: 'live-camera-off', text: currentMediaMode === 'audio' ? '🎙 Voice stage' : currentMediaMode === 'screen' ? 'Screen preview' : (local ? 'Camera starting…' : 'Waiting for media…') }));
     tileElement.appendChild(media); tileElement.appendChild(footer);
     var tile = { key: key, participant: participant, local: !!local, element: tileElement, media: media, name: title, state: state, audio: [], videoSid: null, audioSid: null, mutedByHost: false };
     var spotlight = el('button', { class: 'live-spotlight-toggle', type: 'button', text: 'Spotlight', 'aria-label': 'Spotlight ' + name, onclick: function () { toggleSpotlight(tile, spotlight); } });
     footer.appendChild(spotlight); tile.spotlightButton = spotlight;
-    if (!local) {
+    if (!isHostTile && !local) {
       var volumeRow = el('label', { class: 'live-participant-volume' });
       volumeRow.appendChild(el('span', { text: 'Volume' }));
       var volume = el('input', { type: 'range', min: '0', max: '1', step: '0.05', value: '1', 'aria-label': 'Local playback volume for ' + name });
@@ -728,8 +847,13 @@
       }
     }
     participantTiles.set(key, tile);
-    var empty = liveStageGrid && liveStageGrid.querySelector('.live-stage-empty'); if (empty) empty.remove();
-    if (liveStageGrid) liveStageGrid.appendChild(tileElement);
+    if (isHostTile && liveHostGrid) {
+      var hostEmpty = liveHostGrid.querySelector('.live-host-placeholder'); if (hostEmpty) hostEmpty.remove();
+      liveHostGrid.appendChild(tileElement);
+    } else if (liveGuestGrid) {
+      liveGuestGrid.appendChild(tileElement);
+    }
+    renderGuestSlots();
     if (!local && !resolvedName && CHL.sb) {
       CHL.sb.from('profiles').select('display_name,username').eq('id', key).maybeSingle().then(function (result) {
         if (!result || result.error || !result.data || !tileElement.isConnected) return;
@@ -769,9 +893,11 @@
     var already = tile.element.classList.contains('is-spotlight');
     participantTiles.forEach(function (other) {
       other.element.classList.remove('is-spotlight');
+      if (other.element.parentElement) other.element.parentElement.classList.remove('has-spotlight');
       if (other.spotlightButton) { other.spotlightButton.textContent = 'Spotlight'; other.spotlightButton.setAttribute('aria-pressed', 'false'); }
     });
-    liveStageGrid.classList.toggle('has-spotlight', !already);
+    var grid = tile.element.parentElement;
+    if (grid) grid.classList.toggle('has-spotlight', !already);
     if (!already) {
       tile.element.classList.add('is-spotlight');
       if (button) { button.textContent = 'Unspotlight'; button.setAttribute('aria-pressed', 'true'); }
@@ -787,8 +913,13 @@
 
   function removeParticipantTile(participant) {
     var key = participantKey(participant, false); var tile = participantTiles.get(key);
-    if (tile) { tile.element.remove(); participantTiles.delete(key); if (liveStageGrid && !liveStageGrid.querySelector('.is-spotlight')) liveStageGrid.classList.remove('has-spotlight'); }
-    if (!participantTiles.size && liveStageGrid) liveStageGrid.appendChild(el('div', { class: 'live-stage-empty', text: 'Waiting for participants…' }));
+    if (tile) {
+      var parentGrid = tile.element.parentElement;
+      tile.element.remove(); participantTiles.delete(key);
+      if (parentGrid && !parentGrid.querySelector('.is-spotlight')) parentGrid.classList.remove('has-spotlight');
+      if (String(key) === String(roomHostId) && liveHostGrid && !liveHostGrid.querySelector('.live-participant-tile')) liveHostGrid.appendChild(el('div', { class: 'live-stage-empty live-host-placeholder', text: 'Waiting for the host video…' }));
+    }
+    renderGuestSlots();
   }
 
   function refreshLocalVideoTile() {
@@ -953,6 +1084,7 @@
       if (!payload || payload.version !== 1 || String(payload.roomId) !== String(currentRoomId)) return;
       var senderId = String(participant && participant.identity || '');
       var data = payload.data || {};
+      if (payload.type === 'guest-layout-update' && senderId === String(roomHostId)) applyGuestLayoutSettings(data);
       if (payload.type === 'guest-media-request' && senderId === String(roomHostId) && !isHost && String(data.targetId || '') === String(CHL.user && CHL.user.id) && ['audio','video'].indexOf(String(data.media)) >= 0) showGuestMediaRequest(data);
       if (payload.type === 'guest-media-response' && isHost && String(data.targetId || '') === String(CHL.user && CHL.user.id) && data.requestId) {
         var issuedRequest = pendingHostMediaRequests[String(data.requestId)];
@@ -1019,7 +1151,9 @@
       try {
         var own = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/status', { method: 'GET' });
         var guest = own && own.guest;
-        if (guest && guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = currentMediaMode === 'audio' ? 'You have been accepted. Your microphone control is available above.' : 'You have been accepted. Your available media controls are above.'; }
+        applyGuestLayoutSettings(own || {});
+        if (own && own.guestLayoutEnabled === false && !(guest && guest.status === 'accepted')) { guestButton.textContent = 'Guest stage closed'; guestButton.disabled = true; guestStatus.textContent = 'The host has not selected a guest layout yet.'; }
+        else if (guest && guest.status === 'accepted') { guestButton.textContent = 'You are on stage'; guestButton.disabled = true; guestStatus.textContent = currentMediaMode === 'audio' ? 'You have been accepted. Your microphone control is available above.' : 'You have been accepted. Your available media controls are above.'; }
         else if (guest && guest.status === 'invited') { guestButton.textContent = 'Accept invitation'; guestButton.disabled = false; guestStatus.textContent = 'The host invited you to join the guest stage. Tap Accept invitation to join.'; }
         else if (guest && guest.status === 'requested') { guestButton.textContent = 'Request pending'; guestButton.disabled = true; guestStatus.textContent = 'Your request is waiting for the host.'; }
         else if (own && own.guestPermissions === 'host_only') { guestButton.textContent = 'Requests closed'; guestButton.disabled = true; guestStatus.textContent = 'This host accepts invited guests only.'; }
@@ -1031,49 +1165,70 @@
       var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests', { method: 'GET' });
       container.textContent = '';
       var guestSettings = result && result.guestSettings || {};
+      applyGuestLayoutSettings(guestSettings);
       var limit = Number.isSafeInteger(Number(guestSettings.maxGuests)) ? Math.max(0, Math.min(8, Number(guestSettings.maxGuests))) : 8;
       var guests = result && Array.isArray(result.guests) ? result.guests : [];
-      var modeText = limit === 0 ? 'Guest stage is disabled; the host remains full-screen.' : (guestSettings.guestPermissions === 'host_only' ? 'Viewer requests are closed; use username invitations.' : 'Viewer requests are open.');
+      var modeText = guestSettings.guestLayoutEnabled !== true || limit === 0 ? 'Guest stage is off until Show guest boxes is selected.' : (guestSettings.guestPermissions === 'host_only' ? 'Viewer requests are closed; use username invitations.' : 'Viewer requests are open.');
       var acceptedCount = guests.filter(function(g){return g.status === 'accepted';}).length;
       container.appendChild(el('p', { class:'sub', text: modeText + ' Guest limit: ' + limit + '. Accepted guests: ' + acceptedCount + '/' + limit + '.' }));
-      var slotRow = el('div', { class:'row wrap', style:'gap:8px;align-items:center;margin:8px 0 12px' });
-      slotRow.appendChild(el('label', { class:'sub', text:'Guest slots (0–8)', style:'font-weight:800' }));
-      var slotSelect = el('select', { class:'input', style:'max-width:220px', 'aria-label':'Maximum guest slots' });
-      for (var slotN = 0; slotN <= 8; slotN++) slotSelect.appendChild(el('option', { value:String(slotN), text:slotN === 0 ? '0 — Host only' : String(slotN) + ' guest' + (slotN === 1 ? '' : 's') }));
-      slotSelect.value = String(limit);
-      slotSelect.addEventListener('change', async function () {
-        var nextLimit = Number(slotSelect.value);
-        if (!Number.isSafeInteger(nextLimit) || nextLimit < 0 || nextLimit > 8) { slotSelect.value = String(limit); return; }
-        if (nextLimit < acceptedCount) { CHL.toast('Remove guests from the stage before reducing the limit below ' + acceptedCount + '.'); slotSelect.value = String(limit); return; }
-        slotSelect.disabled = true;
-        try {
-          var saved = await CHL.sb.from('user_settings').select('live').eq('user_id', CHL.user.id).maybeSingle();
-          if (saved.error) throw saved.error;
-          var liveSettings = saved.data && saved.data.live && typeof saved.data.live === 'object' ? saved.data.live : {};
-          liveSettings.max_guests = nextLimit;
-          var write = saved.data
-            ? await CHL.sb.from('user_settings').update({ live: liveSettings }).eq('user_id', CHL.user.id)
-            : await CHL.sb.from('user_settings').insert({ user_id: CHL.user.id, live: liveSettings });
-          if (write.error) throw write.error;
-          CHL.toast(nextLimit === 0 ? 'Guest stage disabled. You remain full-screen.' : 'Guest slot limit updated to ' + nextLimit + '.');
-          refreshGuestQueue(roomId, container, host, guestButton, guestStatus);
-        } catch (error) { CHL.toast(error.message || 'Could not update guest slots.'); slotSelect.value = String(limit); }
-        finally { slotSelect.disabled = false; }
-      });
-      slotRow.appendChild(slotSelect); container.appendChild(slotRow);
       if (!guests.length) { container.appendChild(el('p', { class: 'sub', text: 'No guest requests or invitations yet.' })); return; }
       guests.forEach(function (guest) {
         var profile = guest.profile || {}; var label = profile.display_name || profile.username || 'Loading profile…';
         var row = el('div', { class: 'live-guest-queue-row' }); var guestName = el('span', { class: 'live-guest-queue-name', text: String(label).slice(0,80) }); row.appendChild(guestName); row.appendChild(el('span', { class: 'live-guest-queue-status', text: guest.status }));
-        if (!profile.display_name && !profile.username && CHL.sb) CHL.sb.from('profiles').select('display_name,username').eq('id',guest.user_id).maybeSingle().then(function(result){if(result&&!result.error&&result.data){guestName.textContent=String(result.data.display_name||result.data.username||'Guest').slice(0,80);}else guestName.textContent='Guest';}).catch(function(){guestName.textContent='Guest';});
+        if (!profile.display_name && !profile.username && CHL.sb) CHL.sb.from('profiles').select('display_name,username').eq('id',guest.user_id).maybeSingle().then(function(result){if(result&&!result.error&&result.data){guestName.textContent=String(result.data.display_name||result.data.username||'Guest').slice(0,80);}else guestName.textContent='Creator';}).catch(function(){guestName.textContent='Creator';});
         if (guest.status === 'requested') {
           row.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Accept', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/accept', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest accepted.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not accept guest.'); } } }));
           row.appendChild(el('button', { class: 'btn', type: 'button', text: 'Reject', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/reject', { method: 'POST', body: { userId: guest.user_id } }); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not reject guest.'); } } }));
-        } else if (guest.status === 'accepted') row.appendChild(el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: async function () { try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/remove', { method: 'POST', body: { userId: guest.user_id } }); CHL.toast('Guest removed from stage.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not remove guest.'); } } }));
+        } else if (guest.status === 'accepted') row.appendChild(el('button', { class: 'btn danger', type: 'button', text: 'Remove', onclick: async function () { try { var removalResult = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/guests/remove', { method: 'POST', body: { userId: guest.user_id } }); if (!removalResult || removalResult.removedFromRoom !== true) throw new Error('LiveKit did not confirm this guest was disconnected. Retry Remove.'); CHL.toast('Guest disconnected from the LIVE room.'); refreshGuestQueue(roomId, container, host, guestButton, guestStatus); } catch (e) { CHL.toast(e.message || 'Could not remove guest.'); } } }));
         else if (guest.status === 'invited') row.appendChild(el('span', { class:'sub', text:'Invitation sent' }));
         container.appendChild(row);
       });
     } catch (error) { container.textContent = ''; container.appendChild(el('p', { class: 'sub', text: 'Guest queue unavailable: ' + (error.message || 'check database migration') })); }
+  }
+
+  function applyGuestLayoutSettings(settings) {
+    if (!settings || typeof settings !== 'object') return;
+    var rawMax = Number(settings.maxGuests);
+    var maxGuests = Number.isSafeInteger(rawMax) && rawMax >= 1 && rawMax <= 8 ? rawMax : 8;
+    var orientation = settings.guestLayoutOrientation === 'vertical' ? 'vertical' : 'horizontal';
+    var enabled = settings.guestLayoutEnabled !== false && maxGuests > 0 && currentMediaMode !== 'screen';
+    guestLayoutState = { enabled: enabled, maxGuests: maxGuests, orientation: orientation };
+    if (guestLayoutEnabledInput) guestLayoutEnabledInput.checked = enabled;
+    if (guestLayoutCapacitySelect) guestLayoutCapacitySelect.value = String(maxGuests);
+    if (guestLayoutOrientationSelect) guestLayoutOrientationSelect.value = orientation;
+    if (liveGuestStage) liveGuestStage.style.display = enabled ? '' : 'none';
+    if (liveGuestInviteForm) Array.from(liveGuestInviteForm.elements).forEach(function(control){control.disabled = isHost && !enabled;});
+    if (guestLayoutSaveStatus) guestLayoutSaveStatus.textContent = enabled ? 'Saved. Guest boxes are visible and available for participants.' : 'Guest boxes are hidden until Show guest boxes is selected.';
+    if (liveGuestGrid) {
+      liveGuestGrid.classList.toggle('is-horizontal', orientation === 'horizontal');
+      liveGuestGrid.classList.toggle('is-vertical', orientation === 'vertical');
+    }
+    renderGuestSlots();
+  }
+
+  function renderGuestSlots() {
+    if (!liveGuestGrid || !liveGuestStage) return;
+    Array.from(liveGuestGrid.querySelectorAll('.live-guest-slot')).forEach(function(slot){slot.remove();});
+    var enabled = guestLayoutState.enabled === true && guestLayoutState.maxGuests > 0 && currentMediaMode !== 'screen';
+    liveGuestStage.style.display = enabled ? '' : 'none';
+    liveGuestGrid.classList.toggle('is-horizontal', guestLayoutState.orientation !== 'vertical');
+    liveGuestGrid.classList.toggle('is-vertical', guestLayoutState.orientation === 'vertical');
+    if (!enabled) return;
+    var connected = liveGuestGrid.querySelectorAll('.live-participant-tile').length;
+    var remaining = Math.max(0, guestLayoutState.maxGuests - connected);
+    for (var i=0;i<remaining;i++) {
+      var number = connected + i + 1;
+      var slot = el('div',{class:'live-guest-slot','aria-label':'Available guest slot '+number});
+      slot.appendChild(el('div',{class:'live-guest-slot-number',text:'Guest slot '+number}));
+      slot.appendChild(el('div',{class:'live-guest-slot-caption',text:'Available — no guest connected'}));
+      var action = el('button',{class:'btn primary',type:'button',text:isHost?'Invite guest':'Request to join'});
+      action.addEventListener('click',function(){
+        if (isHost && liveGuestInviteForm) { liveGuestInviteForm.style.display='flex'; if(liveGuestInviteInput)liveGuestInviteInput.focus(); }
+        else if (liveGuestActionButton && !liveGuestActionButton.disabled) liveGuestActionButton.click();
+        else if (liveGuestActionButton) CHL.toast('The host has not enabled guest requests yet.');
+      });
+      slot.appendChild(action); liveGuestGrid.appendChild(slot);
+    }
   }
 
   function stopGuestPolling() { if (guestPollTimer) { window.clearInterval(guestPollTimer); guestPollTimer = null; } }
@@ -1090,8 +1245,11 @@
   }
 
   async function removeGuest(tile) {
-    try { await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(currentRoomId) + '/guests/remove', { method: 'POST', body: { userId: tile.key } }); CHL.toast('Guest removed from stage.'); }
-    catch (error) { CHL.toast(error.message || 'Could not remove guest.'); }
+    try {
+      var result = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(currentRoomId) + '/guests/remove', { method: 'POST', body: { userId: tile.key } });
+      if (!result || result.removedFromRoom !== true) throw new Error('LiveKit did not confirm the guest disconnect. Retry Remove.');
+      CHL.toast('Guest disconnected from the LIVE room.');
+    } catch (error) { CHL.toast(error.message || 'Could not remove guest.'); }
   }
 
   function giftAssetKey(name) {
