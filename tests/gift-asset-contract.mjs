@@ -30,8 +30,8 @@ const html = fs.readFileSync(path.join(ROOT, 'frontend', 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(ROOT, 'frontend', 'sw.js'), 'utf8');
 assert(core.includes("'Creator Hub Live'") && !core.includes("'Creator Hub Creator Network'"), 'Runtime brand fallback is not Creator Hub Live.');
 assert(html.includes('<title>Creator Hub Live'), 'Document title does not identify Creator Hub Live.');
-assert(sw.includes("chl-web-v3-3-3") && sw.includes("./assets/gifts/multi-guest.svg"), 'Service worker cache version or restored multi-guest precache is stale.');
-for (const rel of ['src/core.js', 'src/pages-settings.js', 'styles/app.css', 'sw.js', 'config.js', 'index.html']) {
+assert(/var VERSION = 'chl-web-v\d+-\d+-\d+';/.test(sw) && sw.includes("./assets/gifts/multi-guest.svg") && sw.includes("./styles/platform-tools.css"), 'Service-worker version, restored multi-guest precache, or shared stylesheet precache is stale.');
+for (const rel of ['src/core.js', 'src/pages-settings.js', 'styles/app.css', 'styles/platform-tools.css', 'sw.js', 'config.js', 'index.html']) {
   const a = fs.readFileSync(path.join(ROOT, 'frontend', rel));
   const b = fs.readFileSync(path.join(android, rel));
   assert(a.equals(b), `Android web runtime differs from frontend: ${rel}`);
@@ -44,4 +44,4 @@ console.log('PASS — WAV headers are valid');
 console.log('PASS — LIVE gifts use accessible buttons and backend-authoritative catalogue/transactions');
 console.log('PASS — environment template contains no live-looking private secrets');
 console.log('PASS — CHL runtime branding and service-worker cache are consistent');
-console.log('PASS — key Android web runtime files match frontend byte-for-byte');
+console.log('PASS — shared frontend stylesheet and key Android web runtime files match byte-for-byte');
