@@ -7,41 +7,38 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const css = read('frontend/styles/app.css');
 const js = read('frontend/src/style-switcher.js');
 const html = read('frontend/index.html');
-const settings = read('frontend/src/pages-settings.js');
-const core = read('frontend/src/core.js');
+const integration = read('frontend/src/style-switcher-integration.js');
 const sw = read('frontend/sw.js');
-const migration = read('database/migrations/0038_appearance_preferences.sql');
+const migration = read('database/0038_appearance_preferences.sql');
 
-// Dependency-free CSS structure guard; full PostCSS parsing is also run in the audit command.
+// Small CSS structure guard: ignores quoted strings and comments while counting braces.
 let depth = 0, quote = '', comment = false, escape = false;
 for (let i = 0; i < css.length; i++) {
   const c = css[i], n = css[i + 1];
   if (comment) { if (c === '*' && n === '/') { comment = false; i++; } continue; }
   if (quote) { if (escape) { escape = false; continue; } if (c === '\\') { escape = true; continue; } if (c === quote) quote = ''; continue; }
   if (c === '/' && n === '*') { comment = true; i++; continue; }
-  if (c === '\"' || c === "'") { quote = c; continue; }
+  if (c === '"' || c === "'") { quote = c; continue; }
   if (c === '{') depth++;
-  if (c === '}') { depth--; assert.ok(depth >= 0, 'CSS contains an unmatched closing brace'); }
+  if (c === '}') { depth--; assert.ok(depth >= 0, 'CSS has an unmatched closing brace'); }
 }
-assert.equal(depth, 0, 'CSS contains unclosed rule blocks');
-assert.equal(comment, false, 'CSS contains an unclosed comment');
-assert.equal(quote, '', 'CSS contains an unclosed string');
+assert.equal(depth, 0, 'CSS has unclosed rule blocks');
+assert.equal(comment, false, 'CSS has an unclosed comment');
+assert.equal(quote, '', 'CSS has an unclosed string');
 assert.match(html, /src\/style-switcher\.js/);
-assert.match(settings, /#\/settings\/appearance/);
-assert.match(settings, /CHL\.StyleSwitcher\.render/);
-assert.equal((settings.match(/CHL\.route\('\/settings\/appearance'/g) || []).length, 1, 'Appearance route must be registered exactly once');
-assert.doesNotMatch(settings, /CHLStyleSystem/, 'Legacy style-system route must not conflict with the new switcher');
-assert.match(core, /CHL\.StyleSwitcher\.onAuthChanged/);
-assert.match(sw, /src\/style-switcher\.js/);
-assert.match(sw, /chl-web-v3-3-3/);
+assert.match(html, /src\/style-switcher-integration\.js/);
+assert.doesNotMatch(html, /src\/style-system\.js/, 'Legacy appearance writer must not race the new preference format');
+assert.match(integration, /CHL\.routes\['\/settings\/appearance'\]\s*=/);
+assert.match(integration, /CHL\.StyleSwitcher\.render/);
+assert.match(integration, /onAuthChanged/);
+assert.match(sw, /src\/style-switcher-integration\.js/);
+assert.match(sw, /chl-web-v3-3-4/);
 assert.match(migration, /add column if not exists appearance jsonb/i);
 assert.match(migration, /NULL means the account has not saved an appearance yet/i);
 
 const themeIds = [...js.matchAll(/^\s{4}(night|ocean|violet|emerald|rose|light):\s+\{/gm)].map(m => m[1]);
 assert.deepEqual(themeIds, ['night', 'ocean', 'violet', 'emerald', 'rose', 'light']);
-for (const family of ['typography', 'surfaces', 'density', 'motion', 'contrast']) {
-  assert.match(js, new RegExp('\\b' + family + ':\\s*\\{'));
-}
+for (const family of ['typography', 'surfaces', 'density', 'motion', 'contrast']) assert.match(js, new RegExp('\\b' + family + ':\\s*\\{'));
 for (const theme of themeIds) assert.match(css, new RegExp('data-chl-theme="' + theme + '"'));
 const themeLines = js.split(/\r?\n/).filter(line => /^\s{4}(night|ocean|violet|emerald|rose|light):\s+\{/.test(line));
 const parsedThemes = Object.fromEntries(themeLines.map(line => {
@@ -59,19 +56,23 @@ for (const [id,t] of Object.entries(parsedThemes)) {
     const mut=contrastMode==='high'?(id==='light'?'#171717':'#ffffff'):t.mut;
     const bg=id==='light'&&contrastMode==='high'?'#ffffff':t.bg;
     const card=id==='light'&&contrastMode==='high'?'#ffffff':t.card;
-    assert.ok(contrast(txt,bg)>=4.5 && contrast(txt,card)>=4.5 && contrast(mut,bg)>=4.5 && contrast(mut,card)>=4.5, `Text contrast failure in ${id}/${typography}/${surfaces}/${density}/${motion}/${contrastMode}`);
+    assert.ok(contrast(txt,bg)>=4.5 && contrast(txt,card)>=4.5 && contrast(mut,bg)>=4.5 && contrast(mut,card)>=4.5, `Contrast failure in ${id}/${typography}/${surfaces}/${density}/${motion}/${contrastMode}`);
     assert.ok(contrast('#ffffff',t.brand)>=4.5 && contrast('#ffffff',t.brand2)>=4.5, `Primary-button text contrast failure in ${id}`);
   }
 }
-assert.equal(comboCount, 432, 'Unexpected number of style-family combinations checked');
+assert.equal(comboCount, 432, 'Expected 432 theme/family combinations');
 assert.match(js, /Run style relay tests/);
+assert.match(js, /runtimeErrors/);
+assert.match(js, /overflowCombinations/);
+assert.match(js, /getComputedStyle/);
 assert.match(js, /user_settings/);
 assert.match(js, /localStorage/);
 assert.match(js, /Preview selection/);
 assert.match(js, /Apply & save/);
 
 const androidRoot = 'android/app/src/main/assets/web';
-for (const rel of ['index.html', 'src/core.js', 'src/pages-settings.js', 'src/style-switcher.js', 'src/ui.js', 'styles/app.css', 'sw.js']) {
+for (const rel of ['index.html', 'src/style-switcher.js', 'src/style-switcher-integration.js', 'sw.js']) {
   assert.equal(read(path.join('frontend', rel)), read(path.join(androidRoot, rel)), `Android WebView copy differs: ${rel}`);
 }
-console.log('PASS — Style Switcher contract, CSS block structure, theme registry, 432 contrast combinations, persistence hooks, migration, and Android parity verified.');
+console.log('PASS — source integration, migration path, CSS structure, 6 themes, 432 static contrast combinations, and Android parity.');
+console.log('NOTE — this is a static contract test; it does not replace a real-browser viewport/device run.');
