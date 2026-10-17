@@ -1,0 +1,23 @@
+/* Creator Hub Live — responsive presentation for real social and creator tools. */
+.chl-profile-person{display:flex;align-items:center;gap:11px;min-width:0;color:inherit;text-decoration:none;padding:4px 0}
+.chl-profile-person:hover{text-decoration:underline}
+.chl-profile-person-avatar{width:46px;height:46px;flex:0 0 46px;object-fit:cover;border-radius:50%}
+.chl-profile-person .sub{overflow-wrap:anywhere}
+.chl-task-progress-track{height:9px;width:100%;overflow:hidden;border-radius:999px;background:var(--line,#2c2c3a);margin:8px 0}
+.chl-task-progress-fill{height:100%;background:var(--accent,#5e5ce6);border-radius:999px;transition:width .18s ease}
+.chl-live-explore-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
+.chl-live-explore-card{overflow:hidden;min-width:0;border:1px solid var(--line,#2d2d3b);border-radius:16px;background:var(--card,#171722);display:flex;flex-direction:column}
+.chl-live-explore-open{display:block;position:relative;aspect-ratio:4/5;overflow:hidden;background:linear-gradient(145deg,#242343,#15382f);text-decoration:none}
+.chl-live-explore-cover{width:100%;height:100%;object-fit:cover;display:block}
+.chl-live-explore-cover-empty{display:grid;place-items:center;color:#fff;font-size:34px;font-weight:850;background:linear-gradient(145deg,#292449,#205647)}
+.chl-live-explore-live-pill{position:absolute;top:10px;left:10px;background:#d52643;color:#fff;border-radius:5px;padding:4px 7px;font-size:11px;font-weight:850;letter-spacing:.04em}
+.chl-live-explore-body{padding:12px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.chl-live-explore-avatar{width:38px;height:38px;flex:0 0 38px;object-fit:cover;border-radius:50%}
+.chl-live-explore-creator{font-size:14px;font-weight:800;overflow-wrap:anywhere;color:inherit;text-decoration:none}
+.chl-live-explore-title{font-size:14px;font-weight:720;line-height:1.35;overflow-wrap:anywhere;margin-top:5px}
+.chl-live-explore-body .sub{overflow-wrap:anywhere}
+.chl-profile a.btn,.chl-profile button.btn{min-height:36px}
+.chl-profile [style*="grid-template-columns:repeat(3"]{align-items:start}
+@media(max-width:760px){.chl-live-explore-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.chl-live-explore-body{padding:9px}.chl-live-explore-creator,.chl-live-explore-title{font-size:13px}}
+@media(max-width:420px){.chl-live-explore-grid{grid-template-columns:minmax(0,1fr)}.chl-live-explore-open{aspect-ratio:16/10}.chl-live-explore-body{padding:11px}.chl-live-explore-avatar{width:36px;height:36px;flex-basis:36px}}
+@media(prefers-reduced-motion:reduce){.chl-task-progress-fill{transition:none}}
