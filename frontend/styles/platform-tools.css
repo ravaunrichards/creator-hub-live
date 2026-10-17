@@ -364,3 +364,153 @@ html[data-chl-theme="light"] #app.studio-root .nexus-mission-item strong{color:#
 @media(prefers-reduced-motion:reduce){
   #app.studio-root *,#app.studio-root *::before,#app.studio-root *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}
 }
+
+
+/* Appearance token bridge: every individual theme now reaches the Nexus shell,
+   feeds, LIVE panels, creator cards and messaging surfaces consistently. */
+html[data-chl-theme] {
+  --chl-front-text: var(--txt);
+  --chl-front-muted: var(--mut);
+  --chl-front-panel: var(--card);
+  --chl-front-panel-raised: var(--bg2);
+  --chl-front-line: var(--line);
+  --chl-front-accent: var(--brand);
+  --chl-front-pink: var(--brand2);
+}
+html[data-chl-theme="night"] { --chl-front-accent-soft: rgba(196,20,80,.12); }
+html[data-chl-theme="ocean"] { --chl-front-accent-soft: rgba(0,108,125,.12); }
+html[data-chl-theme="violet"] { --chl-front-accent-soft: rgba(119,53,169,.13); }
+html[data-chl-theme="emerald"] { --chl-front-accent-soft: rgba(8,116,71,.13); }
+html[data-chl-theme="rose"] { --chl-front-accent-soft: rgba(183,25,82,.13); }
+html[data-chl-theme="light"] { --chl-front-accent-soft: rgba(163,18,74,.08); }
+
+/* Compact mode also scales the Nexus shell and creator workspace, not only legacy pages. */
+html[data-chl-density="compact"] #app.studio-root .studio-main { padding-top: 14px; }
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .studio-section-heading { margin-bottom: 10px; }
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .chl-feed-post { padding: 12px; }
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .chl-message-list,
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .chl-thread { padding: 10px; }
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .live-video-card,
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .live-chat-card,
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .live-gift-card,
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .live-guest-card { padding: 10px; }
+html[data-chl-density="compact"] #app.studio-root .studio-outlet .live-chat-messages { max-height: min(32vh, 360px); }
+
+/* Accessibility and interaction states remain legible across all theme families. */
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .chl-feed-post,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .live-video-card,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .live-chat-card,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .live-gift-card,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .live-guest-card,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .chl-message-list,
+html[data-chl-contrast="high"] #app.studio-root .studio-outlet .chl-thread { border-width: 2px; }
+html[data-chl-motion="reduced"] #app.studio-root .studio-sidebar-scroll,
+html[data-chl-motion="reduced"] #app.studio-root .studio-main { scroll-behavior: auto; }
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .chl-feed-post,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .live-video-card,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .live-chat-card,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .live-gift-card,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .live-guest-card,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .chl-message-list,
+html[data-chl-surfaces="soft"] #app.studio-root .studio-outlet .chl-thread { border-radius: 22px; }
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .chl-feed-post,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .live-video-card,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .live-chat-card,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .live-gift-card,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .live-guest-card,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .chl-message-list,
+html[data-chl-surfaces="sharp"] #app.studio-root .studio-outlet .chl-thread { border-radius: 8px; }
+
+/* Apply the selected CHL theme to the real Nexus shell, not only legacy cards. */
+html[data-chl-theme] #app.studio-root .studio-sidebar,
+html[data-chl-theme] #app.studio-root .studio-topbar {
+  background: var(--bg2);
+  color: var(--txt);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .studio-nav-heading { color: var(--mut); }
+html[data-chl-theme] #app.studio-root .studio-nav-heading { color: #cbd5e1; }
+html[data-chl-theme] #app.studio-root .studio-nav-link:hover,
+html[data-chl-theme] #app.studio-root .studio-nav-link.active {
+  color: #fff;
+  background: var(--chl-front-accent-soft);
+  border-color: var(--brand);
+}
+html[data-chl-theme] #app.studio-root .studio-nav-link.active { box-shadow: inset 3px 0 var(--brand); }
+html[data-chl-theme] #app.studio-root .studio-nav-icon { background: var(--card); color: var(--mut); }
+html[data-chl-theme] #app.studio-root .studio-nav-link.active .studio-nav-icon { color: #fff; background: var(--brand); }
+html[data-chl-theme="light"] #app.studio-root .studio-sidebar { background: #111a2c; }
+html[data-chl-theme] #app.studio-root .studio-account-card,
+html[data-chl-theme] #app.studio-root .studio-search,
+html[data-chl-theme] #app.studio-root .studio-status,
+html[data-chl-theme] #app.studio-root .studio-icon-button,
+html[data-chl-theme] #app.studio-root .studio-top-action {
+  background: var(--card);
+  color: var(--txt);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .studio-search input { color: var(--txt); }
+html[data-chl-theme] #app.studio-root .studio-search input::placeholder,
+html[data-chl-theme] #app.studio-root .studio-search kbd { color: var(--mut); }
+html[data-chl-theme] #app.studio-root .studio-search kbd { background: var(--bg); border-color: var(--line); }
+html[data-chl-theme] #app.studio-root .studio-main { color: var(--txt); }
+html[data-chl-theme] #app.studio-root .nexus-home .studio-feature-card,
+html[data-chl-theme] #app.studio-root .nexus-command-hero {
+  color: var(--txt);
+  background: linear-gradient(145deg, var(--bg2), var(--bg));
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .nexus-home .studio-feature-card p,
+html[data-chl-theme] #app.studio-root .nexus-mission-panel p,
+html[data-chl-theme] #app.studio-root .studio-outlet .sub { color: var(--mut); }
+html[data-chl-theme] #app.studio-root .nexus-mission-panel {
+  color: var(--txt);
+  background: linear-gradient(115deg, var(--card), var(--bg2));
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .nexus-mission-item,
+html[data-chl-theme] #app.studio-root .chl-active-live-section {
+  color: var(--txt);
+  background: var(--bg2);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .nexus-mission-item small { color: var(--mut); }
+html[data-chl-theme] #app.studio-root .studio-outlet .input,
+html[data-chl-theme] #app.studio-root .studio-outlet input.input,
+html[data-chl-theme] #app.studio-root .studio-outlet textarea.input,
+html[data-chl-theme] #app.studio-root .studio-outlet select.input,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-chat-form input,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-chat-form textarea {
+  color: var(--txt);
+  background: var(--card);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .studio-outlet .input::placeholder,
+html[data-chl-theme] #app.studio-root .studio-outlet input::placeholder,
+html[data-chl-theme] #app.studio-root .studio-outlet textarea::placeholder { color: var(--mut); opacity: 1; }
+html[data-chl-theme] #app.studio-root .studio-outlet .btn.ghost {
+  color: var(--txt);
+  background: var(--bg2);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .studio-outlet .btn.primary,
+html[data-chl-theme] #app.studio-root .studio-sidebar-cta {
+  color: #fff;
+  background: linear-gradient(105deg, var(--brand), var(--brand2));
+  border-color: transparent;
+}
+html[data-chl-theme] #app.studio-root .studio-live-card,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-video-card,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-chat-card,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-gift-card,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-guest-card,
+html[data-chl-theme] #app.studio-root .studio-outlet .live-participant-tile {
+  color: var(--txt);
+  background: var(--card);
+  border-color: var(--line);
+}
+html[data-chl-theme] #app.studio-root .studio-live-card:hover,
+html[data-chl-theme] #app.studio-root .studio-outlet .card:hover,
+html[data-chl-theme] #app.studio-root .studio-outlet .chl-live-explore-card:hover {
+  border-color: var(--brand);
+}
