@@ -1,0 +1,74 @@
+/* Creator Hub Live — compact, responsive rank and achievement hierarchy. */
+.chl-rank-page{display:grid;gap:22px;min-width:0}
+.chl-rank-subnav{gap:8px;margin-bottom:16px}
+.chl-rank-section-heading{display:flex;flex-direction:column;gap:4px;margin:0 0 12px}
+.chl-rank-section-heading h2{margin:0;font-size:clamp(18px,2.3vw,22px);font-weight:850;letter-spacing:-.02em;color:var(--txt)}
+.chl-rank-section-heading p{margin:0;line-height:1.45}
+.chl-rank-intro{background:var(--card);display:flex;align-items:flex-start;gap:14px;padding:16px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(115deg,color-mix(in srgb,var(--brand2) 15%,var(--card)),var(--card));}
+.chl-rank-intro-icon{background:var(--bg2);display:grid;place-items:center;flex:0 0 46px;width:46px;height:46px;border-radius:13px;background:color-mix(in srgb,var(--brand2) 18%,var(--bg2));font-size:26px}
+.chl-rank-intro h2{margin:0 0 5px;font-size:17px;font-weight:850;color:var(--txt)}
+.chl-rank-intro p{margin:0;max-width:920px;font-size:14px;line-height:1.5;color:var(--mut)}
+.chl-rank-tier-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.chl-rank-tier-card{display:flex;flex-direction:column;min-width:0;padding:13px;border:1px solid var(--line);border-radius:15px;background:var(--card);box-shadow:0 2px 10px #0000000a}
+.chl-rank-tier-top{display:flex;align-items:center;gap:10px;min-width:0}
+.chl-rank-tier-icon{display:grid;place-items:center;flex:0 0 43px;width:43px;height:43px;border-radius:12px;background:var(--bg2);font-size:23px}
+.chl-rank-tier-title-wrap{display:flex;flex-direction:column;gap:2px;min-width:0}
+.chl-rank-tier-order{font-size:10px;line-height:1.2;letter-spacing:.1em;font-weight:800;color:var(--mut)}
+.chl-rank-tier-title-wrap h3{margin:0;font-size:17px;line-height:1.2;font-weight:900;color:var(--txt)}
+.chl-rank-sublevels{display:flex;flex-wrap:wrap;gap:5px;margin:12px 0 9px}
+.chl-rank-sublevel{display:inline-flex;align-items:center;justify-content:center;min-width:29px;min-height:26px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--txt);font-size:12px;font-weight:850}
+.chl-rank-single-tier .chl-rank-sublevel{font-size:11px;white-space:normal}
+.chl-rank-tier-description{margin:0;color:var(--mut);font-size:12px;line-height:1.45}
+.chl-rank-tier-note{margin:8px 0 0;color:var(--txt);font-size:12px;font-weight:900}
+.chl-rank-tier-bronze{border-top:3px solid #a76b3c}
+.chl-rank-tier-silver{border-top:3px solid #adb7c4}
+.chl-rank-tier-gold{border-top:3px solid #e8b941}
+.chl-rank-tier-platinum{border-top:3px solid #7bc9c1}
+.chl-rank-tier-diamond{border-top:3px solid #8c9dff}
+.chl-rank-tier-heroic{border-top:3px solid #e75d62}
+.chl-rank-tier-master{border-top:3px solid #9e7cff}
+.chl-rank-tier-grandmaster{border-top:3px solid #54b9ff}
+.chl-rank-honesty-note{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg2);font-size:13px;line-height:1.5;color:var(--mut)}
+.chl-rank-honesty-note strong{flex:0 0 auto;color:var(--txt)}
+.chl-rank-division-bands{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.chl-rank-division-card{min-width:0;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.chl-rank-division-heading{display:flex;flex-direction:column;gap:3px;margin-bottom:10px}
+.chl-rank-division-heading h3{margin:0;color:var(--txt);font-size:15px;font-weight:850}
+.chl-rank-division-heading .sub{font-size:11px;line-height:1.4}
+.chl-rank-division-codes{display:flex;flex-wrap:wrap;gap:5px}
+.chl-rank-division-code{display:inline-flex;align-items:center;justify-content:center;min-width:35px;padding:5px 8px;border-radius:8px;background:var(--bg2);border:1px solid var(--line);font-size:12px;font-weight:900;color:var(--txt)}
+.chl-rank-division-a{border-top:3px solid #e7bb48}
+.chl-rank-division-b{border-top:3px solid #9aa8bd}
+.chl-rank-division-c{border-top:3px solid #8c9dff}
+.chl-rank-division-d{border-top:3px solid #a76b3c}
+.chl-rank-order-note{margin:8px 0 0;color:var(--mut);font-size:12px;line-height:1.5}
+.chl-rank-season-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.chl-rank-season-card{min-width:0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.chl-rank-season-number{display:block;margin-bottom:7px;font-size:10px;letter-spacing:.1em;font-weight:900;color:var(--mut)}
+.chl-rank-season-card h3{margin:0;font-size:14px;line-height:1.35;font-weight:850;color:var(--txt)}
+.chl-rank-current-standing,.chl-rank-missions{min-width:0;padding:15px}
+.chl-rank-standing-body,.chl-rank-mission-content{min-width:0}
+.chl-rank-standing-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.chl-rank-standing-row:last-child{border-bottom:0}
+.chl-rank-standing-emblem{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;border-radius:11px;background:var(--bg2);font-size:20px}
+.chl-rank-standing-main,.chl-rank-history-main{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
+.chl-rank-standing-main strong,.chl-rank-history-main strong{font-size:14px;font-weight:850;color:var(--txt);overflow-wrap:anywhere}
+.chl-rank-standing-main .sub,.chl-rank-history-main .sub{font-size:12px;line-height:1.4}
+.chl-rank-active-mission{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.chl-rank-active-mission-copy{flex:1;min-width:180px}
+.chl-rank-kicker{display:block;margin-bottom:6px;font-size:10px;letter-spacing:.09em;font-weight:900;color:var(--mut)}
+.chl-rank-active-mission h3{margin:0 0 5px;font-size:17px;line-height:1.35;font-weight:850;color:var(--txt);overflow-wrap:anywhere}
+.chl-rank-active-mission p{margin:0;font-size:13px;line-height:1.45}
+.chl-rank-progress-label{display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:4px 9px;border:1px solid var(--line);border-radius:9px;background:var(--bg2);font-size:12px;font-weight:850;color:var(--txt);white-space:nowrap}
+.chl-rank-progress-track{height:9px;overflow:hidden;margin-top:14px;border-radius:99px;background:var(--bg2);border:1px solid var(--line)}
+.chl-rank-progress-fill{height:100%;max-width:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand2),var(--brand));transition:width .2s ease}
+.chl-rank-progress-caption{margin:7px 0 0;font-size:12px}
+.chl-rank-history-title{margin:18px 0 9px;font-size:15px;font-weight:850;color:var(--txt)}
+.chl-rank-history-list{display:grid;gap:0}
+.chl-rank-history-row{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 0;border-bottom:1px solid var(--line)}
+.chl-rank-history-row:last-child{border-bottom:0}
+.chl-rank-history-check{background:var(--bg2);display:grid;place-items:center;flex:0 0 26px;width:26px;height:26px;border-radius:50%;background:color-mix(in srgb,var(--ok) 17%,var(--bg2));color:var(--ok);font-weight:900}
+.chl-rank-completed-note{margin-bottom:12px}
+@media(max-width:920px){.chl-rank-tier-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.chl-rank-division-bands{grid-template-columns:repeat(2,minmax(0,1fr))}.chl-rank-season-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.chl-rank-page{gap:18px}.chl-rank-intro{gap:10px;padding:12px}.chl-rank-intro-icon{flex-basis:38px;width:38px;height:38px;font-size:21px}.chl-rank-intro h2{font-size:15px}.chl-rank-intro p{font-size:12px}.chl-rank-tier-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.chl-rank-tier-card{padding:9px;border-radius:12px}.chl-rank-tier-icon{flex-basis:34px;width:34px;height:34px;font-size:19px}.chl-rank-tier-title-wrap h3{font-size:14px}.chl-rank-tier-order{font-size:9px}.chl-rank-tier-description{font-size:11px}.chl-rank-sublevels{gap:4px;margin:9px 0 7px}.chl-rank-sublevel{min-width:25px;min-height:23px;padding:2px 6px;font-size:11px}.chl-rank-single-tier .chl-rank-sublevel{font-size:10px}.chl-rank-honesty-note{display:block;font-size:12px}.chl-rank-honesty-note strong{display:block;margin-bottom:3px}.chl-rank-division-bands{grid-template-columns:1fr 1fr;gap:7px}.chl-rank-division-card{padding:9px}.chl-rank-division-heading h3{font-size:13px}.chl-rank-division-heading .sub{font-size:10px}.chl-rank-division-code{min-width:30px;padding:4px 6px;font-size:11px}.chl-rank-season-grid{grid-template-columns:1fr 1fr;gap:7px}.chl-rank-season-card{padding:10px}.chl-rank-season-card h3{font-size:12px}.chl-rank-season-number{font-size:9px}.chl-rank-current-standing,.chl-rank-missions{padding:11px}.chl-rank-standing-row{gap:8px}.chl-rank-standing-main strong,.chl-rank-history-main strong{font-size:12px}.chl-rank-standing-main .sub,.chl-rank-history-main .sub{font-size:11px}.chl-rank-active-mission-copy{min-width:120px}.chl-rank-active-mission h3{font-size:15px}.chl-rank-progress-label{font-size:11px;padding:3px 7px}}
+@media(prefers-reduced-motion:reduce){.chl-rank-progress-fill{transition:none}}
