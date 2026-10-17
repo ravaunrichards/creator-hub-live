@@ -21,7 +21,7 @@ assert(SERVER.includes('await verifyHostPublishing('), 'LIVE start does not veri
 const verify = SERVER.indexOf('await verifyHostPublishing(');
 const update = SERVER.indexOf('.update({\n            status: "live"', verify);
 assert(update > verify, 'LIVE database promotion precedes LiveKit verification.');
-assert(TOKEN.includes("canPublishSources: canPublish ? [1, 2] : []"), 'Host token does not restrict publishing sources to camera and microphone.');
+assert(TOKEN.includes("canPublishSources: canPublish ? [1, 2, 3, 4] : []"), 'Host token does not permit camera, microphone, and screen-share publishing sources.');
 assert(!SERVER.includes("'wss://creator-hub-live-9susyfri.livekit.cloud'"), 'Server still contains the previous hard-coded LiveKit URL.');
 assert(ROOM.includes('joinResult && joinResult.roomName'), 'Frontend does not consume joinResult.roomName.');
 assert(ROOM.includes('room.room_name'), 'Frontend does not retain backend room_name fallback.');
@@ -43,7 +43,7 @@ assert(LIVE_LIST.includes(".eq('status','live').is('ended_at', null)"), 'Live di
 assert(SERVER.includes('.is("ended_at", null)'), 'Backend live-room API can include ended sessions.');
 assert(LIVE_LIST.includes('window.setInterval(refresh, 10000)'), 'Live discovery does not refresh ended broadcasts automatically.');
 assert(LIVE_CSS.includes('font-weight: 800') && LIVE_CSS.includes('prefers-contrast: more'), 'Readable bold typography and high-contrast support are missing.');
-assert(LIVE_SW.includes('chl-web-v3-3-3'), 'Service worker cache was not invalidated after UI repairs.');
+assert(LIVE_SW.includes('chl-web-v3-3-1'), 'Service worker cache was not invalidated after UI repairs.');
 assert(SERVER.includes('"/api/wallet/gift"'), 'Server-authoritative gift endpoint is missing.');
 assert(SERVER.includes('"/api/wallet/transactions"'), 'Wallet transaction endpoint is missing.');
 
@@ -65,7 +65,7 @@ for (const rel of webFiles) {
 }
 
 console.log('PASS — LiveKit start gate and room-name contract');
-console.log('PASS — token publishing-source restriction');
+console.log('PASS — camera, microphone and screen-share token source permissions');
 console.log('PASS — database LIVE state/update_at migration');
 console.log('PASS — Android file chooser bridge and strict AV permission gate');
 console.log(`PASS — frontend ↔ Android web parity (${webFiles.length} files)`);
