@@ -13,8 +13,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check": "node --check src/server.js && node --check src/livekit-token.js && node tests/route-check.js",
+    "check": "node --check src/server.js && node --check src/live-room-lifecycle.js && node tests/route-check.js && node tests/live-room-lifecycle.test.js",
     "smoke": "node tests/route-check.js",
-    "test": "node tests/route-check.js && node tests/backend-syntax.js && node tests/livekit-contract.js"
+    "test": "node tests/route-check.js && node tests/backend-syntax.js && node tests/livekit-contract.js && node tests/live-room-lifecycle.test.js"
   }
 }
