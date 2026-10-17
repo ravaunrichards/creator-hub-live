@@ -3,6 +3,7 @@ import http from "node:http";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { URL } from "node:url";
 import { handleTeamsRoute } from "./teams-routes.js";
+import { closeOrphanedLiveRooms } from "./live-room-lifecycle.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   createLiveKitToken,
@@ -1325,16 +1326,20 @@ const server = http.createServer(async (req, res) => {
             "Only the host can end this LIVE session."
           );
         }
+        const endedAt = new Date().toISOString();
         const { data, error } = await client
           .from("live_sessions")
           .update({
             status: "ended",
-            ended_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            ended_at: endedAt,
+            updated_at: endedAt,
+            viewer_count: 0,
           })
           .eq("id", room.id)
+          .in("status", ["pending", "live"])
+          .is("ended_at", null)
           .select("*")
-          .single();
+          .maybeSingle();
         if (error) {
           const normalized = normalizeExternalError(error);
           throw fail(500, "LIVE_ROOM_END_FAILED", normalized.message, {
@@ -1342,7 +1347,14 @@ const server = http.createServer(async (req, res) => {
             details: normalized.details,
           });
         }
-        return ok(res, data);
+        // Database state is authoritative for every web/app listing. Closing
+        // the LiveKit room also disconnects viewers who were still attached.
+        try {
+          await liveKitRoomService().deleteRoom(String(room.room_name));
+        } catch (closeError) {
+          console.warn("[LIVE end] Database session ended; LiveKit room closure will be reconciled:", closeError?.message || closeError);
+        }
+        return ok(res, data || { ...room, status: "ended", ended_at: endedAt, updated_at: endedAt, viewer_count: 0 });
       }
 
       if (liveParts.action === "leave" && method === "POST") {
@@ -2416,6 +2428,35 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const LIVE_ROOM_RECONCILE_INTERVAL_MS = 60_000;
+let liveRoomReconcileRunning = false;
+
+async function reconcileOrphanedLiveRooms() {
+  if (liveRoomReconcileRunning) return;
+  liveRoomReconcileRunning = true;
+  try {
+    const result = await closeOrphanedLiveRooms({
+      client: db(),
+      livekitUrl: LIVEKIT_URL,
+      apiKey: process.env.LIVEKIT_API_KEY,
+      apiSecret: process.env.LIVEKIT_API_SECRET,
+      staleAfterMs: 120_000,
+      logger: console,
+    });
+    if (result.ended) console.info("[LIVE cleanup] Reconciled abandoned sessions:", result);
+    if (result.skipped) console.warn("[LIVE cleanup] Reconciliation skipped:", result.skipped);
+  } catch (error) {
+    console.warn("[LIVE cleanup] Reconciliation failed safely:", error?.message || error);
+  } finally {
+    liveRoomReconcileRunning = false;
+  }
+}
+
 server.listen(PORT, () => {
   console.log(`[Creator Hub Backend] Running successfully on port ${PORT}`);
+  // No separate Render cron service is required. This reconciler runs inside
+  // the existing backend, and verifies host presence before ending a session.
+  void reconcileOrphanedLiveRooms();
+  const reconcileTimer = setInterval(reconcileOrphanedLiveRooms, LIVE_ROOM_RECONCILE_INTERVAL_MS);
+  if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 });
