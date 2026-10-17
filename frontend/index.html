@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="styles/nexus-edition.css?v=6.0.5"/>
 <link rel="stylesheet" href="styles/platform-responsive.css?v=6.0.5"/>
 <link rel="stylesheet" href="styles/chl-style-system.css?v=6.0.5"/>
-<link rel="stylesheet" href="styles/platform-tools.css?v=6.0.8"/>
+<link rel="stylesheet" href="styles/platform-tools.css?v=6.0.10"/>
 </head>
 <body>
 <div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div class="spin"></div></div></div>
@@ -53,15 +53,14 @@ window.addEventListener('error', function (ev) {
 <script src="src/pages-profile.js?v=6.0.6"></script>
 <script src="src/livekit.js?v=6.0.5"></script>
 <script src="src/studio-edition.js?v=6.0.5"></script>
-<script src="src/style-system.js?v=6.0.5"></script>
+<!-- Appearance is managed by the token-based Style Switcher below. -->
 <script src="src/swipe-feed.js?v=6.0.5"></script>
 <script src="src/pages-platform-tools.js?v=6.0.8"></script>
+<script src="src/style-switcher.js?v=6.0.10"></script>
+<script src="src/style-switcher-integration.js?v=6.0.10"></script>
 <script>
 try {
-  var appearance = JSON.parse(localStorage.getItem('chcn_appearance') || '{}');
   var accessibility = JSON.parse(localStorage.getItem('chcn_accessibility') || '{}');
-  if (appearance.theme) { document.documentElement.dataset.chcnTheme = appearance.theme; document.documentElement.style.colorScheme = appearance.theme === 'system' ? 'normal' : appearance.theme; }
-  if (appearance.layout) document.documentElement.classList.toggle('compact-ui', appearance.layout === 'compact');
   if (accessibility.scale) document.documentElement.style.setProperty('--user-scale', String(accessibility.scale));
   document.documentElement.classList.toggle('reduce-motion', !!accessibility.motion);
   document.documentElement.classList.toggle('high-contrast', !!accessibility.contrast);
@@ -75,7 +74,7 @@ catch (e) {
 </script>
 <script>
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js?v=6.0.8').catch(function(){}); });
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js?v=6.0.10').catch(function(){}); });
 }
 </script>
 </body>
