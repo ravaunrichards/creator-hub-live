@@ -39,14 +39,10 @@
   }
 
   CHL.route('/create', function (outlet) {
-    outlet.appendChild(ui.pageHead('Go LIVE', 'Choose one of the three separate LIVE experiences.'));
+    outlet.appendChild(ui.pageHead('Go LIVE', 'Start a secure LiveKit broadcast.'));
     if (!CHL.user) { CHL.navigate('#/login'); return; }
     var box = el('div', { class: 'card', style: 'max-width:520px' }); var f = el('form', { onsubmit: function (e) { e.preventDefault(); startLive(f); } });
     f.appendChild(field('Stream title', 'title', 'e.g. Friday night acoustic set'));
-    var modeWrap = el('label', { class: 'field' }, [el('span', { text: 'LIVE type' })]);
-    var modeSelect = el('select', { class: 'input', name: 'kind' });
-    [['video', 'Video LIVE'], ['voice', 'Audio LIVE'], ['screen', 'Screen Share LIVE']].forEach(function (item) { modeSelect.appendChild(el('option', { value: item[0] }, item[1])); });
-    modeWrap.appendChild(modeSelect); f.appendChild(modeWrap);
     var catWrap = el('label', { class: 'field' }, [el('span', { text: 'Category' })]); var sel = el('select', { class: 'input', name: 'category' });
     ['Just Chatting', 'Music', 'Gaming', 'IRL', 'Dance', 'Sports'].forEach(function (c) { sel.appendChild(el('option', { value: c }, c)); }); catWrap.appendChild(sel); f.appendChild(catWrap);
     f.appendChild(el('button', { class: 'btn primary block', type: 'submit', style: 'margin-top:6px' }, '▶ Start broadcasting')); box.appendChild(f); outlet.appendChild(box);
@@ -54,7 +50,7 @@
   async function startLive(f) {
     var title = f.title.value.trim(); if (!title) { CHL.toast('Enter a title'); return; }
     var btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Creating secure room…';
-    try { var d = await CHL.authenticatedApiRequest('/api/live/rooms', { method: 'POST', body: { title: title, category: f.category.value, kind: f.kind.value } }); if (!d || !d.id) throw new Error('The LIVE room was not created.'); CHL.navigate('#/live/' + d.id); }
+    try { var d = await CHL.authenticatedApiRequest('/api/live/rooms', { method: 'POST', body: { title: title, category: f.category.value } }); if (!d || !d.id) throw new Error('The LIVE room was not created.'); CHL.navigate('#/live/' + d.id); }
     catch (e) { btn.disabled = false; btn.textContent = '▶ Start broadcasting'; CHL.toast(e.message || 'Could not create LIVE room.'); }
   }
   CHL.ownProfile = function (outlet) {

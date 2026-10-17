@@ -26,7 +26,6 @@
     stopChatPolling();
 
     var roomId = String((r && r.id) || '').trim();
-    var liveKind = 'video';
 
     if (!roomId) {
       outlet.appendChild(
@@ -46,7 +45,7 @@
           el('div', { class: 'h1', text: 'LIVE' }),
           el('p', {
             class: 'sub',
-            text: 'Secure LiveKit session'
+            text: 'Secure LiveKit video session'
           })
         ])
       ])
@@ -136,30 +135,11 @@
       class: 'btn',
       type: 'button',
       onclick: function () {
-        if (liveKind !== 'screen') return;
-        // getDisplayMedia must be invoked directly from this user gesture.
-        CHL.startScreenShare().then(async function () {
-          if (currentRoomId !== roomId) return;
-          var local = CHL.getLiveKitRoom && CHL.getLiveKitRoom();
-          if (local && local.localParticipant && local.localParticipant.trackPublications) {
-            local.localParticipant.trackPublications.forEach(function (publication) {
-              if (publication.track) CHL.attachLocalTrack(publication.track, stage);
-            });
-          }
-          var started = await CHL.authenticatedApiRequest(
-            '/api/live/rooms/' + encodeURIComponent(roomId) + '/start',
-            { method: 'POST' }
-          );
-          if (!started || (started.status && started.status !== 'live')) throw new Error('The server did not confirm Screen Share LIVE.');
-          liveStarted = true;
-          status.textContent = 'SCREEN SHARE LIVE';
-          status.style.background = 'rgba(180,0,40,.85)';
-        }).catch(function (e) {
-          status.textContent = 'SCREEN SHARE FAILED';
+        CHL.startScreenShare().catch(function (e) {
           CHL.toast(e.message || 'Screen share failed.');
         });
       }
-    }, 'Start screen LIVE');
+    }, 'Share screen');
 
     var endButton = el('button', {
       class: 'btn danger',
@@ -309,13 +289,11 @@
       }
 
       roomHostId = room.host_id || null;
-      liveKind = ['video', 'voice', 'screen'].indexOf(String(room.kind || 'video')) >= 0 ? String(room.kind || 'video') : 'video';
       isHost = !!CHL.user && !!roomHostId &&
         String(CHL.user.id) === String(roomHostId);
 
-      var modeLabel = liveKind === 'voice' ? 'AUDIO LIVE' : liveKind === 'screen' ? 'SCREEN SHARE LIVE' : 'VIDEO LIVE';
       if (room.status === 'live') {
-        status.textContent = modeLabel;
+        status.textContent = 'LIVE';
         status.style.background = 'rgba(180,0,40,.85)';
       } else {
         status.textContent = isHost
@@ -336,9 +314,6 @@
         isHost = joinResult.canPublish;
         controls.style.display = isHost ? '' : 'none';
         endButton.style.display = isHost ? '' : 'none';
-        cameraButton.style.display = isHost && liveKind === 'video' ? '' : 'none';
-        shareButton.style.display = isHost && liveKind === 'screen' ? '' : 'none';
-        shareButton.disabled = !isHost || liveKind !== 'screen';
       }
 
       /* Use the backend-generated LiveKit room name. */
@@ -359,39 +334,36 @@
           if (currentRoomId !== roomId) return;
 
           status.textContent = isHost
-            ? (liveKind === 'screen' ? 'CONNECTED — TAP START SCREEN LIVE' : 'CONNECTED — STARTING MEDIA')
+            ? 'CONNECTED — STARTING MEDIA'
             : 'CONNECTED';
           status.style.background = 'rgba(0,0,0,.75)';
 
           // Only the authorized host publishes camera and microphone media.
           if (isHost) {
             try {
-              if (liveKind === 'video') {
-                await CHL.publishCamera();
-                await CHL.publishMicrophone();
-              } else {
-                await CHL.publishMicrophone();
-              }
+              await CHL.publishCamera();
+              await CHL.publishMicrophone();
             } catch (e) {
               status.textContent = 'MEDIA PERMISSION FAILED';
-              CHL.toast(e.message || (liveKind === 'voice' ? 'Microphone permission denied.' : 'Media permission denied.'));
+              CHL.toast(e.message || 'Camera/microphone permission denied.');
               throw e;
             }
 
-            // Screen capture requires a fresh user gesture, so it starts only
-            // when the host presses the dedicated Start screen LIVE button.
-            if (liveKind !== 'screen') {
-              var startResult = await CHL.authenticatedApiRequest(
-                '/api/live/rooms/' + encodeURIComponent(roomId) + '/start',
-                { method: 'POST' }
-              );
-              if (!startResult || (startResult.status && startResult.status !== 'live')) {
-                throw new Error('The server did not confirm that LIVE started.');
-              }
-              liveStarted = true;
-              status.textContent = modeLabel;
-              status.style.background = 'rgba(180,0,40,.85)';
+            // The server verifies media publication before confirming LIVE.
+            var startResult = await CHL.authenticatedApiRequest(
+              '/api/live/rooms/' + encodeURIComponent(roomId) + '/start',
+              { method: 'POST' }
+            );
+
+            if (!startResult || (
+              startResult.status && startResult.status !== 'live'
+            )) {
+              throw new Error('The server did not confirm that LIVE started.');
             }
+
+            liveStarted = true;
+            status.textContent = 'LIVE';
+            status.style.background = 'rgba(180,0,40,.85)';
           }
 
           // Attach tracks already published by the local participant.
