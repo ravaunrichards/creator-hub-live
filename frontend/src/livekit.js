@@ -548,6 +548,10 @@
   /*
    * Disconnect and completely clean up the local LiveKit session.
    */
+  CHL.getLiveKitRoom = function () {
+    return activeRoom;
+  };
+
   CHL.disconnectLiveKit = function () {
     var room = activeRoom;
 
