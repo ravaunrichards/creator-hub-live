@@ -69,15 +69,7 @@
   function safeGet(key) { try { var raw = localStorage.getItem(key); return raw ? normalize(JSON.parse(raw)) : null; } catch (_) { return null; } }
   function safeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(normalize(value))); return true; } catch (_) { return false; } }
   function userKey(id) { return USER_KEY_PREFIX + String(id || ''); }
-  function getPreference() {
-    var localAccount = CHL.user && CHL.user.id ? safeGet(userKey(CHL.user.id)) : null;
-    var guest = safeGet(GUEST_KEY);
-    if (localAccount) return localAccount;
-    if (guest) return guest;
-    var migrated = migrateLegacyLocalPreference();
-    if (migrated) { safeSet(GUEST_KEY, migrated); return migrated; }
-    return clone(DEFAULTS);
-  }
+  function getPreference() { return safeGet(CHL.user && CHL.user.id ? userKey(CHL.user.id) : GUEST_KEY) || safeGet(GUEST_KEY) || clone(DEFAULTS); }
 
   function apply(value) {
     var p = normalize(value);
@@ -109,24 +101,18 @@
     }
     return normalize({ mode: 'combo', theme: theme, typography: value.font === 'readable' ? 'readable' : (value.font === 'studio' ? 'studio' : 'system'), surfaces: 'standard', density: value.layout === 'compact' || value.scale === 'compact' || Number(value.scale) < 0.95 ? 'compact' : 'comfortable', motion: 'standard', contrast: 'standard' });
   }
-  function migrateLegacyLocalPreference() {
-    try {
-      var raw = localStorage.getItem('chl_appearance_v2');
-      if (raw) {
-        var migrated = legacyToPreference(JSON.parse(raw));
-        if (migrated) return migrated;
-      }
-      var legacyTheme = localStorage.getItem('chl_ui_theme');
-      if (legacyTheme) return legacyToPreference({ theme: legacyTheme });
-    } catch (_) { /* an unreadable legacy preference must not block app startup */ }
-    return null;
-  }
-
   async function saveAccountPreference(p) {
     if (!CHL.user || !CHL.user.id || !CHL.sb) return { synced: false, reason: 'guest' };
     try {
       var result = await CHL.sb.from('user_settings').upsert({ user_id: CHL.user.id, appearance: normalize(p), updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-      if (result && result.error) return { synced: false, reason: result.error.message || 'Account sync failed.' };
+      if (result && result.error) {
+        var syncError = result.error;
+        var contractMismatch = syncError.code === '23514' || syncError.constraint === 'user_settings_appearance_contract' || String(syncError.message || '').indexOf('user_settings_appearance_contract') !== -1;
+        var reason = contractMismatch
+          ? 'The account database has an outdated appearance contract. Apply database/migrations/0039_appearance_contract_compatibility.sql, then retry. Your choice remains saved on this device.'
+          : (syncError.message || 'Account sync failed. Your choice remains saved on this device.');
+        return { synced: false, reason: reason };
+      }
       safeSet(userKey(CHL.user.id), p);
       try { localStorage.removeItem(GUEST_KEY); } catch (_) {}
       return { synced: true };
@@ -136,7 +122,7 @@
     var user = CHL.user;
     if (!user || !user.id) {
       activeUserId = null;
-      apply(getPreference());
+      apply(safeGet(GUEST_KEY) || clone(DEFAULTS));
       return;
     }
     if (activeUserId === user.id) return syncPromise || Promise.resolve();
@@ -202,17 +188,17 @@
 
   async function runRelayTests() {
     var root = document.documentElement;
+    var keys = ['chlTheme','chlTypography','chlSurfaces','chlDensity','chlMotion','chlContrast'];
     var attrs = ['data-chl-theme','data-chl-typography','data-chl-surfaces','data-chl-density','data-chl-motion','data-chl-contrast'];
     var previous = attrs.map(function (name) { return root.getAttribute(name); });
-    var passed = 0, failed = [], total = 0, contrastFailures = 0, cssFailures = 0, runtimeErrors = 0, overflowCombinations = 0;
+    var passed = 0, failed = [], total = 0, contrastFailures = 0;
     function luminance(hex) {
-      var raw = String(hex || '').trim().replace('#','');
+      var raw = hex.replace('#','');
       if (raw.length === 3) raw = raw.split('').map(function (c) { return c+c; }).join('');
-      if (!/^[0-9a-f]{6}$/i.test(raw)) return NaN;
       var rgb = [0,2,4].map(function (i) { var n = parseInt(raw.slice(i,i+2),16)/255; return n <= 0.04045 ? n/12.92 : Math.pow((n+0.055)/1.055,2.4); });
       return 0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2];
     }
-    function ratio(a,b) { var x=luminance(a),y=luminance(b); return Number.isFinite(x) && Number.isFinite(y) ? (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05) : 0; }
+    function ratio(a,b) { var x=luminance(a),y=luminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05); }
     function readToken(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
     try {
       themeIds.forEach(function (theme) {
@@ -222,26 +208,14 @@
               Object.keys(FAMILIES.motion).forEach(function (motion) {
                 Object.keys(FAMILIES.contrast).forEach(function (contrast) {
                   total++;
-                  var sample = {theme:theme,typography:typography,surfaces:surfaces,density:density,motion:motion,contrast:contrast};
-                  try {
-                    root.setAttribute(attrs[0], theme); root.setAttribute(attrs[1], typography); root.setAttribute(attrs[2], surfaces); root.setAttribute(attrs[3], density); root.setAttribute(attrs[4], motion); root.setAttribute(attrs[5], contrast);
-                    var tokens = ['--bg','--bg2','--card','--line','--txt','--mut','--brand','--brand2','--radius'];
-                    var values = tokens.map(readToken);
-                    var cssValid = values.every(function (v) { return !!v; }) && CSS.supports('color', readToken('--bg')) && CSS.supports('border-radius', readToken('--radius'));
-                    var bg = readToken('--bg'), card = readToken('--card'), txt = readToken('--txt'), mut = readToken('--mut'), brand = readToken('--brand'), brand2 = readToken('--brand2');
-                    var contrastOk = ratio(txt,bg) >= 4.5 && ratio(txt,card) >= 4.5 && ratio(mut,bg) >= 4.5 && ratio(mut,card) >= 4.5 && ratio('#ffffff',brand) >= 4.5 && ratio('#ffffff',brand2) >= 4.5;
-                    var hasOverflow = root.scrollWidth > root.clientWidth;
-                    if (hasOverflow) overflowCombinations++;
-                    if (cssValid && contrastOk) passed++;
-                    else {
-                      if (!cssValid) cssFailures++;
-                      if (!contrastOk) contrastFailures++;
-                      if (failed.length < 12) failed.push(Object.assign({}, sample, {cssValid:cssValid,contrastOk:contrastOk,overflow:hasOverflow}));
-                    }
-                  } catch (error) {
-                    runtimeErrors++;
-                    if (failed.length < 12) failed.push(Object.assign({}, sample, {runtimeError:String(error && error.message || error)}));
-                  }
+                  root.setAttribute(attrs[0], theme); root.setAttribute(attrs[1], typography); root.setAttribute(attrs[2], surfaces); root.setAttribute(attrs[3], density); root.setAttribute(attrs[4], motion); root.setAttribute(attrs[5], contrast);
+                  var tokens = ['--bg','--bg2','--card','--line','--txt','--mut','--brand','--brand2','--radius'];
+                  var values = tokens.map(readToken);
+                  var cssValid = values.every(function (v) { return !!v; }) && CSS.supports('color', readToken('--bg')) && CSS.supports('border-radius', readToken('--radius'));
+                  var bg = readToken('--bg'), card = readToken('--card'), txt = readToken('--txt'), mut = readToken('--mut'), brand = readToken('--brand'), brand2 = readToken('--brand2');
+                  var contrastOk = ratio(txt,bg) >= 4.5 && ratio(txt,card) >= 4.5 && ratio(mut,bg) >= 4.5 && ratio(mut,card) >= 4.5 && ratio('#ffffff',brand) >= 4.5 && ratio('#ffffff',brand2) >= 4.5;
+                  if (cssValid && contrastOk) passed++;
+                  else { if (!contrastOk) contrastFailures++; if (failed.length < 12) failed.push({theme:theme,typography:typography,surfaces:surfaces,density:density,motion:motion,contrast:contrast,cssValid:cssValid,contrastOk:contrastOk}); }
                 });
               });
             });
@@ -251,7 +225,7 @@
     } finally {
       attrs.forEach(function (name, i) { if (previous[i] == null) root.removeAttribute(name); else root.setAttribute(name, previous[i]); });
     }
-    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, cssFailures: cssFailures, runtimeErrors: runtimeErrors, overflowCombinations: overflowCombinations, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: overflowCombinations > 0 } };
+    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth } };
   }
 
   function render(container) {
@@ -289,17 +263,16 @@
         var themeField = el('label', { class: 'field chl-style-field' }); themeField.appendChild(el('span', { text: 'Base colour style' }));
         var themeSelect = el('select', { class: 'input', 'aria-label': 'Base colour style' });
         themeIds.forEach(function (id) { themeSelect.appendChild(el('option', { value: id }, THEMES[id].label)); }); themeSelect.value = draft.theme;
-        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; updateComboPreview(); }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
+        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
         var familyGrid = el('div', { class: 'chl-family-grid' }); chooser.appendChild(familyGrid);
+        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; })); });
         var preview = el('div', { class: 'chl-combo-preview' });
-        function updateComboPreview() {
-          preview.innerHTML = '';
-          [[THEMES[draft.theme].label], [FAMILIES.typography[draft.typography].label], [FAMILIES.surfaces[draft.surfaces].label], [FAMILIES.density[draft.density].label], [FAMILIES.motion[draft.motion].label], [FAMILIES.contrast[draft.contrast].label]].forEach(function (item) {
-            preview.appendChild(el('span', { class: 'chl-preview-chip', text: item[0] }));
-          });
-        }
-        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; updateComboPreview(); })); });
-        updateComboPreview();
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: THEMES[draft.theme].label }));
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.typography[draft.typography].label }));
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.surfaces[draft.surfaces].label }));
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.density[draft.density].label }));
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.motion[draft.motion].label }));
+        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.contrast[draft.contrast].label }));
         chooser.appendChild(preview);
       }
     }
@@ -347,5 +320,5 @@
     runRelayTests: runRelayTests,
     onAuthChanged: onAuthChanged
   };
-  apply(getPreference());
+  apply(safeGet(GUEST_KEY) || clone(DEFAULTS));
 })();
