@@ -21,10 +21,12 @@
       publishableKey: 'sb_publishable_ewC8MT1HSsDLA5EyDV-PIg_vrZecqUY'
     },
     livekit: {
-      // Public connection URL; signing secrets stay on the backend.
-      projectId: 'p_4ia809byg35',
-      url: 'wss://creator-hub-live-9susyfri.livekit.cloud',
-      websocketUrl: 'wss://creator-hub-live-9susyfri.livekit.cloud',
+      // The backend's token response is the single source of truth for the
+      // LiveKit server URL. Do not pin a second project URL in the browser:
+      // it can silently diverge from the backend API key/secret project.
+      projectId: '',
+      url: '',
+      websocketUrl: '',
       tokenEndpoint: '/api/livekit/token'
     },
     api: {
@@ -44,7 +46,7 @@
       tileUrl: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
     },
     features: { livekit: true, paypal: true, maps: true, storage: true },
-    version: '3.2.1'
+    version: '3.2.0'
   };
 
   // Backward-compatible legacy shape used by the existing pages.
