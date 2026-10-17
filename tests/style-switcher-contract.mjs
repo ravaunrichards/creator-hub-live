@@ -38,7 +38,8 @@ assert.match(sw, /chl-web-v3-3-4/);
 assert.match(migration, /add column if not exists appearance jsonb/i);
 assert.match(migration, /NULL means the account has not saved an appearance yet/i);
 assert.match(compatibilityMigration, /drop constraint if exists user_settings_appearance_contract/i);
-assert.match(compatibilityMigration, /check \(appearance is null or jsonb_typeof\(appearance\) = 'object'\)/i);
+assert.match(compatibilityMigration, /check \(jsonb_typeof\(appearance\) = 'object'\)/i);
+assert.doesNotMatch(compatibilityMigration, /set appearance = null/i);
 assert.match(js, /outdated appearance contract/i);
 assert.match(js, /Your choice remains saved on this device/i);
 
