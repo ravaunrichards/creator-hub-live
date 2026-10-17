@@ -871,7 +871,7 @@ label.field span {
 
 @media (max-width: 860px) {
   /* Apply these restrictions only to the page containing LIVE. */
-  .main.chl-has-live-room {
+  .main:has(.live-room-layout) {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -883,26 +883,26 @@ label.field span {
   }
 
   /* Keep the LIVE heading compact. */
-  .main.chl-has-live-room > .row.between {
+  .main:has(.live-room-layout) > .row.between {
     flex: 0 0 auto;
     margin: 0;
     gap: 4px;
   }
 
-  .main.chl-has-live-room .h1 {
+  .main:has(.live-room-layout) .h1 {
     font-size: 21px;
     line-height: 1.2;
     margin: 0;
   }
 
-  .main.chl-has-live-room .sub {
+  .main:has(.live-room-layout) .sub {
     font-size: 12px;
     line-height: 1.3;
     margin: 2px 0 0;
   }
 
   /* Two compact columns: video on the left, chat and gifts on the right. */
-  .main.chl-has-live-room .live-room-layout {
+  .main:has(.live-room-layout) .live-room-layout {
     display: grid;
     grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
     grid-template-rows: minmax(0, 1fr);
@@ -914,7 +914,7 @@ label.field span {
     overflow: hidden;
   }
 
-  .main.chl-has-live-room .live-video-card {
+  .main:has(.live-room-layout) .live-video-card {
     align-self: stretch !important;
     display: flex;
     flex-direction: column;
@@ -925,7 +925,7 @@ label.field span {
   }
 
   /* Prevent the video stage from forcing the page taller. */
-  .main.chl-has-live-room .live-stage {
+  .main:has(.live-room-layout) .live-stage {
     flex: 1 1 auto;
     width: 100%;
     height: 0;
@@ -934,13 +934,13 @@ label.field span {
     overflow: hidden;
   }
 
-  .main.chl-has-live-room .live-stage video {
+  .main:has(.live-room-layout) .live-stage video {
     width: 100%;
     height: 100%;
     object-fit: contain;
   }
 
-  .main.chl-has-live-room .live-status {
+  .main:has(.live-room-layout) .live-status {
     top: 6px;
     left: 6px;
     padding: 4px 6px;
@@ -949,13 +949,13 @@ label.field span {
   }
 
   /* Keep the camera, microphone, share and end controls compact. */
-  .main.chl-has-live-room .live-controls {
+  .main:has(.live-room-layout) .live-controls {
     flex: 0 0 auto;
     gap: 5px;
     margin-top: 4px !important;
   }
 
-  .main.chl-has-live-room .live-controls .btn {
+  .main:has(.live-room-layout) .live-controls .btn {
     flex: 1 1 calc(50% - 5px);
     min-width: 0;
     padding: 7px 4px;
@@ -965,7 +965,7 @@ label.field span {
   }
 
   /* Chat and gifts share the right column without page scrolling. */
-  .main.chl-has-live-room .live-room-side {
+  .main:has(.live-room-layout) .live-room-side {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -975,7 +975,7 @@ label.field span {
     overflow: hidden;
   }
 
-  .main.chl-has-live-room .live-chat-card {
+  .main:has(.live-room-layout) .live-chat-card {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
@@ -986,7 +986,7 @@ label.field span {
     overflow: hidden;
   }
 
-  .main.chl-has-live-room .live-chat-messages {
+  .main:has(.live-room-layout) .live-chat-messages {
     flex: 1 1 0 !important;
     width: 100%;
     height: 0 !important;
@@ -999,14 +999,14 @@ label.field span {
     scrollbar-gutter: stable;
   }
 
-  .main.chl-has-live-room .live-chat-card .note {
+  .main:has(.live-room-layout) .live-chat-card .note {
     margin: 4px 0;
     padding: 6px 7px;
     font-size: 11px;
     line-height: 1.3;
   }
 
-  .main.chl-has-live-room .live-chat-card form {
+  .main:has(.live-room-layout) .live-chat-card form {
     display: flex;
     flex: 0 0 auto;
     gap: 4px;
@@ -1014,7 +1014,7 @@ label.field span {
     min-width: 0;
   }
 
-  .main.chl-has-live-room .live-chat-card form .input {
+  .main:has(.live-room-layout) .live-chat-card form .input {
     flex: 1 1 0;
     width: 0;
     min-width: 0;
@@ -1022,12 +1022,12 @@ label.field span {
     font-size: 12px;
   }
 
-  .main.chl-has-live-room .live-chat-card form .btn {
+  .main:has(.live-room-layout) .live-chat-card form .btn {
     padding: 7px 8px;
     font-size: 11px;
   }
 
-  .main.chl-has-live-room .live-gift-card {
+  .main:has(.live-room-layout) .live-gift-card {
     flex: 0 0 auto;
     min-height: 0;
     max-height: 42%;
@@ -1038,26 +1038,26 @@ label.field span {
     overscroll-behavior: contain;
   }
 
-  .main.chl-has-live-room .live-gift-card .gift-grid {
+  .main:has(.live-room-layout) .live-gift-card .gift-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
   }
 
-  .main.chl-has-live-room .live-gift-card .gift {
+  .main:has(.live-room-layout) .live-gift-card .gift {
     padding: 5px 3px;
     font-size: 10px;
     line-height: 1.2;
     transform: none;
   }
 
-  .main.chl-has-live-room .live-gift-card .gift .gift-art {
+  .main:has(.live-room-layout) .live-gift-card .gift .gift-art {
     width: 100%; max-width: 72px; margin-bottom: 3px;
   }
-  .main.chl-has-live-room .live-gift-card .gift .nm {
+  .main:has(.live-room-layout) .live-gift-card .gift .nm {
     display: block; font-size: 11px; line-height: 1.2; font-weight: 800; color: var(--text);
   }
 
-  .main.chl-has-live-room .live-gift-card .gift .sub {
+  .main:has(.live-room-layout) .live-gift-card .gift .sub {
     font-size: 9px !important;
     margin-top: 2px !important;
   }
@@ -1065,23 +1065,23 @@ label.field span {
 
 /* Extra-tight layout for narrow phones. */
 @media (max-width: 380px) {
-  .main.chl-has-live-room {
+  .main:has(.live-room-layout) {
     padding-left: 6px;
     padding-right: 6px;
   }
 
-  .main.chl-has-live-room .live-room-layout {
+  .main:has(.live-room-layout) .live-room-layout {
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     gap: 5px !important;
   }
 
-  .main.chl-has-live-room .live-video-card,
-  .main.chl-has-live-room .live-chat-card,
-  .main.chl-has-live-room .live-gift-card {
+  .main:has(.live-room-layout) .live-video-card,
+  .main:has(.live-room-layout) .live-chat-card,
+  .main:has(.live-room-layout) .live-gift-card {
     padding: 5px;
   }
 
-  .main.chl-has-live-room .live-controls .btn {
+  .main:has(.live-room-layout) .live-controls .btn {
     padding: 6px 2px;
     font-size: 10px;
   }
@@ -1189,103 +1189,3 @@ input, textarea, select {
 .live-guest-queue-status{font-size:11px;text-transform:capitalize;color:var(--mut,#aaa)}
 @media(max-width:600px){.live-stage-grid{grid-template-columns:minmax(0,1fr);padding:4px;gap:8px}.live-participant-tile{min-height:180px}.live-participant-media{min-height:180px;aspect-ratio:4/3}.live-participant-video{min-height:180px;max-height:58vh}.live-stage-grid:has(.live-participant-tile:only-child) .live-participant-media{min-height:260px}.live-participant-host-controls .btn{min-height:40px}}
 .live-media-request-panel{border:1px solid rgba(139,117,255,.5);box-shadow:0 0 0 1px rgba(139,117,255,.12)}
-
-/* Next-upgrade reliability: complete mobile navigation + genuinely responsive LIVE stage. */
-html, body, #app, .app, .main, #outlet { box-sizing: border-box; min-width: 0; max-width: 100%; }
-body { overflow-x: hidden; }
-.chl-mobile-menu-trigger { display: none; flex: 0 0 auto; min-height: 40px; white-space: nowrap; }
-.chl-mobile-top-actions { flex: 0 0 auto; min-width: 0; }
-.chl-mobile-menu-backdrop { display: none; position: fixed; inset: 0; z-index: 1000; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: rgba(5, 8, 16, .68); backdrop-filter: blur(3px); }
-.chl-mobile-menu { display: none; position: fixed; z-index: 1001; top: calc(env(safe-area-inset-top, 0px) + 8px); right: max(10px, env(safe-area-inset-right, 0px)); width: min(380px, calc(100vw - max(10px, env(safe-area-inset-left, 0px)) - max(10px, env(safe-area-inset-right, 0px))); max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px); max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 20px); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg2); color: var(--txt); box-shadow: 0 18px 60px rgba(0,0,0,.38); }
-.chl-mobile-menu:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
-.chl-mobile-menu-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-.chl-mobile-menu-links { display: grid; grid-template-columns: minmax(0,1fr); gap: 4px; }
-.chl-mobile-menu-links a { display: flex; gap: 12px; align-items: center; min-height: 44px; padding: 9px 12px; border-radius: 11px; color: var(--txt); text-decoration: none; font-weight: 750; overflow-wrap: anywhere; }
-.chl-mobile-menu-links a .ic { width: 24px; flex: 0 0 24px; text-align: center; font-size: 18px; }
-.chl-mobile-menu-links a:hover, .chl-mobile-menu-links a.active { background: var(--card); outline: 1px solid var(--line); }
-@media (max-width: 860px) {
-  .chl-mobile-menu-trigger { display: inline-flex; align-items: center; justify-content: center; }
-  .mtop { gap: 8px; }
-  .mtop > .logo { min-width: 0; max-width: 46%; }
-  .mtop > .logo img { max-width: 100%; height: 34px; object-fit: contain; }
-  .main { padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
-}
-@media (min-width: 861px) {
-  .chl-mobile-menu, .chl-mobile-menu-backdrop { display: none !important; }
-}
-
-/* Host and guests live in separate grid regions. The host cannot be displaced by guest slots. */
-.live-stage-layout { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 100%; min-width: 0; overflow: visible; }
-.live-host-grid { display: grid; grid-template-columns: minmax(0,1fr); width: 100%; min-width: 0; min-height: 220px; padding: 0; }
-.live-host-grid > .live-participant-tile { width: 100%; max-width: none; min-height: clamp(250px, 42vh, 560px); }
-.live-host-grid .live-participant-media { min-height: clamp(190px, 34vh, 460px); }
-.live-guest-stage { display: block; min-width: 0; width: 100%; border-top: 1px solid var(--line); padding-top: 10px; }
-.live-guest-stage-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin: 0 4px 8px; }
-.live-guest-stage-heading strong { font-weight: 900; }
-.live-guest-stage-heading .sub { margin: 0; font-size: 12px; }
-.live-guest-grid { display: grid; width: 100%; min-width: 0; min-height: 0; padding: 0; gap: 8px; grid-auto-rows: minmax(150px, 1fr); align-items: stretch; }
-.live-guest-grid.is-horizontal { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
-.live-guest-grid.is-vertical { grid-template-columns: minmax(0,1fr); }
-.live-guest-grid > .live-participant-tile, .live-guest-grid > .live-guest-slot { min-width: 0; width: 100%; height: 100%; min-height: 150px; max-width: none; }
-.live-guest-grid > .live-participant-tile { grid-column: auto !important; }
-.live-guest-grid .live-participant-media { min-height: 105px; aspect-ratio: 4 / 3; flex: 1 1 auto; }
-.live-guest-grid .live-participant-video { min-height: 105px; max-height: 34vh; object-fit: cover; }
-.live-guest-grid .live-participant-footer { padding: 7px 8px; gap: 6px; }
-.live-guest-grid .live-participant-volume { padding: 5px 8px; }
-.live-guest-grid .live-participant-host-controls { padding: 0 7px 7px; gap: 4px; }
-.live-guest-grid .live-participant-host-controls .btn { min-height: 34px; padding: 5px 6px; font-size: 11px; }
-.live-guest-slot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; box-sizing: border-box; border: 1px dashed var(--line); border-radius: 14px; background: color-mix(in srgb, var(--card) 76%, transparent); color: var(--txt); text-align: center; overflow-wrap: anywhere; }
-.live-guest-slot-number { font-weight: 900; }
-.live-guest-slot-caption { font-size: 12px; color: var(--mut); }
-.live-guest-slot .btn { width: 100%; min-height: 38px; }
-.live-guest-layout-controls { display: grid; gap: 10px; padding: 10px; margin: 10px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--bg2); }
-.live-guest-layout-toggle { display: flex !important; align-items: center; gap: 10px; min-height: 40px; margin: 0 !important; color: var(--txt) !important; cursor: pointer; }
-.live-guest-layout-toggle input { width: 20px; height: 20px; flex: 0 0 20px; }
-.live-guest-layout-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; min-width: 0; }
-.live-guest-layout-fields .field { min-width: 0; margin: 0; }
-.live-guest-layout-fields .input { width: 100%; min-width: 0; }
-.live-guest-layout-save-status { margin: 0; font-size: 12px; }
-.live-stage-layout .live-stage-empty { min-height: 160px; }
-.live-stage-layout .live-host-placeholder { min-height: clamp(220px, 36vh, 420px); }
-.live-host-grid.has-spotlight .live-participant-tile.is-spotlight,
-.live-guest-grid.has-spotlight .live-participant-tile.is-spotlight { grid-column: 1 / -1; }
-
-@media (max-width: 860px) and (orientation: portrait) {
-  .main.chl-has-live-room { padding: 10px 8px calc(94px + env(safe-area-inset-bottom,0px)); }
-  .main.chl-has-live-room .live-room-layout { display: grid !important; grid-template-columns: minmax(0,1fr) !important; gap: 10px !important; }
-  .main.chl-has-live-room .live-video-card { padding: 8px; }
-  .main.chl-has-live-room .live-stage { height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important; }
-  .main.chl-has-live-room .live-stage-layout { gap: 10px; }
-  .main.chl-has-live-room .live-host-grid > .live-participant-tile { min-height: clamp(250px, 42svh, 440px); }
-  .main.chl-has-live-room .live-host-grid .live-participant-media { min-height: clamp(190px, 34svh, 360px); }
-  .main.chl-has-live-room .live-guest-grid.is-horizontal { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .main.chl-has-live-room .live-guest-grid.is-vertical { grid-template-columns: minmax(0,1fr); }
-  .main.chl-has-live-room .live-guest-grid > .live-participant-tile,
-  .main.chl-has-live-room .live-guest-grid > .live-guest-slot { min-height: 138px; }
-  .main.chl-has-live-room .live-guest-grid .live-participant-media { min-height: 90px; }
-  .main.chl-has-live-room .live-controls .btn { min-height: 42px; }
-  .main.chl-has-live-room .live-chat-messages { height: 190px !important; max-height: 32svh !important; }
-}
-@media (max-width: 860px) and (orientation: landscape) {
-  .main.chl-has-live-room { max-width: 100%; padding: 8px 10px calc(80px + env(safe-area-inset-bottom,0px)); }
-  .main.chl-has-live-room .live-room-layout { display: grid !important; grid-template-columns: minmax(0,1.12fr) minmax(0,.88fr) !important; gap: 10px !important; align-items: start !important; }
-  .main.chl-has-live-room .live-video-card { padding: 7px; }
-  .main.chl-has-live-room .live-stage { height: auto !important; max-height: none !important; min-height: 0 !important; overflow: visible !important; }
-  .main.chl-has-live-room .live-host-grid > .live-participant-tile { min-height: clamp(180px, 42svh, 340px); }
-  .main.chl-has-live-room .live-host-grid .live-participant-media { min-height: clamp(140px, 34svh, 280px); }
-  .main.chl-has-live-room .live-guest-grid.is-horizontal { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .main.chl-has-live-room .live-guest-grid.is-vertical { grid-template-columns: minmax(0,1fr); }
-  .main.chl-has-live-room .live-guest-grid > .live-participant-tile,
-  .main.chl-has-live-room .live-guest-grid > .live-guest-slot { min-height: 122px; }
-  .main.chl-has-live-room .live-guest-grid .live-participant-media { min-height: 78px; }
-  .main.chl-has-live-room .live-controls .btn { min-height: 36px; padding: 6px; }
-  .main.chl-has-live-room .live-chat-messages { height: 150px !important; max-height: 28svh !important; }
-}
-@media (max-width: 420px) {
-  .live-guest-layout-fields { grid-template-columns: minmax(0,1fr); }
-  .chl-mobile-menu { padding: 9px; }
-  .chl-mobile-menu-links a { min-height: 46px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chl-mobile-menu, .chl-mobile-menu-backdrop { scroll-behavior: auto; animation: none !important; transition: none !important; }
-}
