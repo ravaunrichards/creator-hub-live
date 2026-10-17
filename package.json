@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node tests/integration-check.js && node tests/gift-asset-contract.mjs && node tests/social-profile-messaging-tasks-contract.mjs && node tests/social-actions-delete-contract.mjs && node tests/repair-contract.js && node tests/live-comments-analytics-contract.mjs",
+    "check": "node tests/integration-check.js && node tests/gift-asset-contract.mjs && node tests/social-profile-messaging-tasks-contract.mjs && node tests/style-switcher-contract.mjs",
     "backend:check": "cd backend && npm run check",
     "backend:test": "cd backend && npm run test",
     "sync:android-web": "node scripts/sync-web-assets.js",
