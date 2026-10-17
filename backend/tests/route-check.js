@@ -38,8 +38,9 @@ const forbidden=[/sb_secret_/i,/service_role/i,/LIVEKIT_API_SECRET/i,/PAYPAL_CLI
 const leaks=[]; for(const f of publicFiles){const ext=path.extname(f).toLowerCase();if(!['.js','.html','.css','.json','.webmanifest','.map','.txt'].includes(ext))continue;const t=fs.readFileSync(f,'utf8');for(const rx of forbidden)if(rx.test(t))leaks.push(path.relative(ROOT,f)+': '+rx);}
 if(leaks.length){console.error('PUBLIC SECRET SCAN FAILED:',leaks);process.exit(1);}
 
-const requiredRoutes=['/api/health','/api/livekit/health','/api/livekit/token','/api/config/public','/api/live/rooms','/api/live/rooms/:id','/api/live/rooms/:id/join','/api/live/rooms/:id/start','/api/live/rooms/:id/end','/api/live/rooms/:id/chat','/api/payments/paypal/create-order','/api/payments/paypal/capture-order','/api/payments/paypal/info','/api/payments/webhook','/api/wallet','/api/wallet/balance','/api/wallet/transactions','/api/wallet/gift','/api/payouts','/api/admin/payouts'];
+const requiredRoutes=['/api/health','/api/livekit/health','/api/livekit/token','/api/config/public','/api/live/rooms','/api/live/rooms/:id','/api/live/rooms/:id/join','/api/live/rooms/:id/start','/api/live/rooms/:id/end','/api/live/rooms/:id/chat','/api/payments/paypal/create-order','/api/payments/paypal/capture-order','/api/payments/paypal/info','/api/payments/webhook','/api/wallet','/api/wallet/balance','/api/wallet/transactions','/api/wallet/gift','/api/wallet/packages','/api/wallet/conversion-config','/api/wallet/convert','/api/payouts','/api/admin/payouts','/api/teams','/api/leagues/standings'];
 const server=fs.readFileSync(SERVER,'utf8');
+if(!fs.existsSync(path.join(ROOT,'src','teams-routes.js'))){console.error('BACKEND IMPORT FAILURE: src/teams-routes.js is missing.');process.exit(1);}
 const missing=requiredRoutes.filter(x=> {
   if (x.includes(':id')) return !server.includes("liveRoomParts(pathname)");
   return !server.includes(`'${x}'`)&&!server.includes(`\"${x}\"`);
