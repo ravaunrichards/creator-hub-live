@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview input,.chl-preview select{width:100%;padding:12px 14px;border:1px solid #cfd6e4;border-radius:12px;background:white;color:#172033;outline:none}.chl-preview input:focus,.chl-preview select:focus{border-color:#6d5ce8;box-shadow:0 0 0 3px #6d5ce829}.chl-preview label{display:block;font-weight:650;margin-bottom:6px}

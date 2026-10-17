@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+:root{--chl-accent:#6d28d9;--chl-cyan:#06b6d4;--chl-radius:16px;--chl-shadow:0 12px 30px #1720331a}.chl-preview .demo-card{border-radius:var(--chl-radius);box-shadow:var(--chl-shadow)}.chl-preview .demo-button{background:var(--chl-accent);color:white}
