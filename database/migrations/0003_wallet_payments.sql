@@ -5,9 +5,10 @@
 
 -- Wallets: one coin wallet + one diamond wallet per user.
 create table if not exists public.wallets (
-  user_id uuid key references public.profiles(id) on delete cascade,
+  user_id uuid primary key references public.profiles(id) on delete cascade,
   coin_balance   bigint not null default 0 check (coin_balance >= 0),
   diamond_balance bigint not null default 0 check (diamond_balance >= 0),
+  lifetime_gifts_sent bigint not null default 0 check (lifetime_gifts_sent >= 0),
   updated_at timestamptz not null default now()
 );
 
@@ -69,6 +70,7 @@ create table if not exists public.payments (
   exchange_rate numeric(18,8),
   status text not null default 'created' check (status in ('created','approved','completed','failed','cancelled','pending','refunded')),
   credited boolean not null default false,
+  idempotency_key text unique,
   metadata jsonb,
   raw jsonb,
   created_at timestamptz not null default now(),
@@ -97,6 +99,7 @@ create table if not exists public.gift_transactions (
   live_id uuid,
   coin_cost bigint not null,
   diamond_value bigint not null,
+  idempotency_key text unique,
   created_at timestamptz not null default now()
 );
 
