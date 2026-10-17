@@ -1,15 +1,15 @@
 /* Creator Hub Live — safe static-shell service worker. */
-var VERSION = 'chl-web-v3-3-6';
+var VERSION = 'chl-web-v3-3-7';
 var SHELL = [
   './', './index.html', './manifest.webmanifest', './config.js', './config.example.js',
   './styles/app.css', './styles/studio-edition.css', './styles/nexus-edition.css',
-  './styles/platform-responsive.css', './styles/chl-style-system.css', './styles/platform-tools.css',
+  './styles/platform-responsive.css', './styles/chl-style-system.css', './styles/platform-tools.css', './styles/creator-ranks.css',
   './src/core.js', './src/ui.js', './src/pages-auth.js', './src/pages.js', './src/pages-admin.js',
   './src/pages-creator.js', './src/pages-teams.js', './src/pages-extra.js', './src/pages-room.js',
   './src/pages-settings.js', './src/pages-accessibility.js', './src/pages-account.js',
   './src/pages-community.js', './src/pages-wallet.js', './src/pages-profile.js', './src/livekit.js',
   './src/studio-edition.js', './src/swipe-feed.js', './src/pages-platform-tools.js',
-  './src/style-switcher.js', './src/style-switcher-integration.js',
+  './src/style-switcher.js', './src/style-switcher-integration.js', './src/chl-rank-achievements.js',
   './assets/logo.svg', './assets/icon.svg', './assets/gifts/multi-guest.svg'
 ];
 self.addEventListener('install', function(e){ self.skipWaiting(); e.waitUntil(caches.open(VERSION).then(function(c){ return Promise.all(SHELL.map(function(u){ return c.add(u).catch(function(){ /* one failed asset must never poison the whole cache */ }); })); })); });
