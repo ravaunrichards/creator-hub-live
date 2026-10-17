@@ -1,36 +1,32 @@
-# Creator Hub Live — Appearance Account Sync Fix
+# Creator Hub Live — Appearance Account Sync Fix (Corrected Package)
 
-## What this fixes
+## Live status
 
-The account sync error `new row for relation "user_settings" violates check constraint "user_settings_appearance_contract"` means the database is rejecting the JSON stored in `user_settings.appearance`. The Style Switcher stores the current appearance as an object with `mode`, `theme`, `typography`, `surfaces`, `density`, `motion`, and `contrast`; older settings clients may use a different object shape. The old constraint is too restrictive for the supported clients.
+The active Creator Hub Live Supabase project has been updated successfully. The `user_settings_appearance_contract` constraint now accepts any JSON object, which supports the current Style Switcher payload (`mode`, `theme`, `typography`, `surfaces`, `density`, `motion`, and `contrast`). Verification confirmed the constraint is validated and a current Style Switcher-shaped payload satisfies the contract. Existing `user_settings` rows were preserved.
 
-This package replaces that check with a compatibility-safe database contract: `appearance` can be SQL NULL or a JSON object. Existing object-shaped preferences are preserved; only malformed non-object JSON values are cleared to NULL. The client still normalizes choices to supported values before saving.
+The Creator Hub Live frontend and backend Render services were already reporting their latest deployments as **live** on the same current GitHub commit. The deployed frontend service worker is `chl-web-v3-3-4`. No additional Render deploy was triggered because no new code commit was made.
 
-## Manual installation
+## What changed
 
-1. Back up the current repository and database migration folder.
-2. Copy the files in this ZIP to their matching paths, preserving all unrelated files:
-   - `database/migrations/0039_appearance_contract_compatibility.sql`
-   - `frontend/src/style-switcher.js`
-   - `frontend/sw.js`
-   - `android/app/src/main/assets/web/src/style-switcher.js`
-   - `android/app/src/main/assets/web/sw.js`
-   - `tests/style-switcher-contract.mjs`
-3. In the intended Supabase project's SQL Editor, review and run `database/migrations/0039_appearance_contract_compatibility.sql` once. The frontend patch alone cannot change a database constraint.
-4. Deploy/install the matching frontend and Android web assets through your normal manual process. The service-worker version is bumped to `chl-web-v3-3-4` so cached clients fetch the corrected scripts.
-5. Sign in, open **Settings → Appearance**, select a theme/style, and choose **Apply & save**. Confirm the UI reports that the choice was saved to the account and this device.
-6. Reload the app and sign in on another device/browser to verify the preference restores from the account.
+- The database migration drops the restrictive legacy appearance check and replaces it with `CHECK (jsonb_typeof(appearance) = 'object')`.
+- It does not set `appearance` to NULL because the live column is `NOT NULL`.
+- Web and Android Style Switcher files remain byte-for-byte matched.
+- The service-worker version remains `chl-web-v3-3-4`.
 
-## Checks
+## Manual installation / source tracking
 
-Run from the repository root:
+1. Preserve unrelated project files.
+2. Add the files in this package at their matching paths in your repository.
+3. The live Creator Hub Live Supabase project already has migration `0039_appearance_contract_compatibility` applied; **do not run it again there**. For a separate environment that still has the old constraint, back up that database and apply the SQL migration once.
+4. The GitHub integration did not grant write permission during this session, so the migration source file could not be committed to GitHub automatically. Upload it manually if you want the SQL source tracked in the repository.
+5. The frontend and backend Render services were already live on the latest commit; a new deployment requires a source change/commit.
 
-```sh
-node tests/style-switcher-contract.mjs
-```
+## Verification
 
-The test checks the migration contract, actionable error handling, style switcher setup, 432 theme/style combinations, and byte-for-byte parity of the relevant web and Android files.
+- Live constraint definition: `CHECK (jsonb_typeof(appearance) = 'object')`, validated.
+- Style Switcher-shaped JSON payload: passes the compatibility expression.
+- Existing settings rows: preserved (one row observed in the live table at verification time).
+- Render frontend and backend: latest deploys report `live`.
+- GitHub source writes: blocked by integration permission; no claim that a commit was created.
 
-## Important boundary
-
-This is a manual-install package. It does not modify GitHub, run SQL against your live Supabase project, or deploy to Render. Account sync will remain unavailable until the migration is applied to the database used by the app.
+To complete an end-to-end user-level confirmation, sign in to CHL, open **Settings → Appearance**, change a style, choose **Apply & save**, then reload and confirm it persists. The database contract is fixed, but an authenticated browser save could not be performed from this session.
