@@ -140,7 +140,8 @@ export async function createLiveKitToken({
     roomJoin: true,
     room: roomName,
     canPublish: !!canPublish,
-    canPublishSources: canPublish ? [1, 2] : [],
+    // LiveKit source IDs: camera=1, microphone=2, screen share=3, screen-share audio=4.
+    canPublishSources: canPublish ? [1, 2, 3, 4] : [],
     canSubscribe: true,
     canPublishData: true
   });
