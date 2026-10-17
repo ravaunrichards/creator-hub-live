@@ -1,5 +1,5 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { classifyPublishedTracks } from './livekit-verification.js';
+import { missingMediaForKind } from './livekit-verification.js';
 
 // Validate the configured realtime endpoint before issuing tokens. The URL,
 // API key and API secret must all belong to the same LiveKit project.
@@ -22,7 +22,7 @@ function livekitHttpBase() {
 }
 
 // Verify that the host has published both camera and microphone tracks.
-export async function verifyHostPublishing(roomName, identity) {
+export async function verifyHostPublishing(roomName, identity, kind = 'video') {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const httpBase = livekitHttpBase();
@@ -63,31 +63,27 @@ export async function verifyHostPublishing(roomName, identity) {
       ? Array.from(host.tracks)
       : [];
 
-  const media = classifyPublishedTracks(tracks);
+  const verification = missingMediaForKind(tracks, kind);
+  const media = verification.media;
+  const mode = verification.mode;
+  const missing = verification.missing;
 
-  if (!media.camera || !media.microphone) {
-    const missing = [];
-
-    if (!media.camera) missing.push('camera');
-    if (!media.microphone) missing.push('microphone');
-
+  if (missing.length) {
+    const required = mode === 'video' ? 'camera and microphone' : mode === 'voice' ? 'microphone' : 'screen sharing and microphone';
     throw Object.assign(
-      new Error(
-        `Host must publish camera and microphone. Missing: ${missing.join(', ')}.`
-      ),
-      {
-        code: 'LIVE_PUBLISH_REQUIRED',
-        status: 409,
-        details: { missing }
-      }
+      new Error(`Host must publish ${required} for ${mode} LIVE. Missing: ${missing.join(', ')}.`),
+      { code: 'LIVE_PUBLISH_REQUIRED', status: 409, details: { mode, missing } }
     );
   }
 
   return {
     identity: String(identity),
     trackCount: tracks.length,
-    camera: true,
-    microphone: true
+    mode,
+    camera: media.camera,
+    microphone: media.microphone,
+    screenShare: media.screenShare,
+    screenShareAudio: media.screenShareAudio
   };
 }
 
