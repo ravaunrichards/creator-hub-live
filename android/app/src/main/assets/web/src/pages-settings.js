@@ -3,11 +3,11 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
   var lastLoadedSettings = null;
-  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{mode:'individual',theme:'night',typography:'system',surfaces:'standard',density:'comfortable',motion:'standard',contrast:'standard'} };
   var SNAV=[
-    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
+    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/appearance',label:'Appearance'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/blocked',label:'Blocked accounts'},{h:'#/settings/notifications',label:'Notifications'},
-    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'},{h:'#/settings/appearance',label:'Appearance'}
+    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'}
   ];
   function snav(){ var bar=el('div',{class:'row wrap',style:'gap:8px;margin-bottom:16px'}); SNAV.forEach(function(it){ var on=CHL.current.path===it.h.replace('#',''); bar.appendChild(el('a',{href:it.h,class:'chip'+(on?' on':'')},it.label)); }); return bar; }
   function head(o,title,sub){ o.appendChild(ui.pageHead(title,sub)); if(!CHL.configured){ o.appendChild(ui.setupNotice()); return true;} o.appendChild(snav()); return false; }
@@ -23,8 +23,8 @@
     var base = lastLoadedSettings || SETTING_DEFAULTS;
     // Keep the current appearance preferences when saving another settings category,
     // so changing privacy or LIVE controls never overwrites the appearance choices.
-    var currentAppearance = window.CHLStyleSystem && typeof window.CHLStyleSystem.get === 'function'
-      ? window.CHLStyleSystem.get()
+    var currentAppearance = CHL.StyleSwitcher && typeof CHL.StyleSwitcher.getPreference === 'function'
+      ? CHL.StyleSwitcher.getPreference()
       : base.appearance;
     var payload = {user_id:CHL.user.id,privacy:value.privacy||base.privacy,notifications:value.notifications||base.notifications,live:value.live||base.live,appearance:value.appearance||currentAppearance||base.appearance,updated_at:new Date().toISOString()};
     var r=await sb.from('user_settings').upsert(payload,{onConflict:'user_id'});
@@ -34,6 +34,15 @@
     CHL.toast('Settings saved');
   }
   function check(name,label,checked){ return el('label',{class:'row',style:'gap:8px;margin:10px 0'},[el('input',{type:'checkbox',name:name,checked:!!checked}),el('span',{text:label})]); }
+
+  CHL.route('/settings/appearance', function(o){
+    o.appendChild(ui.pageHead('Appearance','Choose an individual style or build and test a compatible style-family combination.'));
+    o.appendChild(snav());
+    var mount=el('div',{class:'chl-style-switcher-mount'});
+    o.appendChild(mount);
+    if(CHL.StyleSwitcher) CHL.StyleSwitcher.render(mount);
+    else mount.appendChild(el('div',{class:'note',text:'The Style Switcher did not load. Reload the app and check the browser console.'}));
+  });
 
   CHL.route('/settings', function(o){ if(head(o,'Settings','Manage your account.')) return; o.appendChild(el('div',{class:'card',text:'Choose a settings category above. Account settings are stored with your profile and restored after reopening.'})); });
 
@@ -71,23 +80,11 @@
       input.value=info.paypalEmail||'';label.appendChild(input);f.appendChild(label);
       var status=el('div',{class:'note','aria-live':'polite',text:info.paypalEmail?(info.isVerified?'Current PayPal email is marked verified.':'Current PayPal email is saved but not marked verified.'):'No PayPal payout email has been saved yet.'});f.appendChild(status);
       var saveButton=el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save PayPal email');f.appendChild(saveButton);
-      var removeButton=el('button',{class:'btn danger',type:'button',style:'margin:8px 0 0 8px'+(info.paypalEmail?'':' ;display:none')},'Remove saved email');
-      removeButton.addEventListener('click',async function(){
-        if(!info.paypalEmail)return;
-        if(!window.confirm('Remove the saved PayPal payout email? Pending payout requests will keep the email used when each request was submitted.'))return;
-        removeButton.disabled=true;removeButton.textContent='Removing…';
-        try{
-          await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'DELETE',body:{}});
-          info.paypalEmail=null;info.isVerified=false;input.value='';status.textContent='Saved PayPal payout email removed. Add a new email to submit future payout requests.';removeButton.style.display='none';CHL.toast('Saved PayPal email removed.');
-        }catch(error){status.textContent=error.message||'Could not remove the saved PayPal email.';CHL.toast(status.textContent);}
-        finally{removeButton.disabled=false;removeButton.textContent='Remove saved email';}
-      });
-      f.appendChild(removeButton);
       f.addEventListener('submit',async function(event){
         event.preventDefault();var email=String(input.value||'').trim().toLowerCase();
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){CHL.toast('Enter a valid PayPal email address.');return;}
         saveButton.disabled=true;saveButton.textContent='Saving…';status.textContent='';
-        try{var result=await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'PUT',body:{paypalEmail:email}});input.value=result.paypalEmail||email;info.paypalEmail=input.value;info.isVerified=!!result.isVerified;removeButton.style.display='';status.textContent=result.isVerified?'PayPal email saved and marked verified.':'PayPal email saved. Verification is not confirmed.';CHL.toast('PayPal payout email saved.');}
+        try{var result=await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'PUT',body:{paypalEmail:email}});input.value=result.paypalEmail||email;status.textContent=result.isVerified?'PayPal email saved and marked verified.':'PayPal email saved. Verification is not confirmed.';CHL.toast('PayPal payout email saved.');}
         catch(error){status.textContent=error.message||'Could not save the PayPal email.';CHL.toast(status.textContent);}
         finally{saveButton.disabled=false;saveButton.textContent='Save PayPal email';}
       });
@@ -121,48 +118,6 @@
     }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}
   });
 
-  CHL.route('/settings/appearance', async function(o){
-    if(head(o,'Appearance','Personalize Creator Hub Live without a floating screen overlay.')) return;
-    var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card);
-    try{
-      var s=await loadSettings(); var style=window.CHLStyleSystem;
-      if(!style) throw new Error('Appearance controls are unavailable. Reload Creator Hub Live and try again.');
-      var current=Object.assign({},style.get(),s.appearance||{}); style.apply(current); current=style.get();
-      card.innerHTML='';
-      card.appendChild(el('p',{class:'sub',text:'Changes preview immediately and are saved to this device and your account.'}));
-      var f=el('form',{style:'max-width:620px',onsubmit:async function(e){
-        e.preventDefault();
-        var next={theme:f.elements.theme.value,layout:f.elements.layout.value,font:f.elements.font.value,scale:f.elements.scale.value,accent:f.elements.accent.value};
-        style.apply(next);
-        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:next});CHL.toast('Appearance saved.');}
-        catch(err){CHL.toast(err.message||'Appearance could not be saved.');}
-      }});
-      f.appendChild(appearanceField('Color theme','theme',style.themes,current.theme));
-      f.appendChild(appearanceField('Layout','layout',style.layouts,current.layout));
-      f.appendChild(appearanceField('Font','font',style.fonts,current.font));
-      f.appendChild(appearanceField('Text size','scale',style.scales,current.scale));
-      f.appendChild(appearanceField('Accent color','accent',style.accents,current.accent));
-      var status=el('div',{class:'note','aria-live':'polite',text:'Appearance changes do not change wallet prices, gifts, permissions or account settings.'});
-      status.id='chl-ui-theme-status'; f.appendChild(status);
-      f.appendChild(el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save appearance'));
-      f.appendChild(el('button',{class:'btn',type:'button',style:'margin:8px 0 0 8px',text:'Reset appearance',onclick:async function(){
-        var defaults={theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'};
-        style.apply(defaults); Object.keys(defaults).forEach(function(key){f.elements[key].value=defaults[key];});
-        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:defaults});CHL.toast('Appearance reset and saved.');}
-        catch(err){CHL.toast(err.message||'Appearance reset locally but could not be saved to your account.');}
-      }}));
-      card.appendChild(f);
-    }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load appearance settings.'}));}
-  });
-
-  function appearanceField(label,name,items,current){
-    var w=el('label',{class:'field'},[el('span',{text:label})]);
-    var select=el('select',{class:'input',name:name,'data-chl-appearance':name});
-    items.forEach(function(item){select.appendChild(el('option',{value:item.id,selected:item.id===current},item.label));});
-    select.value=current;
-    select.addEventListener('change',function(){var next=Object.assign({},window.CHLStyleSystem.get());next[name]=select.value;window.CHLStyleSystem.apply(next);});
-    w.appendChild(select);return w;
-  }
   function selectField(label,name,values,current){
     var w=el('label',{class:'field'},[el('span',{text:label})]);var s=el('select',{class:'input',name:name});
     values.forEach(function(v){var value=(v&&typeof v==='object')?v.value:String(v);var text=(v&&typeof v==='object')?v.label:String(v);s.appendChild(el('option',{value:value,selected:value===String(current)},text));});

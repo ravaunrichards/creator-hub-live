@@ -56,13 +56,17 @@
     if (CHL.isAdmin && CHL.isAdmin()){
       nav.appendChild(el('a',{href:'#/admin','data-base':'/admin'},[ el('span',{class:'ic',text:'\uD83D\uDD12'}), 'Admin' ]));
     }
+    side.appendChild(el('a',{href:'#/settings/appearance',class:'side-appearance-link'},[el('span',{class:'ic',text:'\uD83C\uDFA8'}),'Appearance']));
     side.appendChild(el('div',{class:'spacer'}));
     side.appendChild(meBox());
 
     var main = el('main',{class:'main'});
     // mobile top bar
     var mtop = el('div',{class:'mtop'},[ logo(),
-      el('a',{href:'#/wallet',class:'pill'},[ '\uD83D\uDC8E ', el('span',{id:'mtopCoins',text:'\u2014'}) ]) ]);
+      el('div',{class:'row',style:'gap:6px'},[
+        el('a',{href:'#/settings/appearance',class:'pill chl-appearance-quicklink','aria-label':'Appearance',title:'Change appearance',text:'\uD83C\uDFA8'}),
+        el('a',{href:'#/wallet',class:'pill'},[ '\uD83D\uDC8E ', el('span',{id:'mtopCoins',text:'\u2014'}) ])
+      ]) ]);
     main.appendChild(mtop);
     main.appendChild(el('div',{id:'outlet'}));
 
