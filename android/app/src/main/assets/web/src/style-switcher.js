@@ -181,17 +181,17 @@
 
   async function runRelayTests() {
     var root = document.documentElement;
-    var keys = ['chlTheme','chlTypography','chlSurfaces','chlDensity','chlMotion','chlContrast'];
     var attrs = ['data-chl-theme','data-chl-typography','data-chl-surfaces','data-chl-density','data-chl-motion','data-chl-contrast'];
     var previous = attrs.map(function (name) { return root.getAttribute(name); });
-    var passed = 0, failed = [], total = 0, contrastFailures = 0;
+    var passed = 0, failed = [], total = 0, contrastFailures = 0, cssFailures = 0, runtimeErrors = 0, overflowCombinations = 0;
     function luminance(hex) {
-      var raw = hex.replace('#','');
+      var raw = String(hex || '').trim().replace('#','');
       if (raw.length === 3) raw = raw.split('').map(function (c) { return c+c; }).join('');
+      if (!/^[0-9a-f]{6}$/i.test(raw)) return NaN;
       var rgb = [0,2,4].map(function (i) { var n = parseInt(raw.slice(i,i+2),16)/255; return n <= 0.04045 ? n/12.92 : Math.pow((n+0.055)/1.055,2.4); });
       return 0.2126*rgb[0]+0.7152*rgb[1]+0.0722*rgb[2];
     }
-    function ratio(a,b) { var x=luminance(a),y=luminance(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05); }
+    function ratio(a,b) { var x=luminance(a),y=luminance(b); return Number.isFinite(x) && Number.isFinite(y) ? (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05) : 0; }
     function readToken(name) { return getComputedStyle(root).getPropertyValue(name).trim(); }
     try {
       themeIds.forEach(function (theme) {
@@ -201,14 +201,26 @@
               Object.keys(FAMILIES.motion).forEach(function (motion) {
                 Object.keys(FAMILIES.contrast).forEach(function (contrast) {
                   total++;
-                  root.setAttribute(attrs[0], theme); root.setAttribute(attrs[1], typography); root.setAttribute(attrs[2], surfaces); root.setAttribute(attrs[3], density); root.setAttribute(attrs[4], motion); root.setAttribute(attrs[5], contrast);
-                  var tokens = ['--bg','--bg2','--card','--line','--txt','--mut','--brand','--brand2','--radius'];
-                  var values = tokens.map(readToken);
-                  var cssValid = values.every(function (v) { return !!v; }) && CSS.supports('color', readToken('--bg')) && CSS.supports('border-radius', readToken('--radius'));
-                  var bg = readToken('--bg'), card = readToken('--card'), txt = readToken('--txt'), mut = readToken('--mut'), brand = readToken('--brand'), brand2 = readToken('--brand2');
-                  var contrastOk = ratio(txt,bg) >= 4.5 && ratio(txt,card) >= 4.5 && ratio(mut,bg) >= 4.5 && ratio(mut,card) >= 4.5 && ratio('#ffffff',brand) >= 4.5 && ratio('#ffffff',brand2) >= 4.5;
-                  if (cssValid && contrastOk) passed++;
-                  else { if (!contrastOk) contrastFailures++; if (failed.length < 12) failed.push({theme:theme,typography:typography,surfaces:surfaces,density:density,motion:motion,contrast:contrast,cssValid:cssValid,contrastOk:contrastOk}); }
+                  var sample = {theme:theme,typography:typography,surfaces:surfaces,density:density,motion:motion,contrast:contrast};
+                  try {
+                    root.setAttribute(attrs[0], theme); root.setAttribute(attrs[1], typography); root.setAttribute(attrs[2], surfaces); root.setAttribute(attrs[3], density); root.setAttribute(attrs[4], motion); root.setAttribute(attrs[5], contrast);
+                    var tokens = ['--bg','--bg2','--card','--line','--txt','--mut','--brand','--brand2','--radius'];
+                    var values = tokens.map(readToken);
+                    var cssValid = values.every(function (v) { return !!v; }) && CSS.supports('color', readToken('--bg')) && CSS.supports('border-radius', readToken('--radius'));
+                    var bg = readToken('--bg'), card = readToken('--card'), txt = readToken('--txt'), mut = readToken('--mut'), brand = readToken('--brand'), brand2 = readToken('--brand2');
+                    var contrastOk = ratio(txt,bg) >= 4.5 && ratio(txt,card) >= 4.5 && ratio(mut,bg) >= 4.5 && ratio(mut,card) >= 4.5 && ratio('#ffffff',brand) >= 4.5 && ratio('#ffffff',brand2) >= 4.5;
+                    var hasOverflow = root.scrollWidth > root.clientWidth;
+                    if (hasOverflow) overflowCombinations++;
+                    if (cssValid && contrastOk) passed++;
+                    else {
+                      if (!cssValid) cssFailures++;
+                      if (!contrastOk) contrastFailures++;
+                      if (failed.length < 12) failed.push(Object.assign({}, sample, {cssValid:cssValid,contrastOk:contrastOk,overflow:hasOverflow}));
+                    }
+                  } catch (error) {
+                    runtimeErrors++;
+                    if (failed.length < 12) failed.push(Object.assign({}, sample, {runtimeError:String(error && error.message || error)}));
+                  }
                 });
               });
             });
@@ -218,7 +230,7 @@
     } finally {
       attrs.forEach(function (name, i) { if (previous[i] == null) root.removeAttribute(name); else root.setAttribute(name, previous[i]); });
     }
-    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth } };
+    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, cssFailures: cssFailures, runtimeErrors: runtimeErrors, overflowCombinations: overflowCombinations, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: overflowCombinations > 0 } };
   }
 
   function render(container) {
