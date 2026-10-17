@@ -1,38 +1,38 @@
-# Creator Hub Live — coordinated manual update
+# Creator Hub Live — manual changed-files update
 
-This is a **changed-files-only** bundle. Keep the paths shown in the ZIP and merge/overwrite only these exact files in the existing `ravaunrichards/creator-hub-live` repository. Do not replace whole folders or delete files that are not in this bundle.
+This ZIP contains only repository-relative files that are new or changed for this update. It is **not** a replacement website archive. Keep every path in the ZIP and merge/overwrite only those exact files in the existing `ravaunrichards/creator-hub-live` repository. Do not replace whole folders, delete unrelated files, or upload build output. No GitHub, Render, deployed-site, or live Supabase changes were made by this work.
 
-## Apply in this order
+## Install safely
 
-1. Back up the current repository and database before installation.
-2. Apply `database/migrations/0036_social_messaging_creator_tasks.sql` through the project's existing Supabase migration workflow. It adds message edit metadata and server-owned creator task cycles, synchronizes profile privacy, and tightens post visibility policies.
-3. Apply `database/migrations/0037_gift_catalogue_diamond_payout_values.sql`. It validates the existing gift columns and makes active-gift diamond payouts reproducible using the existing 2-coins-to-1-diamond rule, with a minimum of one diamond. It does **not** change coin prices, wallet balances, or transactions.
-4. Apply `database/migrations/0038_comments_author_and_post_owner_delete.sql`. This lets users delete their own comments and lets a post owner delete comments on that owner’s post; row-level security remains enforced by Supabase.
-5. Upload the remaining repository-relative files from this ZIP to GitHub, preserving each path. The frontend and Android WebView copies are both included.
-6. Allow your normal GitHub/Render/static-site deployment process to run. This package has not deployed or edited GitHub, Supabase, Render, or the live website on your behalf.
+1. Back up the repository and database first. Keep a copy of the current release so you can roll back.
+2. Extract the ZIP and upload each file to the matching repository path, preserving the folder structure. Overwrite matching files; add new files where their paths do not yet exist.
+3. **Before deploying the new backend**, apply `database/migrations/0039_wallet_team_integrity.sql` using the project's established Supabase migration workflow. It is a forward-only repair migration and does not reset balances or historical transactions. The migration also reasserts the corrected `comments_del` policy for installations that recorded an earlier version of migration `0038`.
+4. If migrations `0036`, `0037`, and `0038` have not been applied yet, apply them in numerical order before `0039`, using the project's normal migration-history process. If they are already recorded as applied, do not manually rerun them; apply only the pending `0039` migration. Do not reset the database or replay seed migrations against production.
+5. Configure the backend environment from the real deployment values. Ensure `PAYPAL_ENV` matches the type of PayPal app credentials (`sandbox` with sandbox credentials; `live` with live credentials), and set `FRONTEND_URL` or `PAYPAL_RETURN_URL` to your real HTTPS frontend origin. Never copy example credentials or placeholder values into production.
+6. Wallet exchange stays **disabled** until the business has approved both rates and the actual integer values have been set for `CHL_COINS_PER_DIAMOND` and `CHL_DIAMONDS_PER_COIN` in the backend environment. Do not use the explanatory `SET_APPROVED_...` strings as values. Restart/redeploy the backend after environment changes.
+7. Deploy using your existing manual/release process, then run the repository checks from the project root and verify the installed website/Android build. Do not assume the migration or PayPal works live until those actual environment checks pass.
 
-## Included changes
+## What this delta addresses
 
-- For You and Following feeds: real active-LIVE discovery, refresh of active listings, profile-privacy checks, post feed pagination, and scrolling.
-- Profile pages: cover/avatar URL customization, real identity names, profile posts loaded newest-to-oldest, follow/unfollow, private follow requests, follower/following/friends lists, block/unblock and reporting.
-- Post engagement: likes, comments with server-side visibility checks, comment deletion for the comment author and owner of the post, repost, share, named save collections and a Saved page.
-- Messages: profile-based message starts and conversation messaging; edit text messages for 15 minutes and remove sent messages for everyone, with server-side ownership checks. Follow/message controls remain visibly clickable and explain block/privacy restrictions instead of showing a disabled 🚫 control.
-- Creator achievements/tasks: progress based on actual LIVE session duration, published posts and accepted followers; a new task is assigned after completion.
-- LIVE guest stage: adjustable 0–8 guest slots, adaptive responsive participant tiles, host requests for guest microphone/camera with guest accept/decline, real participant names, reliable room data events, and return-to-viewer behavior when a guest is removed.
-- Gift payout migration and LiveKit data transport for room reactions, polls, gifts and media requests.
-- Privacy-aware post access, service-worker cache refresh, and synchronized Android web assets.
+- Backend route registration and a new teams/league route module. Team discovery/detail use the backend; team creation, joining, and leaving now call authenticated routes rather than showing fake success messages. Member details and usable validation/error states are included.
+- Wallet schema contracts for lifetime gift counts, transaction idempotency, conversion ledgers, PayPal payout info, and diamond payout requests; protected server-side conversion/payout RPCs; corrected comment-delete policy. Payment settings can save or remove the payout email, and submitted requests keep their original email snapshot.
+- PayPal return URL normalization and validation, clearer environment mismatch diagnostics, idempotency conflict handling, and capture validation against the expected payment amount and currency before coins can be credited. CORS preflight permits the PATCH/DELETE methods used by existing message, payout, and account workflows.
+- Wallet payment-method selection, verified return handling and balance refresh, responsive team UI improvements, and synced Android WebView copies.
+- Updated cross-layer contract tests and service-worker cache version.
 
-## Verification performed
+## Verification performed locally
 
-The original bundle reported the following checks as passing before this follow-up adjustment. This ZIP is a changed-files bundle, so the full repository checks must be rerun after merging it into the existing repository. The follow-up checks run directly against this package are listed below:
+- `npm run check`: **360 passed, 0 failed** at the integration-check stage; gift asset, social profile/messaging/tasks, social-action/delete, wallet/team/PayPal contract tests also passed.
+- `npm run backend:check`: **73 browser routes registered, 69 checked**; 296 frontend files scanned without forbidden private credential patterns; 25 canonical backend endpoint strings verified.
+- `npm run backend:test`: backend route checks, syntax checks, and LiveKit authorization/track-contract checks passed.
+- JavaScript syntax checks passed for the edited server, team route module, frontend wallet/team pages and Android counterparts. Frontend/Android packaged web assets are checked for byte-for-byte parity (296 files).
+- ZIP contents are a delta against the provided local project snapshot; ZIP integrity was checked before delivery.
 
-- Base bundle report: `npm run check` — **360 passed, 0 failed** before this follow-up change (not rerun as a full-repository check in this changed-files-only package).
-- Base bundle report: `npm run backend:test` — backend syntax and existing LIVE authorization/track-contract checks passed before this follow-up change.
-- Base bundle report: `npm run repair:contracts` — passed before this follow-up change, including frontend/Android web-asset parity.
-- Follow-up checks run here: four changed JavaScript files parse; frontend/Android copies match; `tests/social-actions-delete-contract.mjs` passes; ZIP integrity check passes. Full-repository integration checks were not rerun because the source bundle omits unchanged repository files.
+These are repository-local checks, not proof that production integrations work. Installing the backend dependencies timed out in this environment, so a full server import/startup check could not be completed. The SQL migration was reviewed but could not be executed against a PostgreSQL/Supabase instance here. No live PayPal, Supabase, Render, multi-device Android WebView or production transaction flow was run, and no live services were changed. After installation, verify the actual database schema/migration status, PayPal environment and redirect/capture path, team create/join/leave flows, cash-out request states, and responsive UI on real target devices.
 
-These are code/contract tests, not a production end-to-end test. The migrations have **not** been applied to the live database here; real Supabase, Render, PayPal, and multi-device LiveKit behavior must be verified after installation.
+## Financial behavior and limits
 
-## Deliberate scope limits
-
-This update does not add fake filter controls. Real face filters/green-screen background replacement still require a verified outbound-video processing/segmentation pipeline, and this feed provides active LIVE discovery cards plus scrolling posts rather than multi-room autoplay video. Profile avatar/cover customization currently accepts valid HTTPS image URLs; direct in-app image upload is not included.
+- PayPal remains the only payment provider enabled by this code. Coins are credited only after a successful provider capture whose amount and currency match the stored order.
+- Exchange ratios are a business rule, not inferred from gift prices. Until both approved exchange-rate environment values exist, conversion returns a clear unavailable response and does not change balances.
+- Diamond cash-out requests reserve diamonds in the database. An authorized administrator must confirm the fiat amount/currency; the actual PayPal payout must then be sent through the approved payout process and recorded with its PayPal reference. This update does not claim to automatically issue a PayPal Payouts transfer.
+- If `wallets.user_id` contains duplicate rows from a nonstandard legacy database, the unique index creation will fail rather than choose or merge financial balances. Resolve duplicates through a backed-up, auditable reconciliation before retrying the migration.
