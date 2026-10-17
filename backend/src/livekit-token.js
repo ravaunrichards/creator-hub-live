@@ -1,10 +1,24 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
 import { classifyPublishedTracks } from './livekit-verification.js';
 
+// Validate the configured realtime endpoint before issuing tokens. The URL,
+// API key and API secret must all belong to the same LiveKit project.
+function livekitServerUrl() {
+  const value = String(process.env.LIVEKIT_URL || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'wss:' || !parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return '';
+    return parsed.origin;
+  } catch (_) {
+    return '';
+  }
+}
+
 // Convert the LiveKit realtime URL to its HTTP API URL.
 function livekitHttpBase() {
-  const url = process.env.LIVEKIT_URL || '';
-  return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+  const url = livekitServerUrl();
+  return url ? url.replace(/^wss:/, 'https:') : '';
 }
 
 // Verify that the host has published both camera and microphone tracks.
@@ -89,20 +103,17 @@ export async function createLiveKitToken({
   userId,
   roomName,
   canPublish = false,
-  participantName = null,
-  isHost = false,
-  mediaMode = "video",
   ttlSeconds = 3600
 }) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
 
-  if (!apiKey || !apiSecret) {
+  if (!apiKey || !apiSecret || !livekitServerUrl()) {
     throw Object.assign(
-      new Error('LiveKit server configuration is incomplete.'),
+      new Error('LiveKit is not configured correctly. Set LIVEKIT_URL to the wss:// URL for the same LiveKit project as LIVEKIT_API_KEY and LIVEKIT_API_SECRET.'),
       {
-        code: 'TOKEN_GENERATION_FAILED',
-        status: 500
+        code: 'LIVEKIT_CONFIGURATION_INVALID',
+        status: 503
       }
     );
   }
@@ -119,10 +130,9 @@ export async function createLiveKitToken({
     Math.min(3600, Number(ttlSeconds) || 3600)
   );
 
-  const displayName = String(participantName || (isHost ? "Host" : "Creator")).trim().slice(0, 128) || (isHost ? "Host" : "Creator");
   const token = new AccessToken(apiKey, apiSecret, {
     identity: String(userId),
-    name: displayName,
+    name: canPublish ? 'Host' : 'Viewer',
     ttl: boundedTtlSeconds
   });
 
@@ -142,10 +152,10 @@ export async function createLiveKitToken({
 export function livekitHealth() {
   return {
     configured: !!(
-      process.env.LIVEKIT_URL &&
+      livekitServerUrl() &&
       process.env.LIVEKIT_API_KEY &&
       process.env.LIVEKIT_API_SECRET
     ),
-    serverUrl: process.env.LIVEKIT_URL || null
+    serverUrl: livekitServerUrl() || null
   };
 }
