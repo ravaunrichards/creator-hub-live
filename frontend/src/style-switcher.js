@@ -69,7 +69,15 @@
   function safeGet(key) { try { var raw = localStorage.getItem(key); return raw ? normalize(JSON.parse(raw)) : null; } catch (_) { return null; } }
   function safeSet(key, value) { try { localStorage.setItem(key, JSON.stringify(normalize(value))); return true; } catch (_) { return false; } }
   function userKey(id) { return USER_KEY_PREFIX + String(id || ''); }
-  function getPreference() { return safeGet(CHL.user && CHL.user.id ? userKey(CHL.user.id) : GUEST_KEY) || safeGet(GUEST_KEY) || clone(DEFAULTS); }
+  function getPreference() {
+    var localAccount = CHL.user && CHL.user.id ? safeGet(userKey(CHL.user.id)) : null;
+    var guest = safeGet(GUEST_KEY);
+    if (localAccount) return localAccount;
+    if (guest) return guest;
+    var migrated = migrateLegacyLocalPreference();
+    if (migrated) { safeSet(GUEST_KEY, migrated); return migrated; }
+    return clone(DEFAULTS);
+  }
 
   function apply(value) {
     var p = normalize(value);
@@ -101,6 +109,19 @@
     }
     return normalize({ mode: 'combo', theme: theme, typography: value.font === 'readable' ? 'readable' : (value.font === 'studio' ? 'studio' : 'system'), surfaces: 'standard', density: value.layout === 'compact' || value.scale === 'compact' || Number(value.scale) < 0.95 ? 'compact' : 'comfortable', motion: 'standard', contrast: 'standard' });
   }
+  function migrateLegacyLocalPreference() {
+    try {
+      var raw = localStorage.getItem('chl_appearance_v2');
+      if (raw) {
+        var migrated = legacyToPreference(JSON.parse(raw));
+        if (migrated) return migrated;
+      }
+      var legacyTheme = localStorage.getItem('chl_ui_theme');
+      if (legacyTheme) return legacyToPreference({ theme: legacyTheme });
+    } catch (_) { /* an unreadable legacy preference must not block app startup */ }
+    return null;
+  }
+
   async function saveAccountPreference(p) {
     if (!CHL.user || !CHL.user.id || !CHL.sb) return { synced: false, reason: 'guest' };
     try {
@@ -115,7 +136,7 @@
     var user = CHL.user;
     if (!user || !user.id) {
       activeUserId = null;
-      apply(safeGet(GUEST_KEY) || clone(DEFAULTS));
+      apply(getPreference());
       return;
     }
     if (activeUserId === user.id) return syncPromise || Promise.resolve();
@@ -268,16 +289,17 @@
         var themeField = el('label', { class: 'field chl-style-field' }); themeField.appendChild(el('span', { text: 'Base colour style' }));
         var themeSelect = el('select', { class: 'input', 'aria-label': 'Base colour style' });
         themeIds.forEach(function (id) { themeSelect.appendChild(el('option', { value: id }, THEMES[id].label)); }); themeSelect.value = draft.theme;
-        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
+        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; updateComboPreview(); }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
         var familyGrid = el('div', { class: 'chl-family-grid' }); chooser.appendChild(familyGrid);
-        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; })); });
         var preview = el('div', { class: 'chl-combo-preview' });
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: THEMES[draft.theme].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.typography[draft.typography].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.surfaces[draft.surfaces].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.density[draft.density].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.motion[draft.motion].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.contrast[draft.contrast].label }));
+        function updateComboPreview() {
+          preview.innerHTML = '';
+          [[THEMES[draft.theme].label], [FAMILIES.typography[draft.typography].label], [FAMILIES.surfaces[draft.surfaces].label], [FAMILIES.density[draft.density].label], [FAMILIES.motion[draft.motion].label], [FAMILIES.contrast[draft.contrast].label]].forEach(function (item) {
+            preview.appendChild(el('span', { class: 'chl-preview-chip', text: item[0] }));
+          });
+        }
+        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; updateComboPreview(); })); });
+        updateComboPreview();
         chooser.appendChild(preview);
       }
     }
@@ -325,5 +347,5 @@
     runRelayTests: runRelayTests,
     onAuthChanged: onAuthChanged
   };
-  apply(safeGet(GUEST_KEY) || clone(DEFAULTS));
+  apply(getPreference());
 })();
