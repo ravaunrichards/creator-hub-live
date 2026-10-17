@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="styles/nexus-edition.css?v=6.0.5"/>
 <link rel="stylesheet" href="styles/platform-responsive.css?v=6.0.5"/>
 <link rel="stylesheet" href="styles/chl-style-system.css?v=6.0.5"/>
+<link rel="stylesheet" href="styles/platform-tools.css?v=6.0.8"/>
 </head>
 <body>
 <div id="app"><div style="min-height:100vh;display:flex;align-items:center;justify-content:center"><div class="spin"></div></div></div>
@@ -54,6 +55,7 @@ window.addEventListener('error', function (ev) {
 <script src="src/studio-edition.js?v=6.0.5"></script>
 <script src="src/style-system.js?v=6.0.5"></script>
 <script src="src/swipe-feed.js?v=6.0.5"></script>
+<script src="src/pages-platform-tools.js?v=6.0.8"></script>
 <script>
 try {
   var appearance = JSON.parse(localStorage.getItem('chcn_appearance') || '{}');
@@ -73,7 +75,7 @@ catch (e) {
 </script>
 <script>
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js?v=6.0.5').catch(function(){}); });
+  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js?v=6.0.8').catch(function(){}); });
 }
 </script>
 </body>

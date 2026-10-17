@@ -1,9 +1,10 @@
 /* Creator Hub Live — safe static-shell service worker. */
-var VERSION = 'chl-web-v3-3-3';
+var VERSION = 'chl-web-v3-3-5';
 var SHELL = [
   './','./index.html',
   './styles/app.css','./styles/studio-edition.css','./styles/nexus-edition.css','./styles/platform-responsive.css','./styles/chl-style-system.css',
-  './src/core.js','./src/ui.js','./src/pages-auth.js','./src/pages.js','./src/pages-admin.js','./src/pages-creator.js','./src/pages-teams.js','./src/pages-extra.js','./src/pages-room.js','./src/pages-settings.js','./src/pages-accessibility.js','./src/pages-account.js','./src/pages-community.js','./src/pages-wallet.js','./src/livekit.js','./src/studio-edition.js','./src/style-system.js','./src/swipe-feed.js',
+  './styles/platform-tools.css?v=6.0.8',
+  './src/core.js','./src/ui.js','./src/pages-auth.js','./src/pages.js','./src/pages-admin.js','./src/pages-creator.js','./src/pages-teams.js','./src/pages-extra.js','./src/pages-room.js','./src/pages-settings.js','./src/pages-accessibility.js','./src/pages-account.js','./src/pages-community.js','./src/pages-wallet.js','./src/pages-profile.js','./src/livekit.js','./src/studio-edition.js','./src/style-system.js','./src/swipe-feed.js','./src/pages-platform-tools.js?v=6.0.8',
   './config.js','./config.example.js','./assets/logo.svg','./assets/icon.svg','./assets/gifts/multi-guest.svg','./manifest.webmanifest'
 ];
 self.addEventListener('install', function(e){ self.skipWaiting(); e.waitUntil(caches.open(VERSION).then(function(c){ return Promise.all(SHELL.map(function(u){ return c.add(u).catch(function(){ /* A missing or network-only asset must not poison the whole cache. */ }); })); })); });
