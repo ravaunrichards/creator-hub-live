@@ -84,8 +84,10 @@
       try { var result = await request; if (result && result.error) throw result.error; return {ok:true,data:result && result.data,count:result && result.count}; }
       catch (error) { console.warn('[Creator Analytics] '+label+' unavailable:',error && error.message || error); return {ok:false,error:error}; }
     }
+    // Keep Analytics on explicit, auditable data sources only. Do not call the
+    // undocumented aggregate RPC here: its comment-exclusion behavior cannot be
+    // verified from the project source. LIVE chat messages are not analytics data.
     var responses = await Promise.all([
-      query('server metrics',sb.rpc('get_my_creator_metrics')),
       query('followers',sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',uid).eq('status','accepted')),
       query('following',sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',uid).eq('status','accepted')),
       query('published posts',sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',uid).eq('is_draft',false).eq('is_test',false)),
@@ -94,15 +96,15 @@
       query('gift transactions',sb.from('gift_transactions').select('id,coin_cost,diamond_value,created_at,live_id').eq('recipient_id',uid).order('created_at',{ascending:false}).limit(1000)),
       query('wallet',CHL.authenticatedApiRequest('/api/wallet'))
     ]);
-    var metrics = responses[0].ok ? (Array.isArray(responses[0].data) ? responses[0].data[0] : responses[0].data) : null;
-    var followers = responses[1].ok ? responses[1].count : (metrics && metrics.followers);
-    var following = responses[2].ok ? responses[2].count : (metrics && metrics.following);
-    var postCount = responses[3].ok ? responses[3].count : (metrics && metrics.posts);
-    var liveCount = responses[5].ok ? responses[5].count : (metrics && metrics.streams);
-    var posts = responses[4].ok && Array.isArray(responses[4].data) ? responses[4].data : [];
-    var lives = responses[5].ok && Array.isArray(responses[5].data) ? responses[5].data : [];
-    var gifts = responses[6].ok && Array.isArray(responses[6].data) ? responses[6].data : [];
-    var wallet = responses[7].ok ? responses[7].data : null;
+    var metrics = null;
+    var followers = responses[0].ok ? responses[0].count : null;
+    var following = responses[1].ok ? responses[1].count : null;
+    var postCount = responses[2].ok ? responses[2].count : null;
+    var liveCount = responses[4].ok ? responses[4].count : null;
+    var posts = responses[3].ok && Array.isArray(responses[3].data) ? responses[3].data : [];
+    var lives = responses[4].ok && Array.isArray(responses[4].data) ? responses[4].data : [];
+    var gifts = responses[5].ok && Array.isArray(responses[5].data) ? responses[5].data : [];
+    var wallet = responses[6].ok ? responses[6].data : null;
     function value(v) { return v === undefined || v === null || !Number.isFinite(Number(v)) ? 'Unavailable' : CHL.fmt(Number(v)); }
     function stat(label, val, detail) {
       summary.appendChild(ui.statCard(val === undefined || val === null ? 'Unavailable' : value(val),label));
