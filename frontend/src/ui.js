@@ -3,10 +3,6 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, esc = CHL.esc, qs = CHL.qs;
   var ui = CHL.ui = {};
-  var mobileMenuPanel = null;
-  var mobileMenuBackdrop = null;
-  var mobileMenuTrigger = null;
-  var previousBodyOverflow = null;
 
   var NAV = [
     {h:'#/',        ic:'\uD83C\uDFE0', label:'Home',     base:'/'},
@@ -65,12 +61,8 @@
 
     var main = el('main',{class:'main'});
     // mobile top bar
-    mobileMenuTrigger = el('button',{class:'btn chl-mobile-menu-trigger',type:'button','aria-controls':'chlMobileMenu','aria-expanded':'false','aria-label':'Open all navigation links'},'☰ Menu');
-    var mobileTopActions = el('div',{class:'row chl-mobile-top-actions',style:'display:flex;align-items:center;gap:8px'},[
-      el('a',{href:'#/wallet',class:'pill'},[ '\uD83D\uDC8E ', el('span',{id:'mtopCoins',text:'\u2014'}) ]),
-      mobileMenuTrigger
-    ]);
-    var mtop = el('div',{class:'mtop'},[ logo(), mobileTopActions ]);
+    var mtop = el('div',{class:'mtop'},[ logo(),
+      el('a',{href:'#/wallet',class:'pill'},[ '\uD83D\uDC8E ', el('span',{id:'mtopCoins',text:'\u2014'}) ]) ]);
     main.appendChild(mtop);
     main.appendChild(el('div',{id:'outlet'}));
 
@@ -82,52 +74,7 @@
     var app = el('div',{class:'app'},[side, main]);
     root.appendChild(app);
     root.appendChild(tab);
-    mobileMenuBackdrop = el('button',{class:'chl-mobile-menu-backdrop',type:'button','aria-label':'Close navigation menu',tabindex:'-1'});
-    mobileMenuBackdrop.style.display = 'none';
-    mobileMenuPanel = el('nav',{class:'chl-mobile-menu',id:'chlMobileMenu','aria-label':'All navigation links','aria-hidden':'true',style:'display:none'});
-    mobileMenuPanel.appendChild(el('div',{class:'chl-mobile-menu-heading'},[
-      el('strong',{text:'Navigate'}),
-      el('button',{class:'btn',type:'button',text:'Close',onclick:function(){ui.closeMobileMenu(true);}})
-    ]));
-    var mobileMenuLinks = el('div',{class:'chl-mobile-menu-links'});
-    NAV.forEach(function(n){
-      mobileMenuLinks.appendChild(el('a',{href:n.h,'data-base':n.base},[el('span',{class:'ic',text:n.ic}),el('span',{text:n.label})]));
-    });
-    mobileMenuLinks.appendChild(el('a',{href:'#/settings','data-base':'/settings'},[el('span',{class:'ic',text:'⚙️'}),el('span',{text:'Settings'})]));
-    if (CHL.isAdmin && CHL.isAdmin()) mobileMenuLinks.appendChild(el('a',{href:'#/admin','data-base':'/admin'},[el('span',{class:'ic',text:'🔒'}),el('span',{text:'Admin'})]));
-    mobileMenuPanel.appendChild(mobileMenuLinks);
-    root.appendChild(mobileMenuBackdrop);
-    root.appendChild(mobileMenuPanel);
     root.appendChild(el('div',{id:'giftStage'}));
-    mobileMenuTrigger.addEventListener('click',function(){
-      var isOpen = mobileMenuTrigger.getAttribute('aria-expanded') === 'true';
-      if (isOpen) ui.closeMobileMenu(true); else ui.openMobileMenu();
-    });
-    mobileMenuBackdrop.addEventListener('click',function(){ui.closeMobileMenu(true);});
-    mobileMenuPanel.addEventListener('click',function(event){
-      var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
-      if (link) ui.closeMobileMenu(false);
-    });
-    if (!CHL._mobileMenuKeyboardBound) {
-      CHL._mobileMenuKeyboardBound = true;
-      document.addEventListener('keydown',function(event){
-        if (!mobileMenuPanel || mobileMenuPanel.style.display === 'none') return;
-        if (event.key === 'Escape') { ui.closeMobileMenu(true); return; }
-        if (event.key !== 'Tab') return;
-        var focusable = Array.from(mobileMenuPanel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
-          .filter(function(node){ return node.getClientRects().length > 0; });
-        if (!focusable.length) { event.preventDefault(); return; }
-        var first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && (document.activeElement === first || !mobileMenuPanel.contains(document.activeElement))) {
-          event.preventDefault(); last.focus();
-        } else if (!event.shiftKey && (document.activeElement === last || !mobileMenuPanel.contains(document.activeElement))) {
-          event.preventDefault(); first.focus();
-        }
-      });
-      window.addEventListener('hashchange',function(){if(mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
-      window.addEventListener('resize',function(){if(window.innerWidth > 860 && mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
-      window.addEventListener('orientationchange',function(){if(window.innerWidth > 860 && mobileMenuPanel && mobileMenuPanel.style.display!=='none')ui.closeMobileMenu(false);});
-    }
     ui.refreshCoins();
   };
 
@@ -142,38 +89,8 @@
     return el('a',{href:'#/login',class:'btn primary block'},'Log in / Sign up');
   }
 
-  ui.openMobileMenu = function(){
-    if (!mobileMenuPanel || !mobileMenuBackdrop || !mobileMenuTrigger) return;
-    if (document.body && previousBodyOverflow === null) {
-      previousBodyOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
-    mobileMenuPanel.style.display = 'block';
-    mobileMenuBackdrop.style.display = 'block';
-    mobileMenuPanel.setAttribute('aria-hidden','false');
-    mobileMenuTrigger.setAttribute('aria-expanded','true');
-    mobileMenuTrigger.setAttribute('aria-label','Close all navigation links');
-    var firstLink = mobileMenuPanel.querySelector('a[href]');
-    if (firstLink) firstLink.focus();
-  };
-  ui.closeMobileMenu = function(refocus){
-    if (!mobileMenuPanel || !mobileMenuBackdrop || !mobileMenuTrigger) return;
-    mobileMenuPanel.style.display = 'none';
-    mobileMenuBackdrop.style.display = 'none';
-    if (document.body && previousBodyOverflow !== null) {
-      document.body.style.overflow = previousBodyOverflow;
-      previousBodyOverflow = null;
-    }
-    mobileMenuPanel.setAttribute('aria-hidden','true');
-    mobileMenuTrigger.setAttribute('aria-expanded','false');
-    mobileMenuTrigger.setAttribute('aria-label','Open all navigation links');
-    if (refocus) mobileMenuTrigger.focus();
-  };
-
   ui.highlightNav = function(base){
-    var main = qs('.main');
-    if (main) main.classList.toggle('chl-has-live-room', !!base && (base === '/live' || base.indexOf('/live/') === 0));
-    document.querySelectorAll('.side nav a, .tabbar a, .chl-mobile-menu a').forEach(function(a){
+    document.querySelectorAll('.side nav a, .tabbar a').forEach(function(a){
       var nb = a.getAttribute('data-base'); if (!nb){ a.classList.remove('active'); return; }
       var on = nb === '/' ? base === '/' : (base === nb || (base && base.indexOf(nb+'/') === 0) || base === nb);
       a.classList.toggle('active', !!on);
