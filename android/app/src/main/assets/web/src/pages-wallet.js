@@ -15,7 +15,7 @@
     outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:6px 0 12px', text: 'Recharge wallet' }));
     var packagePanel = el('section', { class: 'card', style: 'max-width:900px;margin-top:8px' });
     packagePanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Available coin packages' }));
-    packagePanel.appendChild(el('p', { class: 'sub', text: 'Your saved packages and prices are loaded from the active wallet catalogue. Checkout remains PayPal-only.' }));
+    packagePanel.appendChild(el('p', { class: 'sub', text: 'Prices are loaded from the active wallet catalogue. Choose a payment method before checkout; PayPal is currently the only enabled provider.' }));
     var packageGrid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px' });
     packageGrid.appendChild(el('div', { class: 'note', text: 'Loading your coin packages…' }));
     packagePanel.appendChild(packageGrid); outlet.appendChild(packagePanel);
@@ -30,7 +30,7 @@
         var card = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
         card.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(coins) + ' coins' }));
         card.appendChild(el('div', { style: 'font-size:17px;font-weight:800', text: formatMoney(price, pkg.currency || 'USD') }));
-        var buyPackage = el('button', { class: 'btn primary block', type: 'button', text: 'Buy package', onclick: function(){ buy({coins:coins}); } });
+        var buyPackage = el('button', { class: 'btn primary block', type: 'button', text: 'Buy package', onclick: function(){ choosePaymentMethod({coins:coins}); } });
         card.appendChild(buyPackage); packageGrid.appendChild(card);
       });
       if (!packageGrid.children.length) packageGrid.appendChild(el('div', { class: 'note', text: 'The package catalogue did not return any valid prices. No checkout was started.' }));
@@ -70,81 +70,14 @@
       }
     }
     customInput.addEventListener('input', function () { if (quoteTimer) window.clearTimeout(quoteTimer); quoteTimer = window.setTimeout(refreshCustomQuote, 350); });
-    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value }); });
+    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } choosePaymentMethod({ coins: value }); });
 
     outlet.appendChild(el('div', { class: 'note', text: 'PayPal is the only wallet recharge provider. The browser never supplies the payable amount or credits coins directly.' }));
     await renderCurrencyConversion(outlet, stat);
     try { var tx = await CHL.authenticatedApiRequest('/api/wallet/transactions?limit=20'); if (tx && Array.isArray(tx.transactions) && tx.transactions.length) { outlet.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin:18px 0 12px', text: 'Recent transactions' })); tx.transactions.forEach(function (t) { outlet.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px' }, [(el('div', { style: 'font-weight:700', text: t.reason || t.source || 'Transaction' })), el('div', { style: 'color:var(--mut)', text: String(t.amount) + ' coins · ' + CHL.ago(t.created_at) })])); }); } } catch (_) {}
-    await renderGiftEarnings(outlet);
     renderDiamondPayouts(outlet);
-    handlePaypalReturn();
+    handlePaypalReturn(stat);
   });
-
-  async function renderGiftEarnings(outlet) {
-    var panel = el('section', { class: 'card', style: 'max-width:900px;margin-top:18px' });
-    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Gift earnings' }));
-    panel.appendChild(el('p', { class: 'sub', text: 'Your confirmed gift history includes gifts received as a LIVE host or accepted stage guest. The existing gift catalogue controls diamond credits.' }));
-    var note = el('div', { class: 'note', 'aria-live': 'polite', text: 'Loading gift earnings…' });
-    panel.appendChild(note);
-    var stats = el('div', { class: 'grid stat', style: 'margin:12px 0' });
-    var recent = el('div', { style: 'display:grid;gap:8px;margin-top:10px' });
-    panel.appendChild(stats); panel.appendChild(recent); outlet.appendChild(panel);
-
-    try {
-      if (!CHL.sb || typeof CHL.sb.rpc !== 'function') throw new Error('Secure gift-earnings lookup is unavailable.');
-      var response = await CHL.sb.rpc('creator_gift_earnings_summary', { p_limit: 20 });
-      if (response && response.error) throw response.error;
-      var data = response && response.data || {};
-      stats.appendChild(ui.statCard(formatBalance(data.diamondsEarned), 'Diamonds credited'));
-      stats.appendChild(ui.statCard(formatBalance(data.hostDiamondsEarned), 'Earned as host'));
-      stats.appendChild(ui.statCard(formatBalance(data.guestDiamondsEarned), 'Earned as guest'));
-      stats.appendChild(ui.statCard(formatBalance(data.creatorShareCoinUnits), 'Creator share · coin units'));
-      stats.appendChild(ui.statCard(formatBalance(data.totalGiftsReceived), 'Gifts received'));
-      note.textContent = String(data.financialNote || 'Coin shares are virtual accounting units; diamonds are not cash and do not convert 1:1 to coins.');
-      var rows = Array.isArray(data.recent) ? data.recent : [];
-      if (!rows.length) recent.appendChild(el('div', { class: 'note', text: 'No gift earnings have been recorded for this account yet.' }));
-      rows.forEach(function (item) {
-        var role = String(item.recipient_role || 'creator').toUpperCase();
-        var card = el('div', { class: 'card', style: 'padding:10px 12px' });
-        card.appendChild(el('div', { style: 'font-weight:750', text: String(item.gift_name || 'Gift') + ' · ' + role }));
-        card.appendChild(el('div', { class: 'sub', style: 'margin-top:4px', text: 'Gift cost: ' + formatBalance(item.coin_cost) + ' coins · Your recorded share: ' + formatBalance(item.creator_share_coins) + ' virtual coin units · Diamond credit: ' + formatBalance(item.creator_diamonds) }));
-        if (item.created_at) card.appendChild(el('div', { class: 'sub', style: 'margin-top:3px;font-size:12px', text: new Date(item.created_at).toLocaleString() }));
-        recent.appendChild(card);
-      });
-    } catch (error) {
-      note.textContent = error && error.message ? error.message : 'Gift earnings are temporarily unavailable. Existing wallet balances and PayPal payout records were not changed.';
-      recent.appendChild(el('div', { class: 'note', text: 'No new earnings values are being estimated or invented.' }));
-    }
-
-    // Admin overview is separately permission-checked by the database function.
-    try {
-      if (!CHL.sb || !CHL.user) return;
-      var profileResult = await CHL.sb.from('profiles').select('is_admin').eq('id', CHL.user.id).maybeSingle();
-      if (!profileResult || profileResult.error || !profileResult.data || profileResult.data.is_admin !== true) return;
-      var adminResult = await CHL.sb.rpc('admin_gift_commission_summary', { p_limit: 20 });
-      if (adminResult && adminResult.error) throw adminResult.error;
-      var adminData = adminResult && adminResult.data || {};
-      var commission = adminData.giftCommission || {};
-      var adminPanel = el('section', { class: 'card', style: 'max-width:900px;margin-top:14px' });
-      adminPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'CHL platform gift commissions' }));
-      adminPanel.appendChild(el('p', { class: 'sub', text: 'This is recorded virtual coin-unit commission, not fiat revenue. Real PayPal receipts, provider fees, tax, refunds, chargebacks and operating costs are separate.' }));
-      var adminStats = el('div', { class: 'grid stat', style: 'margin:12px 0' });
-      adminStats.appendChild(ui.statCard(formatBalance(commission.platformCommissionCoins), 'Platform commission · coin units'));
-      adminStats.appendChild(ui.statCard(formatBalance(commission.coinsSpent), 'Gift coins spent'));
-      adminStats.appendChild(ui.statCard(formatBalance(commission.creatorDiamondsCredited), 'Creator diamonds credited'));
-      adminStats.appendChild(ui.statCard(formatBalance(commission.giftCount), 'Gift transactions'));
-      adminPanel.appendChild(adminStats);
-      if (Array.isArray(adminData.byRecipientRole) && adminData.byRecipientRole.length) {
-        adminData.byRecipientRole.forEach(function (role) {
-          adminPanel.appendChild(el('div', { class: 'sub', style: 'margin-top:5px', text: String(role.recipient_role || 'unknown').toUpperCase() + ': ' + formatBalance(role.gift_count) + ' gifts · ' + formatBalance(role.platform_commission_coins) + ' commission coin units · ' + formatBalance(role.creator_diamonds_credited) + ' creator diamonds' }));
-        });
-      }
-      adminPanel.appendChild(el('div', { class: 'note', style: 'margin-top:8px', text: String(adminData.financialNote || 'Virtual coin ledger only; not a cash revenue statement.') }));
-      outlet.appendChild(adminPanel);
-    } catch (error) {
-      console.warn('[Creator Hub wallet] Admin commission overview unavailable:', error && error.message || error);
-    }
-  }
 
   function formatBalance(value) {
     var amount = Number(value);
@@ -259,19 +192,63 @@
     } catch (error) { box.innerHTML = ''; box.appendChild(el('div', { class: 'note', text: error.message || 'Payout history is unavailable.' })); }
   }
 
-  async function handlePaypalReturn() {
+  function choosePaymentMethod(p) {
+    var coins = Number(p && p.coins);
+    if (!Number.isSafeInteger(coins) || coins < 1 || coins > 50000) { CHL.toast('Choose a valid coin amount before checkout.'); return; }
+    var current = document.querySelector('.chl-wallet-method-backdrop');
+    if (current) current.remove();
+    var backdrop = el('div', { class: 'chl-wallet-method-backdrop', style: 'position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:14px;background:rgba(2,6,23,.78);backdrop-filter:blur(10px)', role: 'presentation' });
+    var dialog = el('section', { class: 'card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'chl-wallet-method-title', style: 'width:min(100%,430px);max-height:calc(100vh - 28px);overflow:auto;padding:18px;border:1px solid var(--line);background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.38)' });
+    var headingRow = el('div', { class: 'row between', style: 'align-items:center;gap:12px;margin-bottom:8px' });
+    headingRow.appendChild(el('h2', { id: 'chl-wallet-method-title', style: 'margin:0;font-size:18px', text: 'Choose a payment method' }));
+    var close = el('button', { class: 'btn', type: 'button', text: 'Close', 'aria-label': 'Close payment method selection' });
+    headingRow.appendChild(close); dialog.appendChild(headingRow);
+    dialog.appendChild(el('p', { class: 'sub', text: 'Select an enabled payment provider for ' + CHL.fmt(coins) + ' coins. Your wallet is credited only after the payment is verified.' }));
+    var method = el('label', { class: 'card', style: 'display:flex;align-items:center;gap:12px;padding:13px;margin:12px 0;cursor:pointer;border:1px solid var(--accent, #777)' });
+    var radio = el('input', { type: 'radio', name: 'chl-wallet-payment-method', value: 'paypal', checked: 'checked', style: 'width:18px;height:18px;flex:none' });
+    method.appendChild(radio);
+    method.appendChild(el('span', { style: 'flex:1;min-width:0' }, [el('strong', { style: 'display:block', text: 'PayPal' }), el('span', { class: 'sub', text: 'Secure online checkout · Currently available' })]));
+    method.appendChild(el('span', { 'aria-hidden': 'true', style: 'font-size:23px', text: '↗' }));
+    dialog.appendChild(method);
+    dialog.appendChild(el('div', { class: 'note', text: 'No other payment provider is enabled right now. You will be redirected to PayPal to approve the order.' }));
+    var actions = el('div', { class: 'row wrap', style: 'gap:8px;margin-top:14px' });
+    var continueButton = el('button', { class: 'btn primary', type: 'button', style: 'flex:1;min-width:170px', text: 'Continue to PayPal' });
+    actions.appendChild(continueButton); dialog.appendChild(actions); backdrop.appendChild(dialog); document.body.appendChild(backdrop);
+    function closeDialog() { backdrop.remove(); document.removeEventListener('keydown', onKeyDown); }
+    function onKeyDown(event) { if (event.key === 'Escape') closeDialog(); }
+    close.addEventListener('click', closeDialog);
+    backdrop.addEventListener('click', function(event) { if (event.target === backdrop) closeDialog(); });
+    continueButton.addEventListener('click', function() {
+      if (!radio.checked) { CHL.toast('Select an available payment method.'); return; }
+      continueButton.disabled = true; continueButton.textContent = 'Starting secure checkout…'; close.disabled = true;
+      closeDialog(); buy({ coins: coins });
+    });
+    document.addEventListener('keydown', onKeyDown);
+    continueButton.focus();
+  }
+
+  async function handlePaypalReturn(stat) {
     var q = new URLSearchParams(location.search || ''); var orderId = q.get('token'); var returnState = q.get('paypal');
     if (!returnState) return;
     history.replaceState(null, '', location.pathname + location.hash);
     if (returnState === 'cancelled') { CHL.toast('PayPal checkout was cancelled. No coins were credited.'); return; }
     if (returnState !== 'success') return;
     if (!orderId || !CHL.user) { CHL.toast('The PayPal return could not be verified. Open Wallet and check your transaction history.'); return; }
-    try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited || d.captured ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
-    catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
+    try {
+      var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } });
+      if (d.credited || d.captured) {
+        try {
+          var wallet = await CHL.authenticatedApiRequest('/api/wallet');
+          stat.innerHTML = ''; stat.appendChild(ui.statCard(formatBalance(wallet.coinBalance), 'Coins')); stat.appendChild(ui.statCard(formatBalance(wallet.diamondBalance), 'Diamonds')); stat.appendChild(ui.statCard(formatBalance(wallet.lifetimeGiftsSent), 'Lifetime gifts')); ui.refreshCoins();
+        } catch (_) {}
+        CHL.toast('Payment completed. ' + formatBalance(d.coins) + ' coins were credited.');
+      } else CHL.toast('Payment is pending verification. Coins will appear after confirmation.');
+    } catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
   }
   async function buy(p) {
     try {
       var d = await CHL.authenticatedApiRequest('/api/payments/paypal/create-order', { method: 'POST', headers: { 'Idempotency-Key': 'checkout:' + CHL.uuid() }, body: { coins: p.coins } });
+      if (d && (d.alreadyCompleted || d.credited)) { CHL.toast('This checkout was already completed. Your wallet will show the confirmed balance.'); return; }
       if (!d || !d.approveUrl) throw new Error('PAYMENT_PROVIDER_ERROR: checkout approval URL was not returned.');
       location.href = d.approveUrl;
     } catch (e) { CHL.toast(e.message || 'PAYMENT_BACKEND_UNAVAILABLE'); }
