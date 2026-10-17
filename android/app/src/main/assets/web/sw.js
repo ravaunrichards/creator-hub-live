@@ -1,6 +1,6 @@
 /* Creator Hub Live — safe static-shell service worker. */
 var VERSION = 'chl-web-v3-3-3';
-var SHELL = ['./','./index.html','./styles/app.css','./src/core.js','./src/ui.js','./src/pages-auth.js','./src/pages.js','./src/pages-admin.js','./src/pages-creator.js','./src/pages-extra.js','./src/pages-room.js','./src/pages-settings.js','./src/pages-wallet.js','./src/livekit.js','./config.js','./config.example.js','./assets/logo.svg','./assets/icon.svg','./assets/gifts/multi-guest.svg','./manifest.webmanifest'];
+var SHELL = ['./','./index.html','./styles/app.css','./src/core.js','./src/ui.js','./src/pages-auth.js','./src/pages.js','./src/pages-admin.js','./src/pages-creator.js','./src/pages-extra.js','./src/pages-room.js','./src/pages-settings.js','./src/style-switcher.js','./src/pages-wallet.js','./src/livekit.js','./config.js','./config.example.js','./assets/logo.svg','./assets/icon.svg','./assets/gifts/multi-guest.svg','./manifest.webmanifest'];
 self.addEventListener('install', function(e){ self.skipWaiting(); e.waitUntil(caches.open(VERSION).then(function(c){ return Promise.all(SHELL.map(function(u){ return c.add(u).catch(function(){ /* one failed asset must never poison the whole cache */ }); })); })); });
 self.addEventListener('activate', function(e){ e.waitUntil(caches.keys().then(function(keys){ return Promise.all(keys.map(function(k){ return k !== VERSION ? caches.delete(k) : null; })); }).then(function(){ return self.clients.claim(); })); });
 self.addEventListener('fetch', function(e){
