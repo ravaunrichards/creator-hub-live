@@ -3,7 +3,6 @@ import http from "node:http";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { URL } from "node:url";
 import { handleTeamsRoute } from "./teams-routes.js";
-import { closeOrphanedLiveRooms } from "./live-room-lifecycle.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   createLiveKitToken,
@@ -46,52 +45,24 @@ const SUPABASE_ANON_KEY =
 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-const PAYPAL_ENV_INPUT = String(
+const PAYPAL_ENV = String(
   process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox"
-).trim().toLowerCase();
-const PAYPAL_ENV = ["live", "production", "prod"].includes(PAYPAL_ENV_INPUT)
-  ? "live"
-  : ["sandbox", "test", ""].includes(PAYPAL_ENV_INPUT)
-    ? "sandbox"
-    : PAYPAL_ENV_INPUT;
+).toLowerCase();
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "";
 
-const PAYPAL_BASE = PAYPAL_ENV === "live"
-  ? "https://api-m.paypal.com"
-  : PAYPAL_ENV === "sandbox"
-    ? "https://api-m.sandbox.paypal.com"
-    : "";
+const PAYPAL_BASE =
+  PAYPAL_ENV === "live"
+    ? "https://api-m.paypal.com"
+    : "https://api-m.sandbox.paypal.com";
 
 const PAYPAL_RETURN_URL = String(
   process.env.PAYPAL_RETURN_URL ||
     (FRONTEND_URL ? FRONTEND_URL.split(",")[0] : "") ||
     ""
-).trim();
-
-function buildPaypalReturnUrl(state) {
-  if (!PAYPAL_RETURN_URL) return undefined;
-  let target;
-  try {
-    target = new URL(PAYPAL_RETURN_URL);
-  } catch {
-    throw fail(503, "PAYPAL_RETURN_URL_INVALID", "PayPal return URL configuration is invalid.");
-  }
-  const localHost = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
-  if (target.protocol !== "https:" && !(target.protocol === "http:" && localHost)) {
-    throw fail(503, "PAYPAL_RETURN_URL_INVALID", "PayPal return URL must use HTTPS (HTTP is allowed only for local testing).");
-  }
-  // PAYPAL_RETURN_URL is sometimes configured with a page path or tracking
-  // query. Normalize it to the frontend SPA root so the return token remains
-  // in location.search and the hash route remains /wallet.
-  target.pathname = "/";
-  target.search = "";
-  target.searchParams.set("paypal", state);
-  target.hash = "/wallet";
-  return target.toString();
-}
+).replace(/\/$/, "");
 
 const LIVEKIT_URL = String(process.env.LIVEKIT_URL || "").trim();
 
@@ -221,12 +192,14 @@ function errorResponse(res, error) {
 
 function allowedOrigin(origin) {
   if (!origin) return true;
-  const configured = FRONTEND_URL.split(",").map((value) => value.trim()).filter(Boolean);
-  const allowed = configured.map((value) => {
-    try { return new URL(value).origin; } catch { return null; }
-  }).filter(Boolean);
-  if (allowed.length) return allowed.includes(origin);
-  return origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`;
+  const list = FRONTEND_URL.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (list.length) return list.includes(origin);
+  return (
+    origin === `http://localhost:${PORT}` ||
+    origin === `http://127.0.0.1:${PORT}`
+  );
 }
 
 function applyCors(req, res) {
@@ -244,9 +217,7 @@ function applyCors(req, res) {
       "X-Requested-With",
     ].join(", ")
   );
-  // These methods are used by authenticated edit/delete and payout-review APIs.
-  // Omitting them here makes valid routes fail at the browser's CORS preflight.
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
 }
 
 async function readRawBody(req) {
@@ -495,7 +466,6 @@ function validateLiveRoomName(roomName) {
 
 async function paypalToken() {
   requireServerConfig(["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
-  if (!PAYPAL_BASE) throw fail(503, "PAYPAL_ENV_INVALID", "PAYPAL_ENV must be sandbox, test, live, production, or prod.");
   const auth = Buffer.from(
     `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
   ).toString("base64");
@@ -508,23 +478,21 @@ async function paypalToken() {
     body: "grant_type=client_credentials",
   });
   const text = await response.text();
-  let data;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = {};
-  }
   if (!response.ok) {
-    const providerCode = String(data.error || "").trim();
-    const safeDescription = String(data.error_description || data.message || "").trim().slice(0, 180);
-    console.error("[PayPal OAuth rejected]", { status: response.status, environment: PAYPAL_ENV, code: providerCode || undefined, description: safeDescription || undefined });
-    const configurationHint = response.status === 401
-      ? " Verify PAYPAL_ENV matches the client ID and secret from the same PayPal app; sandbox and live credentials are not interchangeable."
-      : " Check the PayPal developer status and backend configuration.";
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
-      `PayPal OAuth failed (${response.status})${providerCode ? `: ${providerCode}` : ""}.${configurationHint}`
+      `PayPal OAuth failed (${response.status}).`
+    );
+  }
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw fail(
+      502,
+      "PAYMENT_PROVIDER_ERROR",
+      "PayPal OAuth returned an invalid response."
     );
   }
   if (!data.access_token)
@@ -799,9 +767,9 @@ const server = http.createServer(async (req, res) => {
     // The Teams API implementation already lives in its own module. Route
     // matching must be wired here before the fallback 404 so the existing
     // Teams page's /api/teams requests are not treated as unknown endpoints.
-    if (pathname === "/api/teams" || pathname.startsWith("/api/teams/") || pathname === "/api/leagues/standings") {
+    if (pathname === "/api/teams" || pathname.startsWith("/api/teams/")) {
       const teamHandled = await handleTeamsRoute({
-        pathname, method, req, res, url, fail, ok, send, db,
+        pathname, method, req, res, url, fail, ok, db,
         requireSupabaseUser, readJson, normalizeExternalError,
       });
       // The route module sends responses through ok()/send(), whose return
@@ -829,8 +797,7 @@ const server = http.createServer(async (req, res) => {
         paypalEnvironment: PAYPAL_ENV,
         features: {
           livekit: livekitHealth().configured,
-          paypal: Boolean(PAYPAL_BASE && PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET && PAYPAL_RETURN_URL),
-          walletConversion: Number.isSafeInteger(Number(process.env.CHL_COINS_PER_DIAMOND)) && Number(process.env.CHL_COINS_PER_DIAMOND) >= 1 && Number.isSafeInteger(Number(process.env.CHL_DIAMONDS_PER_COIN)) && Number(process.env.CHL_DIAMONDS_PER_COIN) >= 1,
+          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET),
         },
       });
     }
@@ -1326,20 +1293,16 @@ const server = http.createServer(async (req, res) => {
             "Only the host can end this LIVE session."
           );
         }
-        const endedAt = new Date().toISOString();
         const { data, error } = await client
           .from("live_sessions")
           .update({
             status: "ended",
-            ended_at: endedAt,
-            updated_at: endedAt,
-            viewer_count: 0,
+            ended_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           })
           .eq("id", room.id)
-          .in("status", ["pending", "live"])
-          .is("ended_at", null)
           .select("*")
-          .maybeSingle();
+          .single();
         if (error) {
           const normalized = normalizeExternalError(error);
           throw fail(500, "LIVE_ROOM_END_FAILED", normalized.message, {
@@ -1347,14 +1310,7 @@ const server = http.createServer(async (req, res) => {
             details: normalized.details,
           });
         }
-        // Database state is authoritative for every web/app listing. Closing
-        // the LiveKit room also disconnects viewers who were still attached.
-        try {
-          await liveKitRoomService().deleteRoom(String(room.room_name));
-        } catch (closeError) {
-          console.warn("[LIVE end] Database session ended; LiveKit room closure will be reconciled:", closeError?.message || closeError);
-        }
-        return ok(res, data || { ...room, status: "ended", ended_at: endedAt, updated_at: endedAt, viewer_count: 0 });
+        return ok(res, data);
       }
 
       if (liveParts.action === "leave" && method === "POST") {
@@ -1827,9 +1783,6 @@ const server = http.createServer(async (req, res) => {
       if (!Number.isSafeInteger(coins) || coins < 1 || coins > MAX_CUSTOM_COIN_QUANTITY) {
         throw fail(400, "INVALID_COIN_QUANTITY", `Choose a whole-number quantity between 1 and ${MAX_CUSTOM_COIN_QUANTITY.toLocaleString("en-US")} coins.`);
       }
-      if (!PAYPAL_RETURN_URL) {
-        throw fail(503, "PAYPAL_RETURN_URL_REQUIRED", "Set FRONTEND_URL or PAYPAL_RETURN_URL before enabling PayPal checkout.");
-      }
       const client = db();
       const { data: existingPayment, error: existingError } = await client
         .from("payments")
@@ -1838,23 +1791,12 @@ const server = http.createServer(async (req, res) => {
         .maybeSingle();
       if (existingError) throw existingError;
       if (existingPayment) {
-        if (String(existingPayment.user_id) !== String(user.id) || Number(existingPayment.package_coins) !== coins) {
+        if (String(existingPayment.user_id) !== String(user.id)) {
           throw fail(
             409,
             "IDEMPOTENCY_CONFLICT",
-            "This idempotency key is already associated with a different account or coin amount. Start a new checkout."
+            "This idempotency key is already associated with another account."
           );
-        }
-        if (existingPayment.status === "completed" || existingPayment.credited) {
-          return ok(res, {
-            orderId: existingPayment.provider_order_id,
-            status: "completed",
-            coins: existingPayment.package_coins,
-            amount: Number(existingPayment.amount),
-            custom: !existingPayment.package_id,
-            alreadyCompleted: true,
-            credited: true,
-          });
         }
         const savedLinks = existingPayment.metadata && Array.isArray(existingPayment.metadata.links) ? existingPayment.metadata.links : [];
         const savedApproval = savedLinks.find((link) => link && link.rel === "approve" && typeof link.href === "string");
@@ -1884,10 +1826,10 @@ const server = http.createServer(async (req, res) => {
           user_action: "PAY_NOW",
           ...(PAYPAL_RETURN_URL
             ? {
-                // Keep the PayPal order token in location.search and use the
-                // SPA hash route for the wallet page; normalize paths/queries.
-                return_url: buildPaypalReturnUrl("success"),
-                cancel_url: buildPaypalReturnUrl("cancelled"),
+                // This SPA uses hash routes but reads the provider's `token`
+                // from location.search, so keep the query before the hash.
+                return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
+                cancel_url: `${PAYPAL_RETURN_URL}/?paypal=cancelled#/wallet`,
               }
             : {}),
         },
@@ -1974,15 +1916,10 @@ const server = http.createServer(async (req, res) => {
         (capture) => capture.status === "COMPLETED"
       );
       const captureId = successfulCapture?.id || null;
-      const capturedAmount = Number(successfulCapture?.amount?.value);
-      const capturedCurrency = String(successfulCapture?.amount?.currency_code || "").toUpperCase();
-      const expectedAmount = Number(payment.amount);
-      const expectedCurrency = String(payment.currency || "").toUpperCase();
       if (
-        captureResponse.status === "COMPLETED" && successfulCapture && captureId &&
-        Number.isFinite(capturedAmount) && Number.isFinite(expectedAmount) &&
-        Math.round(capturedAmount * 100) === Math.round(expectedAmount * 100) &&
-        capturedCurrency && capturedCurrency === expectedCurrency
+        captureResponse.status === "COMPLETED" &&
+        successfulCapture &&
+        captureId
       ) {
         await creditCapture(client, payment, captureId);
         return ok(res, {
@@ -2057,17 +1994,6 @@ const server = http.createServer(async (req, res) => {
         isVerified: data.is_verified,
         updatedAt: data.updated_at,
       });
-    }
-
-    if (pathname === "/api/payments/paypal/info" && method === "DELETE") {
-      const user = await requireSupabaseUser(req);
-      const { error } = await db().from("paypal_payout_info").delete().eq("user_id", user.id);
-      if (error) {
-        const normalized = normalizeExternalError(error);
-        throw fail(503, "PAYPAL_INFO_REMOVE_FAILED", normalized.message || "The saved PayPal payout email could not be removed.");
-      }
-      // Submitted payout requests keep their own email snapshot and are not changed.
-      return ok(res, { removed: true, message: "Saved PayPal payout email removed. Pending requests are unchanged." });
     }
 
     // Creator diamond payout requests. Diamond reservation and review are atomic DB RPCs.
@@ -2428,35 +2354,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const LIVE_ROOM_RECONCILE_INTERVAL_MS = 60_000;
-let liveRoomReconcileRunning = false;
-
-async function reconcileOrphanedLiveRooms() {
-  if (liveRoomReconcileRunning) return;
-  liveRoomReconcileRunning = true;
-  try {
-    const result = await closeOrphanedLiveRooms({
-      client: db(),
-      livekitUrl: LIVEKIT_URL,
-      apiKey: process.env.LIVEKIT_API_KEY,
-      apiSecret: process.env.LIVEKIT_API_SECRET,
-      staleAfterMs: 120_000,
-      logger: console,
-    });
-    if (result.ended) console.info("[LIVE cleanup] Reconciled abandoned sessions:", result);
-    if (result.skipped) console.warn("[LIVE cleanup] Reconciliation skipped:", result.skipped);
-  } catch (error) {
-    console.warn("[LIVE cleanup] Reconciliation failed safely:", error?.message || error);
-  } finally {
-    liveRoomReconcileRunning = false;
-  }
-}
-
 server.listen(PORT, () => {
   console.log(`[Creator Hub Backend] Running successfully on port ${PORT}`);
-  // No separate Render cron service is required. This reconciler runs inside
-  // the existing backend, and verifies host presence before ending a session.
-  void reconcileOrphanedLiveRooms();
-  const reconcileTimer = setInterval(reconcileOrphanedLiveRooms, LIVE_ROOM_RECONCILE_INTERVAL_MS);
-  if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 });
