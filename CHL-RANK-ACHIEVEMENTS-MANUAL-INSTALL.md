@@ -2,7 +2,7 @@
 
 ## What this update changes
 
-- Replaces the Creator Center achievements route with a compact, responsive competitive rank ladder, shown from lowest to highest: **Bronze, Silver, Gold, Platinum, Diamond, Heroic, Master, Grandmaster**.
+- Replaces the Creator Center achievements route with a compact, responsive Free Fire-inspired competitive rank ladder, shown from lowest to highest: **Bronze, Silver, Gold, Platinum, Diamond, Heroic, Master, Grandmaster**.
 - Displays Bronze and Silver divisions I–III; Gold, Platinum and Diamond divisions I–IV; Heroic and Master as single tiers; and Grandmaster with the requested **Top 100–1,000** distinction.
 - Keeps the team League Division structure separate: **A1, A2, A3; B1–B5; C1–C5; D1–D5**. A1 remains the highest division and D5 the lowest.
 - Preserves the four official CHL Creator League season names exactly: **Season 1 — Opening Season; Season 2 — Rising Stars; Season 3 — Champions League; Season 4 — All-Star Season**.
@@ -34,7 +34,7 @@ No existing gifter-badge files are included in the ZIP; that is deliberate so th
 ## Manual installation
 
 1. Keep a backup of the current `main` branch or save a copy of each existing file listed above.
-2. Upload the ZIP contents to the same paths in the existing `ravaunrichards/creator-hub-live` repository. Add the six files marked **new**; replace only the four existing web/Android HTML and service-worker files listed above. Do not replace the repository or unrelated files.
+2. Upload the ZIP contents to the same paths in the existing `ravaunrichards/creator-hub-live` repository. Add the four files marked **new**; replace only the four existing web/Android HTML and service-worker files listed above. Do not replace the repository or unrelated files.
 3. Confirm the static-site build has completed before opening Creator Center → Ranks & Achievements. The service-worker cache was bumped to `chl-web-v3-3-7` and the new assets are in the precache list.
 4. Run the focused contract check from the repository root:
 
