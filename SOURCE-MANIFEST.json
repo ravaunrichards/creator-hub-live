@@ -1,0 +1,31 @@
+{
+  "package": "Creator Hub Live mode-aware LIVE fixes",
+  "created_utc": "2026-10-18",
+  "files": [
+    {
+      "path": "backend/src/livekit-token.js",
+      "size_bytes": 4373,
+      "sha256": "36a80c4a7ce98a6d5e0a924c729851c1213ddbb879b5375bc47c84821c53f6fa"
+    },
+    {
+      "path": "backend/src/livekit-verification.js",
+      "size_bytes": 1501,
+      "sha256": "8844408aa2a53ca82a482999aef4bf6bf048f2984af1127b1ee5ccb00449ec58"
+    },
+    {
+      "path": "backend/tests/livekit-contract.js",
+      "size_bytes": 3876,
+      "sha256": "f8be6543e75c183fb883ad34cfcc7e586d5c4593bdee6038ea6a443a7737f1c4"
+    },
+    {
+      "path": "frontend/src/livekit.js",
+      "size_bytes": 23585,
+      "sha256": "6887605fdb1d671bf9e0317358f1ec7cf0ba88d85cd6c6d206ffe023564e0806"
+    },
+    {
+      "path": "frontend/src/pages-room.js",
+      "size_bytes": 82896,
+      "sha256": "aa998c0dc601854e434989d0ac85fa521a824881da1d715e4597639ed5eeaf02"
+    }
+  ]
+}
