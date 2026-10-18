@@ -1,4 +1,4 @@
-/* Creator Hub Live — competitive rank ladder and verified league achievements. */
+/* Creator Hub Live — Free Fire-inspired competitive rank ladder and verified league achievements. */
 (function () {
   'use strict';
 
@@ -62,7 +62,7 @@
   }
 
   function renderTierLadder(parent) {
-    parent.appendChild(sectionHeading('Competitive Rank Ladder', 'CHL ranked competition, from the entry tier to the regional peak.'));
+    parent.appendChild(sectionHeading('Competitive Rank Ladder', 'Lowest to highest · Free Fire-inspired structure for CHL ranked competition.'));
     var grid = el('div', { class: 'chl-rank-tier-grid', role: 'list', 'aria-label': 'Competitive ranks from Bronze to Grandmaster' });
     TIERS.forEach(function (tier, index) {
       var card = el('article', { class: 'chl-rank-tier-card chl-rank-tier-' + tier.key, role: 'listitem' });
@@ -118,8 +118,8 @@
     var grid = el('div', { class: 'chl-rank-season-grid' });
     SEASONS.forEach(function (season) {
       grid.appendChild(el('article', { class: 'chl-rank-season-card' }, [
-        el('span', { class: 'chl-rank-season-number', text: 'OFFICIAL CREATOR LEAGUE SEASON' }),
-        el('h3', { text: 'Season ' + season.number + ' — ' + season.name })
+        el('span', { class: 'chl-rank-season-number', text: 'SEASON ' + season.number }),
+        el('h3', { text: season.name })
       ]));
     });
     parent.appendChild(grid);
@@ -139,23 +139,20 @@
       return;
     }
 
-    Promise.all([
-      sb.from('team_members').select('team_id,role').eq('user_id', CHL.user.id),
-      CHL.authenticatedApiRequest('/api/leagues/standings')
-    ]).then(function (results) {
-      if (results[0] && results[0].error) throw results[0].error;
-      var memberships = results[0] && results[0].data ? results[0].data : [];
-      var standingsData = results[1] || {};
-      var standings = Array.isArray(standingsData.standings) ? standingsData.standings : [];
-      var teamIds = new Set(memberships.map(function (m) { return m.team_id; }));
-      var ownRows = standings.filter(function (row) { return teamIds.has(row.team_id); });
+    CHL.authenticatedApiRequest('/api/leagues/my-standing').then(function (data) {
+      var memberships = Array.isArray(data && data.memberships) ? data.memberships : [];
+      var ownRows = Array.isArray(data && data.standings) ? data.standings : [];
       body.innerHTML = '';
       if (!memberships.length) {
-        body.appendChild(ui.empty('🛡️', 'No team standing yet', 'Join a CHL team to see its official division, position and points here. No rank has been assigned from unrelated creator activity.'));
+        body.appendChild(ui.empty('🛡️', 'No team standing yet', 'Your account is not listed as a member of a CHL team. Join a team to see its official division, position and points here.'));
+        return;
+      }
+      if (!data.season) {
+        body.appendChild(ui.empty('🗓️', 'No active league season', 'Your team membership was verified, but CHL has no active league season configured. Your rank and division have not been changed.'));
         return;
       }
       if (!ownRows.length) {
-        body.appendChild(ui.empty('🏆', 'No active-season position available', 'Your team membership was found, but the league API has not returned a standing for it in the active season.'));
+        body.appendChild(ui.empty('🏆', 'No active-season position available', 'Your team membership and active season were verified, but no official standing exists for your team yet.'));
         return;
       }
       ownRows.forEach(function (row) {
@@ -171,9 +168,10 @@
           el('span', { class: 'chl-rank-division-code', text: division })
         ]));
       });
-    }).catch(function () {
+    }).catch(function (error) {
       body.innerHTML = '';
-      body.appendChild(ui.empty('⚠️', 'Standing could not be verified', 'The league or team-membership service is unavailable. Your rank and division have not been changed. Refresh after the service is reachable.'));
+      var detail = error && error.code ? ' Error code: ' + String(error.code) + '.' : '';
+      body.appendChild(ui.empty('⚠️', 'Standing could not be verified', 'CHL could not verify your team membership and official league standing. Your rank and division have not been changed.' + detail + ' Refresh after the service is reachable.'));
     });
   }
 
