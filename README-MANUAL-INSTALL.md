@@ -6,6 +6,7 @@
 - Keeps the existing `GET /api/leagues/standings` response contract.
 - Distinguishes “no active league season” from a service failure. It does not create seasons, teams, memberships, results, or points.
 - Shows a safe backend error code in the UI instead of collapsing every failure into an indistinguishable generic message.
+- Restores the requested five-tier CHL rank order: Bronze (I–III), Silver, Gold, Master, Grandmaster. Platinum, Diamond, and Heroic are not inserted into this ladder.
 - Includes the same rank/achievement page in the web and Android WebView asset paths.
 
 ## Manual installation
