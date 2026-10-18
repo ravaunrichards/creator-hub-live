@@ -8,15 +8,14 @@
   var ui = CHL.ui;
   var sb = CHL.sb;
 
+  // CHL's requested original five-tier competitive rank ladder. Keep team
+  // league divisions A1–D5 separate; never insert unrelated rank tiers here.
   var TIERS = [
-    { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry tier for new competitors to learn the fundamentals.' },
-    { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistent coordination and sound rotation decisions.' },
-    { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Show reliable mechanics, execution and match awareness.' },
-    { key: 'platinum', name: 'Platinum', icon: '💎', divisions: ['I', 'II', 'III', 'IV'], description: 'Apply strategy, character skills and loadout decisions effectively.' },
-    { key: 'diamond', name: 'Diamond', icon: '👑', divisions: ['I', 'II', 'III', 'IV'], description: 'Demonstrate high-level communication, utility and fast decisions.' },
-    { key: 'heroic', name: 'Heroic', icon: '🎖️', divisions: [], description: 'Professional tier for highly skilled competitive squads.' },
-    { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'Exceptional game sense, execution and team synergy.' },
-    { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The regional peak, reserved for top-ranked competitors.', note: 'Top 100–1,000' }
+    { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry rank and first step in the CHL competitive ladder.' },
+    { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistency and progress through the Silver rank.' },
+    { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Advance through Gold before reaching the elite ranks.' },
+    { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'An advanced competitive rank earned through verified results.' },
+    { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The highest CHL competitive rank, awarded only from verified results.' }
   ];
 
   var DIVISION_BANDS = [
