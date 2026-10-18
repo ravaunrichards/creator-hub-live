@@ -2,30 +2,7 @@ import "dotenv/config";
 import http from "node:http";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { URL } from "node:url";
-import { handleTeamsRoute } from "./teams-routes.js"; 
-
-// Authenticated personal team standing.
-if (pathname === "/api/leagues/my-standing" && method === "GET") {
-  const handled = await handleTeamsRoute({
-    pathname, method, req, res, url, fail, ok, db,
-    requireSupabaseUser, readJson, normalizeExternalError,
-  });
-  if (handled || res.writableEnded) return;
-}
-
-// Official league reads and administrator league operations.
-if (
-  pathname === "/api/leagues/standings" ||
-  pathname === "/api/leagues/matches" ||
-  pathname.startsWith("/api/admin/leagues/")
-) {
-  const handled = await handleTeamLeagueRoute({
-    pathname, method, req, res, url, fail, ok, db,
-    requireSupabaseUser, profileFor, readJson, normalizeExternalError,
-  });
-  if (handled || res.writableEnded) return;
-}
-
+import { handleTeamsRoute } from "./teams-routes.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   createLiveKitToken,
