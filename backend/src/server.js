@@ -3,6 +3,7 @@ import http from "node:http";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { URL } from "node:url";
 import { handleTeamsRoute } from "./teams-routes.js";
+import { closeOrphanedLiveRooms } from "./live-room-lifecycle.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   createLiveKitToken,
@@ -45,24 +46,52 @@ const SUPABASE_ANON_KEY =
 
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
-const PAYPAL_ENV = String(
+const PAYPAL_ENV_INPUT = String(
   process.env.PAYPAL_ENV || process.env.PAYPAL_MODE || "sandbox"
-).toLowerCase();
+).trim().toLowerCase();
+const PAYPAL_ENV = ["live", "production", "prod"].includes(PAYPAL_ENV_INPUT)
+  ? "live"
+  : ["sandbox", "test", ""].includes(PAYPAL_ENV_INPUT)
+    ? "sandbox"
+    : PAYPAL_ENV_INPUT;
 
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID || "";
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || "";
 const PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "";
 
-const PAYPAL_BASE =
-  PAYPAL_ENV === "live"
-    ? "https://api-m.paypal.com"
-    : "https://api-m.sandbox.paypal.com";
+const PAYPAL_BASE = PAYPAL_ENV === "live"
+  ? "https://api-m.paypal.com"
+  : PAYPAL_ENV === "sandbox"
+    ? "https://api-m.sandbox.paypal.com"
+    : "";
 
 const PAYPAL_RETURN_URL = String(
   process.env.PAYPAL_RETURN_URL ||
     (FRONTEND_URL ? FRONTEND_URL.split(",")[0] : "") ||
     ""
-).replace(/\/$/, "");
+).trim();
+
+function buildPaypalReturnUrl(state) {
+  if (!PAYPAL_RETURN_URL) return undefined;
+  let target;
+  try {
+    target = new URL(PAYPAL_RETURN_URL);
+  } catch {
+    throw fail(503, "PAYPAL_RETURN_URL_INVALID", "PayPal return URL configuration is invalid.");
+  }
+  const localHost = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
+  if (target.protocol !== "https:" && !(target.protocol === "http:" && localHost)) {
+    throw fail(503, "PAYPAL_RETURN_URL_INVALID", "PayPal return URL must use HTTPS (HTTP is allowed only for local testing).");
+  }
+  // PAYPAL_RETURN_URL is sometimes configured with a page path or tracking
+  // query. Normalize it to the frontend SPA root so the return token remains
+  // in location.search and the hash route remains /wallet.
+  target.pathname = "/";
+  target.search = "";
+  target.searchParams.set("paypal", state);
+  target.hash = "/wallet";
+  return target.toString();
+}
 
 const LIVEKIT_URL = String(process.env.LIVEKIT_URL || "").trim();
 
@@ -192,14 +221,12 @@ function errorResponse(res, error) {
 
 function allowedOrigin(origin) {
   if (!origin) return true;
-  const list = FRONTEND_URL.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (list.length) return list.includes(origin);
-  return (
-    origin === `http://localhost:${PORT}` ||
-    origin === `http://127.0.0.1:${PORT}`
-  );
+  const configured = FRONTEND_URL.split(",").map((value) => value.trim()).filter(Boolean);
+  const allowed = configured.map((value) => {
+    try { return new URL(value).origin; } catch { return null; }
+  }).filter(Boolean);
+  if (allowed.length) return allowed.includes(origin);
+  return origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`;
 }
 
 function applyCors(req, res) {
@@ -217,7 +244,9 @@ function applyCors(req, res) {
       "X-Requested-With",
     ].join(", ")
   );
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  // These methods are used by authenticated edit/delete and payout-review APIs.
+  // Omitting them here makes valid routes fail at the browser's CORS preflight.
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
 }
 
 async function readRawBody(req) {
@@ -351,13 +380,6 @@ function liveKitRoomService() {
   return new RoomServiceClient(serviceUrl, apiKey, apiSecret);
 }
 
-function isLiveKitParticipantNotFound(error) {
-  const code = String(error && (error.codeName || error.code || error.status || error.statusCode) || "").toLowerCase();
-  const message = String(error && error.message || "").toLowerCase();
-  return code === "404" || code === "5" || code === "not_found" || code === "notfound" || code.indexOf("not_found") >= 0 || code.indexOf("notfound") >= 0 ||
-    /(?:participant|identity|room).*(?:not found|does not exist|not connected)|not found.*(?:participant|identity|room)/.test(message);
-}
-
 async function liveGuestSettingsForHost(client, hostId) {
   const { data, error } = await client.from("user_settings").select("live").eq("user_id", hostId).maybeSingle();
   if (error) throw error;
@@ -365,9 +387,7 @@ async function liveGuestSettingsForHost(client, hostId) {
   const guestPermissions = saved.guest_permissions === "host_only" ? "host_only" : "allowed";
   const configuredLimit = Number(saved.max_guests);
   const maxGuests = Number.isSafeInteger(configuredLimit) && configuredLimit >= 0 && configuredLimit <= 8 ? configuredLimit : 8;
-  const guestLayoutEnabled = saved.guest_layout_enabled !== false && maxGuests > 0;
-  const guestLayoutOrientation = saved.guest_layout_orientation === "vertical" ? "vertical" : "horizontal";
-  return { guestPermissions, maxGuests, guestLayoutEnabled, guestLayoutOrientation };
+  return { guestPermissions, maxGuests };
 }
 
 function liveGuestParts(pathname) {
@@ -475,6 +495,7 @@ function validateLiveRoomName(roomName) {
 
 async function paypalToken() {
   requireServerConfig(["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"]);
+  if (!PAYPAL_BASE) throw fail(503, "PAYPAL_ENV_INVALID", "PAYPAL_ENV must be sandbox, test, live, production, or prod.");
   const auth = Buffer.from(
     `${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`
   ).toString("base64");
@@ -487,21 +508,23 @@ async function paypalToken() {
     body: "grant_type=client_credentials",
   });
   const text = await response.text();
-  if (!response.ok) {
-    throw fail(
-      502,
-      "PAYMENT_PROVIDER_ERROR",
-      `PayPal OAuth failed (${response.status}).`
-    );
-  }
   let data;
   try {
-    data = JSON.parse(text);
+    data = text ? JSON.parse(text) : {};
   } catch {
+    data = {};
+  }
+  if (!response.ok) {
+    const providerCode = String(data.error || "").trim();
+    const safeDescription = String(data.error_description || data.message || "").trim().slice(0, 180);
+    console.error("[PayPal OAuth rejected]", { status: response.status, environment: PAYPAL_ENV, code: providerCode || undefined, description: safeDescription || undefined });
+    const configurationHint = response.status === 401
+      ? " Verify PAYPAL_ENV matches the client ID and secret from the same PayPal app; sandbox and live credentials are not interchangeable."
+      : " Check the PayPal developer status and backend configuration.";
     throw fail(
       502,
       "PAYMENT_PROVIDER_ERROR",
-      "PayPal OAuth returned an invalid response."
+      `PayPal OAuth failed (${response.status})${providerCode ? `: ${providerCode}` : ""}.${configurationHint}`
     );
   }
   if (!data.access_token)
@@ -776,9 +799,9 @@ const server = http.createServer(async (req, res) => {
     // The Teams API implementation already lives in its own module. Route
     // matching must be wired here before the fallback 404 so the existing
     // Teams page's /api/teams requests are not treated as unknown endpoints.
-    if (pathname === "/api/teams" || pathname.startsWith("/api/teams/")) {
+    if (pathname === "/api/teams" || pathname.startsWith("/api/teams/") || pathname === "/api/leagues/standings") {
       const teamHandled = await handleTeamsRoute({
-        pathname, method, req, res, url, fail, ok, db,
+        pathname, method, req, res, url, fail, ok, send, db,
         requireSupabaseUser, readJson, normalizeExternalError,
       });
       // The route module sends responses through ok()/send(), whose return
@@ -806,7 +829,8 @@ const server = http.createServer(async (req, res) => {
         paypalEnvironment: PAYPAL_ENV,
         features: {
           livekit: livekitHealth().configured,
-          paypal: Boolean(PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET),
+          paypal: Boolean(PAYPAL_BASE && PAYPAL_CLIENT_ID && PAYPAL_CLIENT_SECRET && PAYPAL_RETURN_URL),
+          walletConversion: Number.isSafeInteger(Number(process.env.CHL_COINS_PER_DIAMOND)) && Number(process.env.CHL_COINS_PER_DIAMOND) >= 1 && Number.isSafeInteger(Number(process.env.CHL_DIAMONDS_PER_COIN)) && Number(process.env.CHL_DIAMONDS_PER_COIN) >= 1,
         },
       });
     }
@@ -902,7 +926,7 @@ const server = http.createServer(async (req, res) => {
           .eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
         if (error) throw error;
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        return ok(res, { guest: data || null, guestPermissions: guestSettings.guestPermissions, maxGuests: guestSettings.maxGuests, guestLayoutEnabled: guestSettings.guestLayoutEnabled, guestLayoutOrientation: guestSettings.guestLayoutOrientation });
+        return ok(res, { guest: data || null, guestPermissions: guestSettings.guestPermissions, maxGuests: guestSettings.maxGuests });
       }
 
       if (!guestParts.action && method === "GET") {
@@ -924,43 +948,12 @@ const server = http.createServer(async (req, res) => {
         return ok(res, { guests: (data || []).map((guest) => ({ ...guest, profile: byId.get(String(guest.user_id)) || null })), guestSettings });
       }
 
-      if (guestParts.action === "layout" && method === "POST") {
-        if (!hostOwnsRoom) throw fail(403, "FORBIDDEN", "Only the host can configure the guest layout.");
-        const body = await readJson(req);
-        const enabled = body.enabled === true;
-        const rawLimit = body.maxGuests;
-        const maxGuests = Number(rawLimit);
-        const orientation = body.orientation === "vertical" ? "vertical" : body.orientation === "horizontal" ? "horizontal" : null;
-        if (typeof rawLimit === "undefined" || !Number.isSafeInteger(maxGuests) || maxGuests < 0 || maxGuests > 8) throw fail(400, "INVALID_GUEST_CAPACITY", "Guest capacity must be a whole number from 0 to 8.");
-        if (!orientation) throw fail(400, "INVALID_GUEST_ORIENTATION", "Guest orientation must be horizontal or vertical.");
-        if (enabled && maxGuests === 0) throw fail(400, "INVALID_GUEST_LAYOUT", "Select at least one guest slot to enable the guest layout.");
-        const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
-        if (activeError) throw activeError;
-        const activeCount = (activeRows || []).length;
-        if (activeCount > maxGuests) throw fail(409, "GUESTS_EXCEED_NEW_CAPACITY", "Remove guest participants safely before lowering the guest capacity below the active participant count.", { activeCount, maxGuests });
-        if (!enabled && activeCount > 0) throw fail(409, "GUESTS_STILL_CONNECTED", "Disconnect all guests before turning off the guest layout.", { activeCount });
-        if (!enabled) {
-          const { error: closeRequestsError } = await client.from("live_guests")
-            .update({ status: "rejected", updated_at: new Date().toISOString() })
-            .eq("live_id", room.id).in("status", ["requested", "invited"]);
-          if (closeRequestsError) throw closeRequestsError;
-        }
-        const { data: current, error: currentError } = await client.from("user_settings").select("live").eq("user_id", room.host_id).maybeSingle();
-        if (currentError) throw currentError;
-        const savedLive = current && current.live && typeof current.live === "object" ? current.live : {};
-        const nextLive = { ...savedLive, max_guests: maxGuests, guest_layout_enabled: enabled, guest_layout_orientation: orientation };
-        const { data: savedRow, error: saveError } = await client.from("user_settings").upsert({ user_id: room.host_id, live: nextLive, updated_at: new Date().toISOString() }, { onConflict: "user_id" }).select("user_id,live").single();
-        if (saveError) throw saveError;
-        if (!savedRow || String(savedRow.user_id) !== String(room.host_id)) throw fail(500, "GUEST_LAYOUT_SAVE_UNCONFIRMED", "The server did not confirm the guest layout settings were saved.");
-        return ok(res, { guestSettings: { guestPermissions: savedLive.guest_permissions === "host_only" ? "host_only" : "allowed", maxGuests, guestLayoutEnabled: enabled && maxGuests > 0, guestLayoutOrientation: orientation }, saved: true });
-      }
-
       if (guestParts.action === "request" && method === "POST") {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guest stage requests are disabled.");
         if (room.status !== "live") throw fail(409, "LIVE_NOT_STARTED", "Guest requests open when the host starts the LIVE session.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_REQUEST_GUEST", "The host already owns this stage.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host has not selected a guest layout. The guest stage is currently closed.");
+        if (guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "This host has disabled guest slots and is staying full-screen.");
         if (guestSettings.guestPermissions === "host_only") throw fail(403, "GUEST_REQUESTS_CLOSED", "This host is accepting invited guests only.");
         const { data: existing, error: existingError } = await client.from("live_guests")
           .select("id,status").eq("live_id", room.id).eq("user_id", user.id).maybeSingle();
@@ -998,7 +991,6 @@ const server = http.createServer(async (req, res) => {
         if (blocks.some((result) => result.error)) throw blocks.find((result) => result.error).error;
         if (blocks.some((result) => result.data)) throw fail(403, "GUEST_INVITE_BLOCKED", "This account cannot be invited to the stage.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting invitations.");
         const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeError) throw activeError;
         const { data: existing, error: existingError } = await client.from("live_guests").select("id,status").eq("live_id", room.id).eq("user_id", target.id).maybeSingle();
@@ -1032,7 +1024,6 @@ const server = http.createServer(async (req, res) => {
         if (room.media_mode === "screen") throw fail(409, "SCREEN_LIVE_HAS_NO_GUEST_STAGE", "This broadcast is screen-sharing-only; guests cannot publish to this room.");
         if (hostOwnsRoom) throw fail(400, "HOST_CANNOT_ACCEPT_INVITATION", "The host cannot accept an invitation to their own room.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting invitations.");
         const { data: activeRows, error: activeError } = await client.from("live_guests").select("user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeError) throw activeError;
         if ((activeRows || []).filter((g) => String(g.user_id) !== String(user.id)).length >= guestSettings.maxGuests) throw fail(409, "GUEST_STAGE_FULL", "The stage has reached the host's configured guest limit.");
@@ -1057,7 +1048,6 @@ const server = http.createServer(async (req, res) => {
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId) throw fail(400, "INVALID_GUEST", "A guest user ID is required.");
         const guestSettings = await liveGuestSettingsForHost(client, room.host_id);
-        if (!guestSettings.guestLayoutEnabled || guestSettings.maxGuests === 0) throw fail(403, "GUEST_STAGE_DISABLED", "The host must enable the guest layout before accepting guests.");
         const { data: activeGuestRows, error: activeGuestError } = await client.from("live_guests")
           .select("id,user_id").eq("live_id", room.id).eq("status", "accepted");
         if (activeGuestError) throw activeGuestError;
@@ -1124,50 +1114,28 @@ const server = http.createServer(async (req, res) => {
         const targetId = String(body.userId || guestParts.targetId || "").trim();
         if (!targetId || targetId === String(room.host_id)) throw fail(400, "INVALID_GUEST", "A valid guest user ID is required.");
         const { data: existingGuest, error: existingGuestError } = await client.from("live_guests")
-          .select("id,user_id,status,mic_on,cam_on").eq("live_id", room.id).eq("user_id", targetId).in("status", ["accepted", "removed"]).maybeSingle();
+          .select("id,user_id,status,mic_on,cam_on").eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted").maybeSingle();
         if (existingGuestError) throw existingGuestError;
         if (!existingGuest) throw fail(404, "GUEST_NOT_FOUND", "The accepted guest was not found.");
-        const roomService = liveKitRoomService();
-        // Revoke stage publishing first, but keep the accepted queue row until a real
-        // disconnect is verified. If LiveKit is temporarily unavailable, the host can retry.
-        let removedFromRoom = false;
-        let permissionError = null;
+        // Mark the guest removed first so the guest's permission-change handler cannot
+        // race and re-grant publishing while it refreshes its room grant.
+        const { data, error } = await client.from("live_guests").update({ status: "removed", mic_on: false, cam_on: false })
+          .eq("live_id", room.id).eq("user_id", targetId).eq("status", "accepted")
+          .select("id,user_id,status").maybeSingle();
+        if (error) throw error;
+        if (!data) throw fail(409, "GUEST_STATE_CHANGED", "The guest stage state changed before removal completed.");
+        // Revoke publishing but keep subscription enabled so the person returns to viewer mode.
         try {
-          await roomService.updateParticipant(room.room_name, targetId, {
+          await liveKitRoomService().updateParticipant(room.room_name, targetId, {
             permission: { canPublish: false, canSubscribe: true, canPublishData: true, canPublishSources: [] }
           });
         } catch (e) {
-          permissionError = e;
-          try {
-            await roomService.getParticipant(room.room_name, targetId);
-          } catch (verifyError) {
-            if (isLiveKitParticipantNotFound(verifyError)) removedFromRoom = true;
-            else throw fail(503, "GUEST_PERMISSION_REVOKE_UNVERIFIED", "LiveKit could not verify this participant or revoke publishing permission. The guest remains in the queue; retry Remove.", { details: { permissionError: permissionError && permissionError.message, verifyError: verifyError && verifyError.message } });
-          }
-          if (!removedFromRoom) throw fail(503, "GUEST_PERMISSION_REVOKE_FAILED", "LiveKit could not revoke the guest's publishing permission. The guest remains in the queue; retry Remove.", { details: permissionError && permissionError.message });
+          const { error: rollbackError } = await client.from("live_guests").update({ status: "accepted", mic_on: existingGuest.mic_on, cam_on: existingGuest.cam_on })
+            .eq("live_id", room.id).eq("user_id", targetId).eq("status", "removed");
+          if (rollbackError) console.error("[LIVE guest] removal rollback failed:", rollbackError.message || rollbackError);
+          throw fail(503, "GUEST_STAGE_PERMISSION_UPDATE_FAILED", "Could not return this guest to viewer mode. Please retry.", { details: e && e.message });
         }
-        if (!removedFromRoom) {
-          try {
-            await roomService.removeParticipant(room.room_name, targetId);
-            removedFromRoom = true;
-          } catch (e) {
-            try {
-              await roomService.getParticipant(room.room_name, targetId);
-            } catch (verifyError) {
-              if (isLiveKitParticipantNotFound(verifyError)) removedFromRoom = true;
-              else throw fail(503, "GUEST_DISCONNECT_UNVERIFIED", "LiveKit could not verify the actual disconnect. The guest remains in the queue with publishing revoked; retry Remove.", { details: { removeError: e && e.message, verifyError: verifyError && verifyError.message } });
-            }
-            if (!removedFromRoom) throw fail(503, "GUEST_DISCONNECT_FAILED", "LiveKit could not disconnect the guest. Publishing has been revoked and the guest remains in the queue; retry Remove.", { details: e && e.message });
-          }
-        }
-        if (!removedFromRoom) throw fail(503, "GUEST_DISCONNECT_FAILED", "LiveKit did not confirm the guest disconnect. Retry Remove.");
-        const { data: guestRow, error: guestUpdateError } = await client.from("live_guests")
-          .update({ status: "removed", mic_on: false, cam_on: false, updated_at: new Date().toISOString() })
-          .eq("live_id", room.id).eq("user_id", targetId).in("status", ["accepted", "removed"])
-          .select("id,user_id,status").maybeSingle();
-        if (guestUpdateError) throw guestUpdateError;
-        if (!guestRow) throw fail(500, "GUEST_REMOVAL_SAVE_UNCONFIRMED", "LiveKit disconnected the guest, but the database did not confirm the removal. Retry Remove to reconcile the participant state.");
-        return ok(res, { guest: guestRow, removedFromRoom: true, returnedToViewer: false });
+        return ok(res, { guest: data, removedFromRoom: false, returnedToViewer: true });
       }
 
       if (guestParts.action === "leave" && method === "POST") {
@@ -1358,16 +1326,20 @@ const server = http.createServer(async (req, res) => {
             "Only the host can end this LIVE session."
           );
         }
+        const endedAt = new Date().toISOString();
         const { data, error } = await client
           .from("live_sessions")
           .update({
             status: "ended",
-            ended_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            ended_at: endedAt,
+            updated_at: endedAt,
+            viewer_count: 0,
           })
           .eq("id", room.id)
+          .in("status", ["pending", "live"])
+          .is("ended_at", null)
           .select("*")
-          .single();
+          .maybeSingle();
         if (error) {
           const normalized = normalizeExternalError(error);
           throw fail(500, "LIVE_ROOM_END_FAILED", normalized.message, {
@@ -1375,7 +1347,14 @@ const server = http.createServer(async (req, res) => {
             details: normalized.details,
           });
         }
-        return ok(res, data);
+        // Database state is authoritative for every web/app listing. Closing
+        // the LiveKit room also disconnects viewers who were still attached.
+        try {
+          await liveKitRoomService().deleteRoom(String(room.room_name));
+        } catch (closeError) {
+          console.warn("[LIVE end] Database session ended; LiveKit room closure will be reconciled:", closeError?.message || closeError);
+        }
+        return ok(res, data || { ...room, status: "ended", ended_at: endedAt, updated_at: endedAt, viewer_count: 0 });
       }
 
       if (liveParts.action === "leave" && method === "POST") {
@@ -1848,6 +1827,9 @@ const server = http.createServer(async (req, res) => {
       if (!Number.isSafeInteger(coins) || coins < 1 || coins > MAX_CUSTOM_COIN_QUANTITY) {
         throw fail(400, "INVALID_COIN_QUANTITY", `Choose a whole-number quantity between 1 and ${MAX_CUSTOM_COIN_QUANTITY.toLocaleString("en-US")} coins.`);
       }
+      if (!PAYPAL_RETURN_URL) {
+        throw fail(503, "PAYPAL_RETURN_URL_REQUIRED", "Set FRONTEND_URL or PAYPAL_RETURN_URL before enabling PayPal checkout.");
+      }
       const client = db();
       const { data: existingPayment, error: existingError } = await client
         .from("payments")
@@ -1856,12 +1838,23 @@ const server = http.createServer(async (req, res) => {
         .maybeSingle();
       if (existingError) throw existingError;
       if (existingPayment) {
-        if (String(existingPayment.user_id) !== String(user.id)) {
+        if (String(existingPayment.user_id) !== String(user.id) || Number(existingPayment.package_coins) !== coins) {
           throw fail(
             409,
             "IDEMPOTENCY_CONFLICT",
-            "This idempotency key is already associated with another account."
+            "This idempotency key is already associated with a different account or coin amount. Start a new checkout."
           );
+        }
+        if (existingPayment.status === "completed" || existingPayment.credited) {
+          return ok(res, {
+            orderId: existingPayment.provider_order_id,
+            status: "completed",
+            coins: existingPayment.package_coins,
+            amount: Number(existingPayment.amount),
+            custom: !existingPayment.package_id,
+            alreadyCompleted: true,
+            credited: true,
+          });
         }
         const savedLinks = existingPayment.metadata && Array.isArray(existingPayment.metadata.links) ? existingPayment.metadata.links : [];
         const savedApproval = savedLinks.find((link) => link && link.rel === "approve" && typeof link.href === "string");
@@ -1891,10 +1884,10 @@ const server = http.createServer(async (req, res) => {
           user_action: "PAY_NOW",
           ...(PAYPAL_RETURN_URL
             ? {
-                // This SPA uses hash routes but reads the provider's `token`
-                // from location.search, so keep the query before the hash.
-                return_url: `${PAYPAL_RETURN_URL}/?paypal=success#/wallet`,
-                cancel_url: `${PAYPAL_RETURN_URL}/?paypal=cancelled#/wallet`,
+                // Keep the PayPal order token in location.search and use the
+                // SPA hash route for the wallet page; normalize paths/queries.
+                return_url: buildPaypalReturnUrl("success"),
+                cancel_url: buildPaypalReturnUrl("cancelled"),
               }
             : {}),
         },
@@ -1981,10 +1974,15 @@ const server = http.createServer(async (req, res) => {
         (capture) => capture.status === "COMPLETED"
       );
       const captureId = successfulCapture?.id || null;
+      const capturedAmount = Number(successfulCapture?.amount?.value);
+      const capturedCurrency = String(successfulCapture?.amount?.currency_code || "").toUpperCase();
+      const expectedAmount = Number(payment.amount);
+      const expectedCurrency = String(payment.currency || "").toUpperCase();
       if (
-        captureResponse.status === "COMPLETED" &&
-        successfulCapture &&
-        captureId
+        captureResponse.status === "COMPLETED" && successfulCapture && captureId &&
+        Number.isFinite(capturedAmount) && Number.isFinite(expectedAmount) &&
+        Math.round(capturedAmount * 100) === Math.round(expectedAmount * 100) &&
+        capturedCurrency && capturedCurrency === expectedCurrency
       ) {
         await creditCapture(client, payment, captureId);
         return ok(res, {
@@ -2059,6 +2057,17 @@ const server = http.createServer(async (req, res) => {
         isVerified: data.is_verified,
         updatedAt: data.updated_at,
       });
+    }
+
+    if (pathname === "/api/payments/paypal/info" && method === "DELETE") {
+      const user = await requireSupabaseUser(req);
+      const { error } = await db().from("paypal_payout_info").delete().eq("user_id", user.id);
+      if (error) {
+        const normalized = normalizeExternalError(error);
+        throw fail(503, "PAYPAL_INFO_REMOVE_FAILED", normalized.message || "The saved PayPal payout email could not be removed.");
+      }
+      // Submitted payout requests keep their own email snapshot and are not changed.
+      return ok(res, { removed: true, message: "Saved PayPal payout email removed. Pending requests are unchanged." });
     }
 
     // Creator diamond payout requests. Diamond reservation and review are atomic DB RPCs.
@@ -2419,6 +2428,35 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+const LIVE_ROOM_RECONCILE_INTERVAL_MS = 60_000;
+let liveRoomReconcileRunning = false;
+
+async function reconcileOrphanedLiveRooms() {
+  if (liveRoomReconcileRunning) return;
+  liveRoomReconcileRunning = true;
+  try {
+    const result = await closeOrphanedLiveRooms({
+      client: db(),
+      livekitUrl: LIVEKIT_URL,
+      apiKey: process.env.LIVEKIT_API_KEY,
+      apiSecret: process.env.LIVEKIT_API_SECRET,
+      staleAfterMs: 120_000,
+      logger: console,
+    });
+    if (result.ended) console.info("[LIVE cleanup] Reconciled abandoned sessions:", result);
+    if (result.skipped) console.warn("[LIVE cleanup] Reconciliation skipped:", result.skipped);
+  } catch (error) {
+    console.warn("[LIVE cleanup] Reconciliation failed safely:", error?.message || error);
+  } finally {
+    liveRoomReconcileRunning = false;
+  }
+}
+
 server.listen(PORT, () => {
   console.log(`[Creator Hub Backend] Running successfully on port ${PORT}`);
+  // No separate Render cron service is required. This reconciler runs inside
+  // the existing backend, and verifies host presence before ending a session.
+  void reconcileOrphanedLiveRooms();
+  const reconcileTimer = setInterval(reconcileOrphanedLiveRooms, LIVE_ROOM_RECONCILE_INTERVAL_MS);
+  if (typeof reconcileTimer.unref === "function") reconcileTimer.unref();
 });
