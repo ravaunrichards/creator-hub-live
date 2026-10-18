@@ -43,7 +43,7 @@ function mapDbError(error, fail, operation) {
     routeError(fail, 404, "TEAM_MEMBERSHIP_NOT_FOUND", "You are not a member of this team.");
   }
   const detail = error?.code ? ` (${error.code})` : "";
-  routeError(fail, 503, `${operation.toUpperCase()}_UNAVAILABLE`, `The ${operation} service is temporarily unavailable${detail}.`);
+  routeError(fail, 503, `${operation.toUpperCase().replace(/\s+/g, "_")}_UNAVAILABLE`, `The ${operation} service is temporarily unavailable${detail}.`);
 }
 
 async function loadTeam(client, teamId) {
@@ -52,42 +52,64 @@ async function loadTeam(client, teamId) {
     .eq("id", teamId).maybeSingle();
 }
 
+async function loadActiveStandings(client, fail) {
+  const seasonResult = await client.from("league_seasons")
+    .select("id,name,status,starts_at,ends_at")
+    .eq("status", "active").order("starts_at", { ascending: false }).limit(1);
+  if (seasonResult.error) mapDbError(seasonResult.error, fail, "league standings");
+  const season = (seasonResult.data || [])[0] || null;
+  if (!season) return { season: null, standings: [] };
+
+  const standingResult = await client.from("league_standings")
+    .select("season_id,team_id,division_code,played,wins,draws,losses,goals_for,goals_against,points,form,position,promoted,relegated,updated_at")
+    .eq("season_id", season.id)
+    .order("division_code", { ascending: true })
+    .order("position", { ascending: true, nullsFirst: false })
+    .limit(1000);
+  if (standingResult.error) mapDbError(standingResult.error, fail, "league standings");
+  const rows = standingResult.data || [];
+  const teamIds = [...new Set(rows.map((row) => row.team_id).filter(Boolean))];
+  let teamsById = new Map();
+  if (teamIds.length) {
+    const teamResult = await client.from("teams")
+      .select("id,name,logo_url,badge_url,level,points,division_code")
+      .in("id", teamIds);
+    if (teamResult.error) mapDbError(teamResult.error, fail, "league teams");
+    teamsById = new Map((teamResult.data || []).map((team) => [String(team.id), team]));
+  }
+  return { season, standings: rows.map((row) => ({ ...row, teams: teamsById.get(String(row.team_id)) || null })) };
+}
+
 export async function handleTeamsRoute(context) {
   const {
     pathname, method, req, res, url, fail, ok, send, db,
     requireSupabaseUser, readJson,
   } = context;
 
+  // This authenticated endpoint resolves the current user's membership and the
+  // official active-season standing in one server-authoritative request. It
+  // avoids a fragile browser-side team_members REST request being combined with
+  // a separate standings request, which previously collapsed all errors into
+  // one generic unavailable message.
+  if (pathname === "/api/leagues/my-standing" && method === "GET") {
+    const user = await requireSupabaseUser(req);
+    const client = db();
+    const membershipResult = await client.from("team_members")
+      .select("team_id,role").eq("user_id", user.id).limit(100);
+    if (membershipResult.error) mapDbError(membershipResult.error, fail, "team membership");
+    const memberships = membershipResult.data || [];
+    const teamIds = [...new Set(memberships.map((row) => row.team_id).filter(Boolean).map(String))];
+    const active = await loadActiveStandings(client, fail);
+    const memberSet = new Set(teamIds);
+    const standings = active.standings.filter((row) => memberSet.has(String(row.team_id)));
+    return ok(res, { season: active.season, memberships, standings });
+  }
+
   // League standings are read from the active season and computed by database
   // functions, never supplied by the client.
   if (pathname === "/api/leagues/standings" && method === "GET") {
-    const client = db();
-    const seasonResult = await client.from("league_seasons")
-      .select("id,name,status,starts_at,ends_at")
-      .eq("status", "active").order("starts_at", { ascending: false }).limit(1);
-    if (seasonResult.error) mapDbError(seasonResult.error, fail, "league standings");
-    const season = (seasonResult.data || [])[0] || null;
-    if (!season) return ok(res, { season: null, standings: [] }) || true;
-
-    const standingResult = await client.from("league_standings")
-      .select("season_id,team_id,division_code,played,wins,draws,losses,goals_for,goals_against,points,form,position,promoted,relegated,updated_at")
-      .eq("season_id", season.id)
-      .order("division_code", { ascending: true })
-      .order("position", { ascending: true, nullsFirst: false })
-      .limit(1000);
-    if (standingResult.error) mapDbError(standingResult.error, fail, "league standings");
-    const rows = standingResult.data || [];
-    const teamIds = [...new Set(rows.map((row) => row.team_id).filter(Boolean))];
-    let teamsById = new Map();
-    if (teamIds.length) {
-      const teamResult = await client.from("teams")
-        .select("id,name,logo_url,badge_url,level,points,division_code")
-        .in("id", teamIds);
-      if (teamResult.error) mapDbError(teamResult.error, fail, "league teams");
-      teamsById = new Map((teamResult.data || []).map((team) => [String(team.id), team]));
-    }
-    const standings = rows.map((row) => ({ ...row, teams: teamsById.get(String(row.team_id)) || null }));
-    return ok(res, { season, standings }) || true;
+    const active = await loadActiveStandings(db(), fail);
+    return ok(res, active) || true;
   }
 
   if (!(pathname === "/api/teams" || pathname.startsWith("/api/teams/"))) return false;
