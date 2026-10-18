@@ -1,59 +1,57 @@
-# CHL Deep Scan — League Standing / Team Membership Failure
+# CHL Original Rank Ladder and Standing Route Inspection
 
-**Date:** 2026-10-18  
-**Repository reviewed:** `ravaunrichards/creator-hub-live`, `main` (read-only GitHub inspection)  
-**Supabase project inspected:** `Creator-Hub-Live` (`txibryhznycmuqufnxvh`)  
-**Render backend inspected:** `creator-hub-live-backend` (`srv-db2seq49v7es73a3tla0`)
+**Inspection date:** 2026-10-18 UTC  
+**Repository:** `ravaunrichards/creator-hub-live`, `main` (read-only source inspection)  
+**Backend service:** `creator-hub-live-backend` (`srv-db2seq49v7es73a3tla0`)  
+**Supabase project:** `txibryhznycmuqufnxvh`
 
-## Confirmed cause path
+## Confirmed source defects
 
-The current `frontend/src/chl-rank-achievements.js` makes two independent requests in a single `Promise.all()`:
+1. `backend/src/teams-routes.js` already contains `GET /api/leagues/my-standing` and `GET /api/leagues/standings`; its current GitHub blob SHA is `51810941cfaaefce7d4fb283c83cfd03559eed99`, so it is not an install target.
+2. `backend/src/server.js` dispatches only `/api/teams` and `/api/teams/*` to `handleTeamsRoute`. It does not dispatch `/api/leagues/*`, so the existing standing handlers can be bypassed and the request can fall through to a 404 / `NOT_FOUND` response.
+3. The website rank page `frontend/src/chl-rank-achievements.js` has eight tiers (Bronze, Silver, Gold, Platinum, Diamond, Heroic, Master, Grandmaster). The Android WebView rank page already has the requested five-tier order. This means web and Android are inconsistent.
+4. The five-tier list in the earlier package had removed Silver and Gold sublevels. This package revision preserves the existing sublevels: Bronze I–III, Silver I–III, Gold I–IV, followed by Master and Grandmaster. It does not add Platinum, Diamond, or Heroic.
+5. The season names remain Opening Season, Rising Stars, Champions League, and All-Star Season. Team league divisions A1–D5 remain separate from competitive rank.
 
-1. Browser-side Supabase REST query to `team_members` for the current user.
-2. Backend request to `/api/leagues/standings`.
+## Read-only database check
 
-Any rejection from either request is caught by one generic handler and displayed as “Standing could not be verified — The league or team-membership service is unavailable.” The page hides which service actually failed. The source inspection confirms this diagnostic weakness. The actual failed browser request was not available in Render logs, so the exact historical trigger cannot be proven from logs alone.
+A read-only count query returned:
 
-## Live database read-only findings
+| Table/state | Rows |
+|---|---:|
+| `public.teams` | 0 |
+| `public.team_members` | 0 |
+| `public.league_seasons` | 0 |
+| `public.league_standings` | 0 |
+| Active seasons | 0 |
 
-- `public.team_members` exists; `public.league_team_members` does **not** exist. Use the canonical `team_members` table.
-- `public.league_seasons`, `public.league_standings`, `public.teams`, and `public.leagues` exist. The inspected columns match the select fields used by the existing standings route.
-- RLS is enabled for all five relevant tables. SELECT grants were present for `anon` and `authenticated`; the inspected policies included read policies for standings/seasons/teams/leagues and a read policy for team memberships.
-- Current row counts: `teams = 0`, `team_members = 0`, `league_seasons = 0`, `league_standings = 0`; active seasons = 0.
-- An empty active-season result is handled by the existing backend as HTTP success with `{ season: null, standings: [] }`. It should not by itself trigger the generic unavailable error. It does mean no real standing can currently be displayed.
-- No team, member, season, result, or score was inserted to make the screen appear populated.
+This is important: even after route dispatch is corrected, the current database has no recorded teams, memberships, season, or standings to display. The fix must report the real empty state; it must not fabricate a membership, rank, division, points, or season.
 
-## Source correction prepared
+## Render inspection
 
-- Added authenticated backend route `GET /api/leagues/my-standing`.
-- The backend now resolves the signed-in user's membership and official active-season standings using the existing server-side database client in one request. It only returns standings for team IDs belonging to that authenticated user.
-- The existing public `/api/leagues/standings` contract is preserved.
-- The rank page now distinguishes: no team membership, no active season, no official standing yet, and a real service error. A safe backend error code is shown for diagnosis.
-- Web and Android WebView copies are identical.
+- Backend service is configured for `main` and reports a live deployment.
+- The latest deployment's referenced commit `c2167dbcd6260964859a70e824da7220c592bd1a` changes only the Android rank-page file; it does not fix `backend/src/server.js` dispatch.
+- The queried Render request logs returned no matching `/api/leagues/my-standing` or `/api/leagues/standings` rows for the selected window. Therefore logs do not independently prove the user's exact request path or response.
+- No deployment was triggered as part of this inspection.
 
-## Other audit findings
+## Correction package contents
 
-- Supabase migration history includes `0050_team_league_route_schema_and_active_season_guard`, but a same-named source file was not found at the expected `database/migrations/` path on GitHub `main`. Migration-source drift needs reconciliation before applying schema changes.
-- Supabase performance advisors reported **55 unindexed foreign-key findings** across public tables. These are performance advisories, not proof that this standing failure is caused by indexes; no unrelated indexes were added in this focused fix.
-- Supabase security advisors reported callable `SECURITY DEFINER` functions. These require per-function privilege and authorization review; a blanket revoke could break legitimate application workflows, so no database changes were made.
-- Render logs for 2026-10-18 included PayPal `INVALID_REQUEST` / HTTP 400 responses that the backend normalized to `PAYMENT_PROVIDER_ERROR` / HTTP 502. These are unrelated to league standings and remain a separate payment-provider issue.
-- Older Render logs recorded missing `teams.description` and a missing `paypal_payout_info` schema-cache object on 2026-10-12. The current database now has `teams.description`; `paypal_payout_info` was not re-tested in this focused league audit.
+- `frontend/src/chl-rank-achievements.js`: aligns the website rank ladder with the requested five-tier ladder and preserves Bronze/Silver/Gold sublevels.
+- `android/app/src/main/assets/web/src/chl-rank-achievements.js`: matching WebView file; byte-identical to the website rank page in this package.
+- `reference/teams-routes.js`: read-only copy of the existing handler for test/review only; it is not an install target.
+- `apply-server-route-fix.mjs`: guarded one-line patch to the existing `backend/src/server.js` dispatch condition. It makes a backup and stops if the expected source line is not found exactly once. It does not replace `server.js`.
+- Tests cover standing handler behavior, authenticated-member filtering, error mapping, rank ladder structure, web/Android parity, and route-patch contract.
 
-## Validation performed
+## Validation results
 
-- `node --check` on the prepared backend route and frontend rank page: passed.
-- Focused route contract test: passed. Covers no active season, valid own-team standing, excluding non-member teams, and database membership error mapping.
-- Web and Android rank page byte comparison: passed.
-- Existing recovered-workspace checks: `npm run check` reported **396 passed, 0 failed**; `npm run backend:check`, `npm run backend:test`, and `npm run backend:smoke` passed. These checks ran in the recovered local workspace, not in a pristine checkout of current GitHub `main`, so they are not represented as a full deployed-source build verification.
+- `node --check` passed for the included backend route and both rank-page copies.
+- Standing-service tests passed, including no active season, valid own-team standing, excluding a non-member team's standing, and membership database error mapping.
+- Route-registration contract test passed.
+- Website and Android rank-page files are byte-identical.
+- The guarded installer was separately smoke-tested against a disposable fixture: it changed only the expected dispatch line, created the backup, and stopped safely for an unexpected source layout.
 
-## Still unverified / not changed
+These are local source/package tests, not a deployed authenticated API test or a physical-device test.
 
-- No authenticated real-user request was run against the deployed API during this audit; recent Render request logs returned no matching `/api/leagues/standings` or team-member route requests in the queried window.
-- No GitHub write, Supabase write, Render deployment, or APK build was performed.
-- The source correction is packaged for manual installation only. After deployment, verify `/api/leagues/my-standing` while signed in, then create/activate a real season through the authorized league admin workflow. The endpoint must return real memberships and actual standings only.
+## Not changed
 
-
-## Critical route-wiring defect confirmed on GitHub main
-- `backend/src/server.js` imports `handleTeamsRoute`, but its dispatch guard only matched `/api/teams` and `/api/teams/*`. Both `/api/leagues/standings` and the new `/api/leagues/my-standing` therefore bypassed this handler and fell through to later routing/404 handling.
-- The package now includes `apply-server-route-fix.mjs`, a guarded in-place patch that adds `/api/leagues/*` to the dispatch condition, refuses unexpected source layouts, and makes a one-time backup before editing. This deliberately avoids replacing the full developed `server.js`.
-- This defect was verified against the live `main` source at scan time. The patch is local/manual only because the GitHub integration rejected branch creation with HTTP 403. No production deployment has been performed.
+No GitHub source, Supabase records/schema/policies, Render service configuration, live deployment, or APK was modified by this inspection. Install and deploy only when ready, then verify the route with a signed-in account and configure real teams/seasons through the authorized league workflow.
