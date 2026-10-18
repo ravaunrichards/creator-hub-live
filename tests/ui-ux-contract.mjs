@@ -8,14 +8,13 @@ const css = read('frontend/styles/platform-responsive.css');
 const theme = read('frontend/src/style-system.js');
 const sw = read('frontend/sw.js');
 const pkg = JSON.parse(read('package.json'));
-assert.match(html, /styles\/platform-responsive\.css\?v=6\.0\.5/, 'Responsive stylesheet is not integrated into the web shell.');
-assert.match(html, /src\/style-switcher\.js\?v=6\.0\.10/, 'Appearance style switcher is not loaded.');
-assert.match(html, /src\/style-switcher-integration\.js\?v=6\.0\.10/, 'Appearance integration relay is not loaded.');
-assert.match(html, /src\/swipe-feed\.js\?v=6\.0\.5/, 'Swipe feed controller is not loaded.');
+assert.match(html, /styles\/platform-responsive\.css\?v=6\.0\.2/, 'Responsive stylesheet is not integrated into the web shell.');
+assert.match(html, /src\/style-system\.js\?v=6\.0\.2/, 'Appearance system is not loaded.');
+assert.match(html, /src\/swipe-feed\.js\?v=6\.0\.2/, 'Swipe feed controller is not loaded.');
 assert.match(html, /apple-mobile-web-app-capable/, 'Native-feeling mobile web metadata is missing.');
-assert.match(routes, /renderFeed\(feed,\{mode:'for-you'\}\)/, 'For You route is not connected to the social feed controller.');
-assert.match(routes, /renderFeed\(feed,\{mode:'following'\}\)/, 'Following route is not connected to the social feed controller.');
-assert.ok(feed.includes('CHL.renderSwipeFeed') || feed.includes('CHL.renderFeed') || feed.includes('renderFeed'), 'Feed controller should expose or support the real social feed.');
+assert.match(routes, /CHL\.renderSwipeFeed\(o, 'foryou'\)/, 'For You route is not connected to the feed controller.');
+assert.match(routes, /CHL\.renderSwipeFeed\(o, 'following'\)/, 'Following route is not connected to the feed controller.');
+assert.equal((feed.match(/CHL\.renderSwipeFeed\s*=/g) || []).length, 1, 'Swipe feed API should be initialized once, not register duplicate routes.');
 for (const token of ['IntersectionObserver', 'scroll-snap', 'PAGE_SIZE = 10', 'created_at.lt.', 'from(\'likes\')', 'from(\'comments\')', 'from(\'saves\')', 'from(\'follows\')', 'navigator.share', 'prefers-reduced-motion', 'video.pause()', 'video.play()']) {
   assert.ok(feed.includes(token) || css.includes(token) || feed.includes(token.replace('video.pause()', '.pause()')) || feed.includes(token.replace('video.play()', '.play()')), `Feed architecture missing: ${token}`);
 }
@@ -33,8 +32,8 @@ assert.match(css, /prefers-reduced-motion/, 'Reduced-motion support is missing.'
 assert.match(theme, /localStorage\.setItem\(KEY, selected\)/, 'Appearance preference is not persisted.');
 assert.match(theme, /aria-expanded/, 'Appearance control does not expose expanded state.');
 assert.match(theme, /Escape/, 'Appearance panel cannot be dismissed with Escape.');
-assert.match(sw, /chl-web-v3-3-11/, 'Service worker cache was not versioned for the recovery fixes.');
-assert.match(sw, /'\.\/src\/swipe-feed\.js'/, 'Swipe feed script is not in the offline shell.');
-assert.match(sw, /'\.\/styles\/platform-responsive\.css'/, 'Responsive stylesheet is not in the offline shell.');
+assert.match(sw, /chcn-web-nexus-v6-0-2/, 'Service worker cache was not versioned for new UI files.');
+assert.match(sw, /src\/swipe-feed\.js\?v=6\.0\.2/, 'Swipe feed script is not in the offline shell.');
+assert.match(sw, /styles\/platform-responsive\.css\?v=6\.0\.2/, 'Responsive stylesheet is not in the offline shell.');
 assert.match(pkg.scripts.check, /tests\/ui-ux-contract\.mjs/, 'Default check command does not include UI/UX contract tests.');
 console.log('PASS — cross-platform UI/UX integration, feed routes, pagination, media lifecycle, real interactions, accessibility, theme persistence and offline shell contracts.');
