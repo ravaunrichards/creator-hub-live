@@ -462,6 +462,7 @@
         roomName: roomName,
         roomId: roomId,
         canPublish: !!isHost,
+        mediaMode: currentMediaMode,
 
         onConnected: async function (lkRoom) {
           if (currentRoomId !== roomId) return;
@@ -505,7 +506,8 @@
         },
 
         onRemoteTrack: function (track, participant, publication) {
-          if (currentRoomId === roomId) attachTrackToTile(track, publication, participant, false);
+          if (currentRoomId !== roomId || !isTrackAllowedForMode(track, publication, currentMediaMode)) return;
+          attachTrackToTile(track, publication, participant, false);
         },
         onRemoteTrackRemoved: function (track, participant, publication) {
           if (currentRoomId === roomId) removeTrackFromTile(track, participant, publication);
@@ -639,6 +641,20 @@
       if (error && error.name === 'AbortError') return;
       CHL.toast(error.message || 'Could not share the LIVE link.');
     }
+  }
+
+
+  function isTrackAllowedForMode(track, publication, mode) {
+    var source = publication && publication.source != null ? publication.source : track && track.source;
+    var label = String(source == null ? '' : source).toLowerCase();
+    var kind = String(track && track.kind || '').toLowerCase();
+    var isScreenVideo = source === 3 || label.indexOf('screen') >= 0 && label.indexOf('audio') < 0;
+    var isScreenAudio = source === 4 || label.indexOf('screen') >= 0 && label.indexOf('audio') >= 0;
+    var isMic = source === 2 || label.indexOf('microphone') >= 0;
+    var isCamera = source === 1 || label === 'camera';
+    if (mode === 'audio') return kind.indexOf('audio') >= 0 && (isMic || (!isScreenAudio && !isScreenVideo && !isCamera));
+    if (mode === 'screen') return isScreenVideo || isScreenAudio;
+    return isCamera || isMic || (!isScreenVideo && !isScreenAudio && (kind.indexOf('audio') >= 0 || kind.indexOf('video') >= 0));
   }
 
   function trackKind(track) {

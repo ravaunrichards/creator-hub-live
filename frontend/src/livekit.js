@@ -11,6 +11,7 @@
   }
 
   var activeRoom = null;
+  var activeMediaMode = 'video';
   var handlers = [];
   var unloading = false;
 
@@ -239,6 +240,9 @@
 
     var canPublish =
       options.canPublish === true;
+    activeMediaMode = ['video', 'audio', 'screen'].indexOf(String(options.mediaMode || 'video')) >= 0
+      ? String(options.mediaMode || 'video')
+      : 'video';
 
     var ttlSeconds =
       Number(options.ttlSeconds || 3600);
@@ -576,6 +580,7 @@
     var room = activeRoom;
 
     activeRoom = null;
+    activeMediaMode = 'video';
 
     clearHandlers();
 
@@ -618,6 +623,11 @@
    * Camera
    */
   CHL.publishCamera = async function () {
+    if (activeMediaMode !== 'video') {
+      var modeError = new Error('Camera publishing is only available in Video LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
     if (!activeRoom) {
       var error = new Error(
         'Not connected to LIVE.'
@@ -654,6 +664,11 @@
    * Microphone
    */
   CHL.publishMicrophone = async function () {
+    if (activeMediaMode === 'screen') {
+      var modeError = new Error('Microphone publishing is disabled in Screen-Sharing LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
     if (!activeRoom) {
       var error = new Error(
         'Not connected to LIVE.'
@@ -690,6 +705,11 @@
    * Camera toggle
    */
   CHL.toggleCamera = async function () {
+    if (activeMediaMode !== 'video') {
+      var modeError = new Error('Camera controls are only available in Video LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
     if (!activeRoom) {
       var error = new Error(
         'Not connected to LIVE.'
@@ -716,6 +736,11 @@
    * Microphone toggle
    */
   CHL.toggleMicrophone = async function () {
+    if (activeMediaMode === 'screen') {
+      var modeError = new Error('Microphone controls are disabled in Screen-Sharing LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
     if (!activeRoom) {
       var error = new Error(
         'Not connected to LIVE.'
@@ -742,6 +767,11 @@
    * Screen sharing
    */
   CHL.startScreenShare = async function () {
+    if (activeMediaMode !== 'screen' && activeMediaMode !== 'video') {
+      var modeError = new Error('Screen sharing is unavailable in Audio-only LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
     if (!activeRoom) {
       var error = new Error(
         'Not connected to LIVE.'
