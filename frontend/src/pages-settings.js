@@ -71,23 +71,11 @@
       input.value=info.paypalEmail||'';label.appendChild(input);f.appendChild(label);
       var status=el('div',{class:'note','aria-live':'polite',text:info.paypalEmail?(info.isVerified?'Current PayPal email is marked verified.':'Current PayPal email is saved but not marked verified.'):'No PayPal payout email has been saved yet.'});f.appendChild(status);
       var saveButton=el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save PayPal email');f.appendChild(saveButton);
-      var removeButton=el('button',{class:'btn danger',type:'button',style:'margin:8px 0 0 8px'+(info.paypalEmail?'':' ;display:none')},'Remove saved email');
-      removeButton.addEventListener('click',async function(){
-        if(!info.paypalEmail)return;
-        if(!window.confirm('Remove the saved PayPal payout email? Pending payout requests will keep the email used when each request was submitted.'))return;
-        removeButton.disabled=true;removeButton.textContent='Removing…';
-        try{
-          await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'DELETE',body:{}});
-          info.paypalEmail=null;info.isVerified=false;input.value='';status.textContent='Saved PayPal payout email removed. Add a new email to submit future payout requests.';removeButton.style.display='none';CHL.toast('Saved PayPal email removed.');
-        }catch(error){status.textContent=error.message||'Could not remove the saved PayPal email.';CHL.toast(status.textContent);}
-        finally{removeButton.disabled=false;removeButton.textContent='Remove saved email';}
-      });
-      f.appendChild(removeButton);
       f.addEventListener('submit',async function(event){
         event.preventDefault();var email=String(input.value||'').trim().toLowerCase();
         if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){CHL.toast('Enter a valid PayPal email address.');return;}
         saveButton.disabled=true;saveButton.textContent='Saving…';status.textContent='';
-        try{var result=await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'PUT',body:{paypalEmail:email}});input.value=result.paypalEmail||email;info.paypalEmail=input.value;info.isVerified=!!result.isVerified;removeButton.style.display='';status.textContent=result.isVerified?'PayPal email saved and marked verified.':'PayPal email saved. Verification is not confirmed.';CHL.toast('PayPal payout email saved.');}
+        try{var result=await CHL.authenticatedApiRequest('/api/payments/paypal/info',{method:'PUT',body:{paypalEmail:email}});input.value=result.paypalEmail||email;status.textContent=result.isVerified?'PayPal email saved and marked verified.':'PayPal email saved. Verification is not confirmed.';CHL.toast('PayPal payout email saved.');}
         catch(error){status.textContent=error.message||'Could not save the PayPal email.';CHL.toast(status.textContent);}
         finally{saveButton.disabled=false;saveButton.textContent='Save PayPal email';}
       });
