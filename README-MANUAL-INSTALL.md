@@ -1,44 +1,49 @@
-# CHL — League Standing / Team Membership Service Correction
+# CHL — Original Rank Ladder and Standing Route Correction
 
-## What this corrects
-- Adds authenticated `GET /api/leagues/my-standing` using the existing backend service-role database client.
-- Resolves the signed-in user's `team_members` rows and filters official standings on the server, rather than running a browser-side `team_members` REST query in parallel with a separate standings request.
-- Keeps the existing `GET /api/leagues/standings` response contract.
-- Distinguishes “no active league season” from a service failure. It does not create seasons, teams, memberships, results, or points.
-- Shows a safe backend error code in the UI instead of collapsing every failure into an indistinguishable generic message.
-- Restores the requested five-tier CHL rank order: Bronze (I–III), Silver, Gold, Master, Grandmaster. Platinum, Diamond, and Heroic are not inserted into this ladder.
-- Includes the same rank/achievement page in the web and Android WebView asset paths.
+## Findings this package addresses
+
+- The current `backend/src/teams-routes.js` already has `GET /api/leagues/my-standing` and `GET /api/leagues/standings`. Do **not** replace it; its GitHub blob SHA is `51810941cfaaefce7d4fb283c83cfd03559eed99`.
+- `backend/src/server.js` only dispatches `/api/teams` and `/api/teams/*` to that route handler. The guarded installer adds `/api/leagues/*` to the existing dispatch condition and creates a backup first. It does not replace the server file.
+- The website's current rank page has eight ranks, while the Android copy has five. This package aligns both copies to the requested five ranks while preserving sublevels: **Bronze I–III, Silver I–III, Gold I–IV, Master, Grandmaster**.
+- The season names remain Opening Season, Rising Stars, Champions League, and All-Star Season. A1–D5 are team league divisions, separate from competitive ranks.
+- The standing page now distinguishes missing team membership, missing active season, no official position yet, and a service/API error. It never invents standing data.
 
 ## Manual installation
-1. Back up these existing source files first:
-   - `backend/src/teams-routes.js`
+
+1. Back up these two existing rank-page files:
    - `frontend/src/chl-rank-achievements.js`
    - `android/app/src/main/assets/web/src/chl-rank-achievements.js`
-2. Extract this ZIP into the root of the existing `creator-hub-live` repository, preserving folder paths. Replace only the three matching files listed above. Do not replace `backend/src/server.js` with a package copy.
-3. From the repository root, run `node chl-league-standing-fix/apply-server-route-fix.mjs`. This makes the one-line route-dispatch fix in your existing server file and creates `backend/src/server.js.before-chl-league-route-fix.bak`. If the script stops with an error, do not force it; inspect the current source first.
-4. Run the validation commands below in the project root. Also run `node tests/server-route-registration.test.mjs`.
-5. Commit/deploy only when you are ready. This package has not changed GitHub, Render, Supabase, or the live site.
+2. Extract this ZIP into the root of your existing `creator-hub-live` repository, preserving folder paths. Replace **only those two rank-page files**. The `reference/teams-routes.js` file is for read-only review/tests; do not copy it over the existing backend file.
+3. From the repository root, run:
+
+   ```sh
+   node chl-league-standing-fix/apply-server-route-fix.mjs
+   ```
+
+   This applies one guarded line change to your existing `backend/src/server.js` and creates `backend/src/server.js.before-chl-league-route-fix.bak`. If the script stops with an error, do not force it; inspect the current source first.
+4. Run the checks below. The two test files are inside `chl-league-standing-fix/tests/` and use the read-only handler reference bundled with this ZIP.
+5. Review the diff before committing or deploying. This package has not changed GitHub, Render, Supabase, or the live site.
 
 ## Validation
-From project root:
+
+From the repository root after installing the two rank-page files:
 
 ```sh
-node --check backend/src/teams-routes.js
 node --check frontend/src/chl-rank-achievements.js
+node --check android/app/src/main/assets/web/src/chl-rank-achievements.js
+cmp frontend/src/chl-rank-achievements.js android/app/src/main/assets/web/src/chl-rank-achievements.js
 node chl-league-standing-fix/tests/league-standing-service.test.mjs
 node chl-league-standing-fix/tests/server-route-registration.test.mjs
-cmp frontend/src/chl-rank-achievements.js android/app/src/main/assets/web/src/chl-rank-achievements.js
 ```
 
-The added test is included in this ZIP. Copy `tests/league-standing-service.test.mjs` to your repository's `tests/` folder before running it, or run it from this extracted package after the source files are in place.
+The guarded installer was separately smoke-tested against a disposable fixture. It changed only the expected dispatch line, made a backup, was idempotent when rerun, and stopped safely for an unexpected source layout.
 
-## Confirmed database findings (read-only audit, 2026-10-18)
-- `public.team_members` exists; `public.league_team_members` does not. The application must use the canonical `team_members` table.
-- `public.league_seasons`, `public.league_standings`, `public.teams`, and `public.leagues` exist and have the columns used by the existing route.
-- RLS is enabled on the relevant tables; SELECT grants and policies were visible for `team_members`, `league_seasons`, `league_standings`, `teams`, and `leagues`.
-- Current counts are zero for `teams`, `team_members`, `league_seasons`, and `league_standings`; there is no active season. The correction intentionally reports that state rather than generating false standings.
-- The Supabase migration history contains migration `0050_team_league_route_schema_and_active_season_guard`, but a same-named source file was not found at the expected `database/migrations/` path in GitHub main. Reconcile migration-source history before applying any schema migration.
-- Supabase performance advisors reported 55 unindexed foreign-key findings across the database. These are separate optimization findings and are not changed by this focused correction. Security advisors also reported callable `SECURITY DEFINER` functions; each requires function-by-function authorization review rather than blanket changes.
+## Read-only database findings (2026-10-18)
 
-## Limitations
-The new route, frontend, and guarded server route-registration correction are source-level fixes. No live API request with an authenticated user was possible from this audit, no Supabase write was performed, and no Render deployment or physical-device test was performed. A real team standing will remain unavailable until real team/member records and an active season are correctly configured by the project's authorized setup process.
+- `public.team_members`, `public.league_seasons`, `public.league_standings`, and `public.teams` exist.
+- Counts at inspection time were zero for `teams`, `team_members`, `league_seasons`, and `league_standings`; there was no active season.
+- Therefore the route correction can remove the dispatch `NOT_FOUND` failure, but a real team standing will still require real team/member records and an active season configured through the authorized league workflow. No teams, memberships, ranks, points, or seasons were fabricated.
+
+## Limits
+
+Syntax and focused local source tests passed. No authenticated real-user request, live deployment, database write, or physical-device test was performed. The source fix must be manually installed and deployed before its effect can be verified on the live website.
