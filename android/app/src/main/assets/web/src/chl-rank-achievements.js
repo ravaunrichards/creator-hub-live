@@ -12,8 +12,8 @@
   // league divisions A1–D5 separate; never insert unrelated rank tiers here.
   var TIERS = [
     { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry rank and first step in the CHL competitive ladder.' },
-    { key: 'silver', name: 'Silver', icon: '🥈', divisions: [], description: 'The second competitive rank in the CHL ladder.' },
-    { key: 'gold', name: 'Gold', icon: '🥇', divisions: [], description: 'The third competitive rank in the CHL ladder.' },
+    { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistency and progress through the Silver rank.' },
+    { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Advance through Gold before reaching the elite ranks.' },
     { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'An advanced competitive rank earned through verified results.' },
     { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The highest CHL competitive rank, awarded only from verified results.' }
   ];
