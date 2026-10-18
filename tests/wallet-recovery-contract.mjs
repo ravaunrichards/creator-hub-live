@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const root = process.cwd();
+const web = fs.readFileSync(`${root}/frontend/src/pages-wallet.js`, 'utf8');
+const android = fs.readFileSync(`${root}/android/app/src/main/assets/web/src/pages-wallet.js`, 'utf8');
+assert.equal(web, android, 'Wallet source must match the Android WebView copy byte-for-byte.');
+for (const coins of [100, 500, 1000, 2500, 5000, 10000]) assert.match(web, new RegExp(`\\b${coins}\\b`), `Wallet preset missing ${coins} coins.`);
+assert.match(web, /\/api\/payments\/coin-quote\?coins=/, 'Preset and custom prices must come from the server quote endpoint.');
+assert.match(web, /function selectPaymentMethod\(p\)/, 'Wallet purchase must show payment-method selection before checkout.');
+assert.match(web, /Continue to PayPal/, 'PayPal checkout confirmation is missing.');
+assert.match(web, /function startPaypalCheckout\(p\)/, 'PayPal checkout handler is missing.');
+assert.match(web, /capture-order/, 'PayPal return must use server-side capture verification.');
+assert.match(web, /\/api\/wallet\/convert/, 'Diamond conversion must use the backend.');
+assert.match(web, /\/api\/payouts/, 'Diamond payouts must use the backend.');
+console.log('PASS — wallet presets, server-priced quotes, payment-selection step, backend-only checkout/conversion/payout, and Android parity.');

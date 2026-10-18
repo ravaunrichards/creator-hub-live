@@ -14,6 +14,7 @@ const MIGRATION = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '000
 const RLS = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0010_rls_hardening.sql'), 'utf8');
 const SETTINGS = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0011_user_settings.sql'), 'utf8');
 const CHAT = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '0012_live_chat_messages.sql'), 'utf8');
+const PAYPAL_SECURITY = fs.readFileSync(path.join(ROOT, 'database', 'migrations', '20261018014733_secure_paypal_verification_trigger_function_execute_20261018.sql'), 'utf8');
 
 function assert(ok, message) { if (!ok) throw new Error(message); }
 
@@ -21,7 +22,7 @@ assert(SERVER.includes('await verifyHostPublishing('), 'LIVE start does not veri
 const verify = SERVER.indexOf('await verifyHostPublishing(');
 const update = SERVER.indexOf('.update({\n            status: "live"', verify);
 assert(update > verify, 'LIVE database promotion precedes LiveKit verification.');
-assert(TOKEN.includes("canPublishSources: canPublish ? [1, 2, 3, 4] : []"), 'Host token does not permit camera, microphone, and screen-share publishing sources.');
+assert(TOKEN.includes("canPublishSources: canPublish") && TOKEN.includes('mediaMode === "audio" ? [2] : mediaMode === "screen" ? [3, 4] : [1, 2]') && TOKEN.includes(": []"), 'Host token does not restrict publishing sources by the selected LIVE mode.');
 assert(!SERVER.includes("'wss://creator-hub-live-9susyfri.livekit.cloud'"), 'Server still contains the previous hard-coded LiveKit URL.');
 assert(ROOM.includes('joinResult && joinResult.roomName'), 'Frontend does not consume joinResult.roomName.');
 assert(ROOM.includes('room.room_name'), 'Frontend does not retain backend room_name fallback.');
@@ -36,6 +37,7 @@ assert(ACTIVITY.includes('allRequiredGranted'), 'Android media permission callba
 assert(SETTINGS.includes('create table if not exists public.user_settings'), 'Persistent user settings table is missing.');
 assert(SETTINGS.includes('user_id = auth.uid()'), 'Persistent user settings RLS is missing owner restriction.');
 assert(CHAT.includes('create table if not exists public.live_chat_messages'), 'LIVE chat persistence table is missing.');
+assert(PAYPAL_SECURITY.includes('REVOKE ALL ON FUNCTION public.reset_paypal_payout_verification_on_change()') && PAYPAL_SECURITY.includes('FROM PUBLIC, anon, authenticated'), 'PayPal verification trigger-function hardening migration is missing.');
 const LIVE_LIST = fs.readFileSync(path.join(WEB, 'src', 'pages.js'), 'utf8');
 const LIVE_CSS = fs.readFileSync(path.join(WEB, 'styles', 'app.css'), 'utf8');
 const LIVE_SW = fs.readFileSync(path.join(WEB, 'sw.js'), 'utf8');
@@ -43,7 +45,7 @@ assert(LIVE_LIST.includes(".eq('status','live').is('ended_at', null)"), 'Live di
 assert(SERVER.includes('.is("ended_at", null)'), 'Backend live-room API can include ended sessions.');
 assert(LIVE_LIST.includes('window.setInterval(refresh, 10000)'), 'Live discovery does not refresh ended broadcasts automatically.');
 assert(LIVE_CSS.includes('font-weight: 800') && LIVE_CSS.includes('prefers-contrast: more'), 'Readable bold typography and high-contrast support are missing.');
-assert(LIVE_SW.includes('chl-web-v3-3-1'), 'Service worker cache was not invalidated after UI repairs.');
+assert(LIVE_SW.includes('chl-web-v3-3-11'), 'Service worker cache was not invalidated after recovery repairs.');
 assert(SERVER.includes('"/api/wallet/gift"'), 'Server-authoritative gift endpoint is missing.');
 assert(SERVER.includes('"/api/wallet/transactions"'), 'Wallet transaction endpoint is missing.');
 
@@ -65,8 +67,9 @@ for (const rel of webFiles) {
 }
 
 console.log('PASS — LiveKit start gate and room-name contract');
-console.log('PASS — camera, microphone and screen-share token source permissions');
+console.log('PASS — token publishing-source restriction');
 console.log('PASS — database LIVE state/update_at migration');
 console.log('PASS — Android file chooser bridge and strict AV permission gate');
 console.log(`PASS — frontend ↔ Android web parity (${webFiles.length} files)`);
 console.log('PASS — persistent settings, LIVE chat, wallet transaction and gift contracts');
+console.log('PASS — recorded Supabase PayPal trigger-function permission hardening migration');
