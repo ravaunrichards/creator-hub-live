@@ -1,28 +1,14 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { missingMediaForKind } from './livekit-verification.js';
-
-// Validate the configured realtime endpoint before issuing tokens. The URL,
-// API key and API secret must all belong to the same LiveKit project.
-function livekitServerUrl() {
-  const value = String(process.env.LIVEKIT_URL || '').trim();
-  if (!value) return '';
-  try {
-    const parsed = new URL(value);
-    if (parsed.protocol !== 'wss:' || !parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return '';
-    return parsed.origin;
-  } catch (_) {
-    return '';
-  }
-}
+import { classifyPublishedTracks } from './livekit-verification.js';
 
 // Convert the LiveKit realtime URL to its HTTP API URL.
 function livekitHttpBase() {
-  const url = livekitServerUrl();
-  return url ? url.replace(/^wss:/, 'https:') : '';
+  const url = process.env.LIVEKIT_URL || '';
+  return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 }
 
 // Verify that the host has published both camera and microphone tracks.
-export async function verifyHostPublishing(roomName, identity, kind = 'video') {
+export async function verifyHostPublishing(roomName, identity) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const httpBase = livekitHttpBase();
@@ -63,27 +49,31 @@ export async function verifyHostPublishing(roomName, identity, kind = 'video') {
       ? Array.from(host.tracks)
       : [];
 
-  const verification = missingMediaForKind(tracks, kind);
-  const media = verification.media;
-  const mode = verification.mode;
-  const missing = verification.missing;
+  const media = classifyPublishedTracks(tracks);
 
-  if (missing.length) {
-    const required = mode === 'video' ? 'camera and microphone' : mode === 'voice' ? 'microphone' : 'screen sharing and microphone';
+  if (!media.camera || !media.microphone) {
+    const missing = [];
+
+    if (!media.camera) missing.push('camera');
+    if (!media.microphone) missing.push('microphone');
+
     throw Object.assign(
-      new Error(`Host must publish ${required} for ${mode} LIVE. Missing: ${missing.join(', ')}.`),
-      { code: 'LIVE_PUBLISH_REQUIRED', status: 409, details: { mode, missing } }
+      new Error(
+        `Host must publish camera and microphone. Missing: ${missing.join(', ')}.`
+      ),
+      {
+        code: 'LIVE_PUBLISH_REQUIRED',
+        status: 409,
+        details: { missing }
+      }
     );
   }
 
   return {
     identity: String(identity),
     trackCount: tracks.length,
-    mode,
-    camera: media.camera,
-    microphone: media.microphone,
-    screenShare: media.screenShare,
-    screenShareAudio: media.screenShareAudio
+    camera: true,
+    microphone: true
   };
 }
 
@@ -99,17 +89,20 @@ export async function createLiveKitToken({
   userId,
   roomName,
   canPublish = false,
+  participantName = null,
+  isHost = false,
+  mediaMode = "video",
   ttlSeconds = 3600
 }) {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
 
-  if (!apiKey || !apiSecret || !livekitServerUrl()) {
+  if (!apiKey || !apiSecret) {
     throw Object.assign(
-      new Error('LiveKit is not configured correctly. Set LIVEKIT_URL to the wss:// URL for the same LiveKit project as LIVEKIT_API_KEY and LIVEKIT_API_SECRET.'),
+      new Error('LiveKit server configuration is incomplete.'),
       {
-        code: 'LIVEKIT_CONFIGURATION_INVALID',
-        status: 503
+        code: 'TOKEN_GENERATION_FAILED',
+        status: 500
       }
     );
   }
@@ -126,9 +119,10 @@ export async function createLiveKitToken({
     Math.min(3600, Number(ttlSeconds) || 3600)
   );
 
+  const displayName = String(participantName || (isHost ? "Host" : "Creator")).trim().slice(0, 128) || (isHost ? "Host" : "Creator");
   const token = new AccessToken(apiKey, apiSecret, {
     identity: String(userId),
-    name: canPublish ? 'Host' : 'Viewer',
+    name: displayName,
     ttl: boundedTtlSeconds
   });
 
@@ -136,8 +130,7 @@ export async function createLiveKitToken({
     roomJoin: true,
     room: roomName,
     canPublish: !!canPublish,
-    // LiveKit source IDs: camera=1, microphone=2, screen share=3, screen-share audio=4.
-    canPublishSources: canPublish ? [1, 2, 3, 4] : [],
+    canPublishSources: canPublish ? [1, 2] : [],
     canSubscribe: true,
     canPublishData: true
   });
@@ -149,10 +142,10 @@ export async function createLiveKitToken({
 export function livekitHealth() {
   return {
     configured: !!(
-      livekitServerUrl() &&
+      process.env.LIVEKIT_URL &&
       process.env.LIVEKIT_API_KEY &&
       process.env.LIVEKIT_API_SECRET
     ),
-    serverUrl: livekitServerUrl() || null
+    serverUrl: process.env.LIVEKIT_URL || null
   };
 }
