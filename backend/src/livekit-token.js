@@ -1,5 +1,5 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { classifyPublishedTracks } from './livekit-verification.js';
+import { classifyPublishedTracks, missingMediaForMode } from './livekit-verification.js';
 
 // Convert the LiveKit realtime URL to its HTTP API URL.
 function livekitHttpBase() {
@@ -7,8 +7,8 @@ function livekitHttpBase() {
   return url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
 }
 
-// Verify that the host has published both camera and microphone tracks.
-export async function verifyHostPublishing(roomName, identity) {
+// Verify the media required by the room's authoritative LIVE mode.
+export async function verifyHostPublishing(roomName, identity, mediaMode = "video") {
   const apiKey = process.env.LIVEKIT_API_KEY;
   const apiSecret = process.env.LIVEKIT_API_SECRET;
   const httpBase = livekitHttpBase();
@@ -50,30 +50,26 @@ export async function verifyHostPublishing(roomName, identity) {
       : [];
 
   const media = classifyPublishedTracks(tracks);
+  const mode = ['video', 'audio', 'screen'].includes(String(mediaMode))
+    ? String(mediaMode)
+    : 'video';
+  const missing = missingMediaForMode(media, mode);
 
-  if (!media.camera || !media.microphone) {
-    const missing = [];
-
-    if (!media.camera) missing.push('camera');
-    if (!media.microphone) missing.push('microphone');
-
+  if (missing.length) {
+    const required = mode === 'audio' ? 'microphone' : mode === 'screen' ? 'screen share' : 'camera and microphone';
     throw Object.assign(
-      new Error(
-        `Host must publish camera and microphone. Missing: ${missing.join(', ')}.`
-      ),
-      {
-        code: 'LIVE_PUBLISH_REQUIRED',
-        status: 409,
-        details: { missing }
-      }
+      new Error(`Host must publish ${required} for ${mode} LIVE. Missing: ${missing.join(', ')}.`),
+      { code: 'LIVE_PUBLISH_REQUIRED', status: 409, details: { missing, mediaMode: mode } }
     );
   }
 
   return {
     identity: String(identity),
     trackCount: tracks.length,
-    camera: true,
-    microphone: true
+    mediaMode: mode,
+    camera: !!media.camera,
+    microphone: !!media.microphone,
+    screenShare: !!media.screenShare
   };
 }
 
@@ -126,11 +122,18 @@ export async function createLiveKitToken({
     ttl: boundedTtlSeconds
   });
 
+  const mode = ['video', 'audio', 'screen'].includes(String(mediaMode))
+    ? String(mediaMode)
+    : 'video';
+  const publishSources = !canPublish ? [] : mode === 'audio' ? [2] : mode === 'screen'
+    ? (isHost ? [3, 4] : [])
+    : [1, 2];
+
   token.addGrant({
     roomJoin: true,
     room: roomName,
-    canPublish: !!canPublish,
-    canPublishSources: canPublish ? [1, 2] : [],
+    canPublish: publishSources.length > 0,
+    canPublishSources: publishSources,
     canSubscribe: true,
     canPublishData: true
   });

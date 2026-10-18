@@ -1,7 +1,7 @@
 // Pure verification helpers for LiveKit ParticipantInfo.track metadata.
-// LiveKit protocol TrackSource enum: CAMERA=1, MICROPHONE=2, SCREEN_SHARE=3, SCREEN_SHARE_AUDIO=4.
-// Media mode is verified against the source actually published, not generic audio/video kind.
-
+// LiveKit TrackSource enum: CAMERA=1, MICROPHONE=2, SCREEN_SHARE=3, SCREEN_SHARE_AUDIO=4.
+// Use source identifiers rather than generic track kind so screen video cannot
+// accidentally satisfy the camera requirement.
 const CAMERA_SOURCE = 1;
 const MICROPHONE_SOURCE = 2;
 const SCREEN_SHARE_SOURCE = 3;
@@ -25,18 +25,14 @@ export function classifyPublishedTracks(tracks) {
   return { camera, microphone, screenShare, screenShareAudio };
 }
 
-export function missingMediaForKind(tracks, kind = 'video') {
-  const media = classifyPublishedTracks(tracks);
-  const mode = ['video', 'voice', 'screen'].includes(String(kind)) ? String(kind) : 'video';
+export function missingMediaForMode(media, mediaMode = 'video') {
+  const mode = ['video', 'audio', 'screen'].includes(String(mediaMode))
+    ? String(mediaMode)
+    : 'video';
+  if (mode === 'audio') return media.microphone ? [] : ['microphone'];
+  if (mode === 'screen') return media.screenShare ? [] : ['screen share'];
   const missing = [];
-  if (mode === 'video') {
-    if (!media.camera) missing.push('camera');
-    if (!media.microphone) missing.push('microphone');
-  } else if (mode === 'voice') {
-    if (!media.microphone) missing.push('microphone');
-  } else {
-    if (!media.screenShare) missing.push('screen_share_video');
-    if (!media.microphone) missing.push('microphone');
-  }
-  return { mode, media, missing };
+  if (!media.camera) missing.push('camera');
+  if (!media.microphone) missing.push('microphone');
+  return missing;
 }
