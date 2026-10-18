@@ -18,8 +18,6 @@
   var chatPollTimer = null;
   var guestPollTimer = null;
   var guestQueueContainer = null;
-  var giftRecipientSelect = null;
-  var giftRecipientsInFlight = Object.create(null);
   var participantTiles = new Map();
   var activePoll = null;
   var activeChallengeTimer = null;
@@ -66,8 +64,6 @@
     }
 
     currentRoomId = roomId;
-    giftRecipientSelect = null;
-    giftRecipientsInFlight = Object.create(null);
     currentMediaMode = 'video';
     roomHostId = null;
     isHost = false;
@@ -354,16 +350,10 @@
       }, '💎 Wallet')
     ]));
 
-    var giftRecipientLabel = el('label', { class: 'field', style: 'display:grid;gap:5px;margin:0 0 10px;min-width:0' });
-    giftRecipientLabel.appendChild(el('span', { text: 'Gift recipient' }));
-    giftRecipientSelect = el('select', { class: 'input', name: 'giftRecipient', 'aria-label': 'Gift recipient', disabled: true });
-    giftRecipientSelect.appendChild(el('option', { value: '', text: 'Loading eligible LIVE recipients…' }));
-    giftRecipientLabel.appendChild(giftRecipientSelect);
-
     var giftStatus = el('div', {
       class: 'sub',
       style: 'margin-bottom:8px',
-      text: 'Loading database-priced gifts. Creator diamond credit follows the configured gift value.'
+      text: 'Loading gift prices…'
     });
 
     var giftGrid = el('div', {
@@ -371,7 +361,6 @@
       style: 'min-width:0'
     });
 
-    giftCard.appendChild(giftRecipientLabel);
     giftCard.appendChild(giftStatus);
     giftCard.appendChild(giftGrid);
     side.appendChild(giftCard);
@@ -402,7 +391,6 @@
 
       roomHostId = room.host_id || null;
       isHost = !!CHL.user && !!roomHostId && String(CHL.user.id) === String(roomHostId);
-      if (room.status === 'live') loadGiftRecipients(roomId, giftRecipientSelect);
       currentMediaMode = ['video', 'audio', 'screen'].indexOf(String(room.media_mode || 'video')) >= 0 ? String(room.media_mode || 'video') : 'video';
       canPublishMedia = isHost;
       roomHeading.textContent = currentMediaMode === 'audio' ? 'Audio-Only LIVE' : currentMediaMode === 'screen' ? 'Screen-Sharing LIVE' : 'Video LIVE';
@@ -458,10 +446,7 @@
       }
       if (currentMediaMode !== 'screen') refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
       guestPollTimer = window.setInterval(function () {
-        if (currentRoomId === roomId) {
-          refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
-          loadGiftRecipients(roomId, giftRecipientSelect);
-        }
+        if (currentRoomId === roomId) refreshGuestQueue(roomId, guestQueueContainer, isHost, guestAction, guestStatus);
       }, 5000);
 
       /* Use the backend-generated LiveKit room name. */
@@ -506,7 +491,6 @@
             var startResult = await CHL.authenticatedApiRequest('/api/live/rooms/' + encodeURIComponent(roomId) + '/start', { method: 'POST' });
             if (!startResult || (startResult.status && startResult.status !== 'live')) throw new Error('The server did not confirm that LIVE started.');
             liveStarted = true;
-            loadGiftRecipients(roomId, giftRecipientSelect);
             status.textContent = currentMediaMode === 'audio' ? 'LIVE · AUDIO ONLY' : 'LIVE · VIDEO';
             status.style.background = 'rgba(180,0,40,.85)';
           }
@@ -1100,62 +1084,6 @@
       .replace(/^-|-$/g, '').slice(0, 90) || 'gift';
   }
 
-  /* Fetch only this LIVE room's currently eligible, named host/guest recipients. */
-  async function loadGiftRecipients(roomId, select) {
-    if (!select || !CHL.sb || typeof CHL.sb.rpc !== 'function' || currentRoomId !== roomId) return;
-    if (giftRecipientsInFlight[roomId]) return;
-    giftRecipientsInFlight[roomId] = true;
-    var hasExistingSelection = !!(select.options && select.options.length && String(select.value || ''));
-    select.disabled = !hasExistingSelection;
-    try {
-      var response = await CHL.sb.rpc('live_gift_recipients', { p_live_id: roomId });
-      if (currentRoomId !== roomId || select !== giftRecipientSelect) return;
-      if (response && response.error) throw response.error;
-      var previousValue = String(select.value || '');
-      var rows = response && Array.isArray(response.data) ? response.data : [];
-      var seen = Object.create(null);
-      var recipients = rows.filter(function (row) {
-        if (!row || !row.user_id || String(row.user_id) === String(CHL.user && CHL.user.id)) return false;
-        var id = String(row.user_id);
-        if (seen[id]) return false;
-        var name = String(row.display_name || row.username || '').trim();
-        if (!name) return false;
-        seen[id] = true;
-        row._giftLabel = name.slice(0, 80);
-        return row.recipient_role === 'host' || row.recipient_role === 'guest';
-      }).sort(function (a, b) {
-        if (a.recipient_role === b.recipient_role) return 0;
-        return a.recipient_role === 'host' ? -1 : 1;
-      });
-
-      select.textContent = '';
-      if (!recipients.length) {
-        select.appendChild(el('option', { value: '', text: 'No eligible named recipients' }));
-        select.disabled = true;
-        return;
-      }
-      recipients.forEach(function (recipient) {
-        var role = recipient.recipient_role === 'host' ? 'Host' : 'Guest';
-        select.appendChild(el('option', {
-          value: String(recipient.user_id),
-          text: recipient._giftLabel + ' (' + role + ')'
-        }));
-      });
-      var priorStillEligible = recipients.some(function (recipient) { return String(recipient.user_id) === previousValue; });
-      if (priorStillEligible) select.value = previousValue;
-      else select.value = String(recipients[0].user_id);
-      select.disabled = false;
-    } catch (error) {
-      if (currentRoomId !== roomId || select !== giftRecipientSelect) return;
-      select.textContent = '';
-      select.appendChild(el('option', { value: '', text: 'Recipients unavailable — retrying…' }));
-      select.disabled = true;
-      console.warn('[Creator Hub LIVE gifts] Recipient list could not be loaded:', error && error.message || error);
-    } finally {
-      delete giftRecipientsInFlight[roomId];
-    }
-  }
-
   /* Render real database-priced gifts as accessible, tappable buttons. */
   function renderGifts(giftGrid, giftStatus, roomId) {
     giftGrid.textContent = '';
@@ -1275,7 +1203,7 @@
       }
 
       GIFTS = databaseGifts;
-      giftStatus.textContent = 'Gift prices and diamond credits are database-controlled. Each gift records an exact 50/50 virtual coin-equivalent allocation; this accounting does not create fractional spendable coins. Diamonds are not cash.';
+      giftStatus.textContent = 'Gift prices from the database.';
       renderGifts(giftGrid, giftStatus, roomId);
     } catch (e) {
       // Do not invent prices if the API is unavailable.
@@ -1447,14 +1375,10 @@
       return;
     }
 
-    if (!giftRecipientSelect || giftRecipientSelect.disabled) {
-      CHL.toast('Eligible gift recipients are still loading or unavailable. Please retry in a moment.');
-      return;
-    }
+    var recipientId = roomHostId;
 
-    var recipientId = String(giftRecipientSelect.value || '').trim();
     if (!recipientId) {
-      CHL.toast('Choose an eligible gift recipient first.');
+      CHL.toast('Gift recipient is unavailable.');
       return;
     }
 
@@ -1462,8 +1386,6 @@
       CHL.toast('You cannot send a gift to yourself.');
       return;
     }
-    var selectedRecipientOption = giftRecipientSelect.options && giftRecipientSelect.options[giftRecipientSelect.selectedIndex];
-    var selectedRecipientLabel = selectedRecipientOption ? String(selectedRecipientOption.textContent || '').replace(/\s*\((Host|Guest)\)$/, '') : 'recipient';
 
     giftRequestsInFlight[roomId] = true;
 
@@ -1483,13 +1405,12 @@
         broadcastLiveEvent('gift', { assetKey: gift.assetKey || giftAssetKey(gift.k), name: gift.k });
 
         if (chargedGift && Number.isFinite(Number(chargedGift.coinPrice))) {
-          var credit = Number(chargedGift.diamondValue);
           CHL.toast(
-            'Gift sent to ' + selectedRecipientLabel + ': ' + Number(chargedGift.coinPrice).toLocaleString() +
-            ' coins' + (Number.isFinite(credit) && credit >= 0 ? '; recipient credited ' + credit.toLocaleString() + ' diamonds.' : '.')
+            'Gift sent: ' + gift.k + ' (' +
+            Number(chargedGift.coinPrice).toLocaleString() + ' coins).'
           );
         } else {
-          CHL.toast('Gift sent to ' + selectedRecipientLabel + '.');
+          CHL.toast('Gift sent.');
         }
 
         ui.refreshCoins();

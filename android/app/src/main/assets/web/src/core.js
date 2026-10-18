@@ -1466,7 +1466,7 @@
   function isAuthRequired(
     base
   ) {
-    if (!base || base === '/settings/appearance') {
+    if (!base) {
       return false;
     }
 
@@ -2106,7 +2106,6 @@
               CHL.refreshAuth()
                 .then(
                   function () {
-                    if (CHL.StyleSwitcher) CHL.StyleSwitcher.onAuthChanged().catch(function () {});
                     CHL.render();
                   }
                 )
@@ -2122,10 +2121,6 @@
         try {
           await CHL.refreshAuth();
         } catch (_) {}
-
-        if (CHL.StyleSwitcher) {
-          try { await CHL.StyleSwitcher.onAuthChanged(); } catch (_) {}
-        }
 
         CHL.verifyConnection()
           .catch(

@@ -344,6 +344,18 @@
 
     bind(
       room,
+      'DataReceived',
+      function (payload, participant, kind, topic) {
+        try {
+          if (options.onDataReceived) options.onDataReceived(payload, participant, kind, topic);
+        } catch (error) {
+          if (window.console) console.warn('[Creator Hub] Live data handler failed.', error);
+        }
+      }
+    );
+
+    bind(
+      room,
       'TrackUnsubscribed',
       function (
         track,
@@ -389,6 +401,19 @@
             );
           }
         } catch (_) {}
+      }
+    );
+
+    bind(
+      room,
+      'ParticipantPermissionsChanged',
+      function (previousPermissions, participant) {
+        try {
+          var changedParticipant = participant && participant.identity ? participant : (previousPermissions && previousPermissions.identity ? previousPermissions : null);
+          if (changedParticipant && options.onParticipantPermissionsChanged) options.onParticipantPermissionsChanged(changedParticipant, previousPermissions);
+        } catch (error) {
+          if (window.console) console.warn('[Creator Hub] Participant permission handler failed.', error);
+        }
       }
     );
 
@@ -534,12 +559,11 @@
       CHL.disconnectLiveKit();
 
       throw createLiveKitError(
-        error && error.message
+        error &&
+          error.message
           ? error.message
           : 'LiveKit connection failed.',
-        error && error.code
-          ? error.code
-          : 'LIVEKIT_CONNECTION_FAILED',
+        'LIVEKIT_CONNECTION_FAILED',
         error
       );
     }
@@ -548,10 +572,6 @@
   /*
    * Disconnect and completely clean up the local LiveKit session.
    */
-  CHL.getLiveKitRoom = function () {
-    return activeRoom;
-  };
-
   CHL.disconnectLiveKit = function () {
     var room = activeRoom;
 
@@ -749,13 +769,12 @@
     }
 
     try {
-      // Keep screen video reliable across browsers. System/display audio is
-      // not supported by every browser or Android WebView; requesting it as a
-      // requirement can cause the entire screen-share operation to fail.
       return await activeRoom.localParticipant
         .setScreenShareEnabled(
           true,
-          { audio: false }
+          {
+            audio: true
+          }
         );
     } catch (error) {
       error.code =
@@ -883,6 +902,22 @@
         return false;
       }
     };
+
+  /* Reliable room data carries LIVE reactions, polls, gifts and guest media requests. */
+  CHL.publishLiveData = async function (payload) {
+    if (!activeRoom || !activeRoom.localParticipant || !CHL.isLiveKitConnected()) {
+      throw createLiveKitError('Connect to the LIVE room before sending a room event.', 'LIVEKIT_NOT_CONNECTED');
+    }
+    if (!payload || payload.version !== 1 || !payload.roomId || typeof payload.type !== 'string') {
+      throw createLiveKitError('The LIVE room event is invalid.', 'LIVEKIT_INVALID_DATA');
+    }
+    var encoded;
+    try { encoded = new TextEncoder().encode(JSON.stringify(payload)); }
+    catch (error) { throw createLiveKitError('The LIVE room event could not be encoded.', 'LIVEKIT_DATA_ENCODING_FAILED', error); }
+    if (encoded.byteLength > 12000) throw createLiveKitError('The LIVE room event is too large.', 'LIVEKIT_DATA_TOO_LARGE');
+    await activeRoom.localParticipant.publishData(encoded, { reliable: true });
+    return true;
+  };
 
   /*
    * Determine whether the local participant

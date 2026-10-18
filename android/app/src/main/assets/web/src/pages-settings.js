@@ -3,11 +3,11 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
   var lastLoadedSettings = null;
-  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{mode:'individual',theme:'night',typography:'system',surfaces:'standard',density:'comfortable',motion:'standard',contrast:'standard'} };
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
   var SNAV=[
-    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/appearance',label:'Appearance'},{h:'#/settings/security',label:'Security'},
+    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/blocked',label:'Blocked accounts'},{h:'#/settings/notifications',label:'Notifications'},
-    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'}
+    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'},{h:'#/settings/appearance',label:'Appearance'}
   ];
   function snav(){ var bar=el('div',{class:'row wrap',style:'gap:8px;margin-bottom:16px'}); SNAV.forEach(function(it){ var on=CHL.current.path===it.h.replace('#',''); bar.appendChild(el('a',{href:it.h,class:'chip'+(on?' on':'')},it.label)); }); return bar; }
   function head(o,title,sub){ o.appendChild(ui.pageHead(title,sub)); if(!CHL.configured){ o.appendChild(ui.setupNotice()); return true;} o.appendChild(snav()); return false; }
@@ -23,8 +23,8 @@
     var base = lastLoadedSettings || SETTING_DEFAULTS;
     // Keep the current appearance preferences when saving another settings category,
     // so changing privacy or LIVE controls never overwrites the appearance choices.
-    var currentAppearance = CHL.StyleSwitcher && typeof CHL.StyleSwitcher.getPreference === 'function'
-      ? CHL.StyleSwitcher.getPreference()
+    var currentAppearance = window.CHLStyleSystem && typeof window.CHLStyleSystem.get === 'function'
+      ? window.CHLStyleSystem.get()
       : base.appearance;
     var payload = {user_id:CHL.user.id,privacy:value.privacy||base.privacy,notifications:value.notifications||base.notifications,live:value.live||base.live,appearance:value.appearance||currentAppearance||base.appearance,updated_at:new Date().toISOString()};
     var r=await sb.from('user_settings').upsert(payload,{onConflict:'user_id'});
@@ -34,15 +34,6 @@
     CHL.toast('Settings saved');
   }
   function check(name,label,checked){ return el('label',{class:'row',style:'gap:8px;margin:10px 0'},[el('input',{type:'checkbox',name:name,checked:!!checked}),el('span',{text:label})]); }
-
-  CHL.route('/settings/appearance', function(o){
-    o.appendChild(ui.pageHead('Appearance','Choose an individual style or build and test a compatible style-family combination.'));
-    o.appendChild(snav());
-    var mount=el('div',{class:'chl-style-switcher-mount'});
-    o.appendChild(mount);
-    if(CHL.StyleSwitcher) CHL.StyleSwitcher.render(mount);
-    else mount.appendChild(el('div',{class:'note',text:'The Style Switcher did not load. Reload the app and check the browser console.'}));
-  });
 
   CHL.route('/settings', function(o){ if(head(o,'Settings','Manage your account.')) return; o.appendChild(el('div',{class:'card',text:'Choose a settings category above. Account settings are stored with your profile and restored after reopening.'})); });
 
@@ -118,6 +109,48 @@
     }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}
   });
 
+  CHL.route('/settings/appearance', async function(o){
+    if(head(o,'Appearance','Personalize Creator Hub Live without a floating screen overlay.')) return;
+    var card=el('div',{class:'card'},[ui.spinner()]); o.appendChild(card);
+    try{
+      var s=await loadSettings(); var style=window.CHLStyleSystem;
+      if(!style) throw new Error('Appearance controls are unavailable. Reload Creator Hub Live and try again.');
+      var current=Object.assign({},style.get(),s.appearance||{}); style.apply(current); current=style.get();
+      card.innerHTML='';
+      card.appendChild(el('p',{class:'sub',text:'Changes preview immediately and are saved to this device and your account.'}));
+      var f=el('form',{style:'max-width:620px',onsubmit:async function(e){
+        e.preventDefault();
+        var next={theme:f.elements.theme.value,layout:f.elements.layout.value,font:f.elements.font.value,scale:f.elements.scale.value,accent:f.elements.accent.value};
+        style.apply(next);
+        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:next});CHL.toast('Appearance saved.');}
+        catch(err){CHL.toast(err.message||'Appearance could not be saved.');}
+      }});
+      f.appendChild(appearanceField('Color theme','theme',style.themes,current.theme));
+      f.appendChild(appearanceField('Layout','layout',style.layouts,current.layout));
+      f.appendChild(appearanceField('Font','font',style.fonts,current.font));
+      f.appendChild(appearanceField('Text size','scale',style.scales,current.scale));
+      f.appendChild(appearanceField('Accent color','accent',style.accents,current.accent));
+      var status=el('div',{class:'note','aria-live':'polite',text:'Appearance changes do not change wallet prices, gifts, permissions or account settings.'});
+      status.id='chl-ui-theme-status'; f.appendChild(status);
+      f.appendChild(el('button',{class:'btn primary',type:'submit',style:'margin-top:8px'},'Save appearance'));
+      f.appendChild(el('button',{class:'btn',type:'button',style:'margin:8px 0 0 8px',text:'Reset appearance',onclick:async function(){
+        var defaults={theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'};
+        style.apply(defaults); Object.keys(defaults).forEach(function(key){f.elements[key].value=defaults[key];});
+        try{await saveSettings({privacy:s.privacy,notifications:s.notifications,live:s.live,appearance:defaults});CHL.toast('Appearance reset and saved.');}
+        catch(err){CHL.toast(err.message||'Appearance reset locally but could not be saved to your account.');}
+      }}));
+      card.appendChild(f);
+    }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load appearance settings.'}));}
+  });
+
+  function appearanceField(label,name,items,current){
+    var w=el('label',{class:'field'},[el('span',{text:label})]);
+    var select=el('select',{class:'input',name:name,'data-chl-appearance':name});
+    items.forEach(function(item){select.appendChild(el('option',{value:item.id,selected:item.id===current},item.label));});
+    select.value=current;
+    select.addEventListener('change',function(){var next=Object.assign({},window.CHLStyleSystem.get());next[name]=select.value;window.CHLStyleSystem.apply(next);});
+    w.appendChild(select);return w;
+  }
   function selectField(label,name,values,current){
     var w=el('label',{class:'field'},[el('span',{text:label})]);var s=el('select',{class:'input',name:name});
     values.forEach(function(v){var value=(v&&typeof v==='object')?v.value:String(v);var text=(v&&typeof v==='object')?v.label:String(v);s.appendChild(el('option',{value:value,selected:value===String(current)},text));});

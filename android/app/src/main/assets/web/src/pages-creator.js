@@ -84,10 +84,8 @@
       try { var result = await request; if (result && result.error) throw result.error; return {ok:true,data:result && result.data,count:result && result.count}; }
       catch (error) { console.warn('[Creator Analytics] '+label+' unavailable:',error && error.message || error); return {ok:false,error:error}; }
     }
-    // Keep Analytics on explicit, auditable data sources only. Do not call the
-    // undocumented aggregate RPC here: its comment-exclusion behavior cannot be
-    // verified from the project source. LIVE chat messages are not analytics data.
     var responses = await Promise.all([
+      query('server metrics',sb.rpc('get_my_creator_metrics')),
       query('followers',sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',uid).eq('status','accepted')),
       query('following',sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',uid).eq('status','accepted')),
       query('published posts',sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',uid).eq('is_draft',false).eq('is_test',false)),
@@ -96,15 +94,15 @@
       query('gift transactions',sb.from('gift_transactions').select('id,coin_cost,diamond_value,created_at,live_id').eq('recipient_id',uid).order('created_at',{ascending:false}).limit(1000)),
       query('wallet',CHL.authenticatedApiRequest('/api/wallet'))
     ]);
-    var metrics = null;
-    var followers = responses[0].ok ? responses[0].count : null;
-    var following = responses[1].ok ? responses[1].count : null;
-    var postCount = responses[2].ok ? responses[2].count : null;
-    var liveCount = responses[4].ok ? responses[4].count : null;
-    var posts = responses[3].ok && Array.isArray(responses[3].data) ? responses[3].data : [];
-    var lives = responses[4].ok && Array.isArray(responses[4].data) ? responses[4].data : [];
-    var gifts = responses[5].ok && Array.isArray(responses[5].data) ? responses[5].data : [];
-    var wallet = responses[6].ok ? responses[6].data : null;
+    var metrics = responses[0].ok ? (Array.isArray(responses[0].data) ? responses[0].data[0] : responses[0].data) : null;
+    var followers = responses[1].ok ? responses[1].count : (metrics && metrics.followers);
+    var following = responses[2].ok ? responses[2].count : (metrics && metrics.following);
+    var postCount = responses[3].ok ? responses[3].count : (metrics && metrics.posts);
+    var liveCount = responses[5].ok ? responses[5].count : (metrics && metrics.streams);
+    var posts = responses[4].ok && Array.isArray(responses[4].data) ? responses[4].data : [];
+    var lives = responses[5].ok && Array.isArray(responses[5].data) ? responses[5].data : [];
+    var gifts = responses[6].ok && Array.isArray(responses[6].data) ? responses[6].data : [];
+    var wallet = responses[7].ok ? responses[7].data : null;
     function value(v) { return v === undefined || v === null || !Number.isFinite(Number(v)) ? 'Unavailable' : CHL.fmt(Number(v)); }
     function stat(label, val, detail) {
       summary.appendChild(ui.statCard(val === undefined || val === null ? 'Unavailable' : value(val),label));
@@ -235,82 +233,28 @@
 
   /* ---- teams ---- */
   CHL.route('/teams', function(o,r){
-    if (guard(o,'Teams','Create or join a team, climb levels 1–50, compete in leagues.')) return;
+    if (guard(o,'Teams','Create or join a team, climb levels 1\u201350, compete in leagues.')) return;
     if (r.params && r.params.length){ renderTeam(o, r.params[0]); return; }
-    var createPanel = el('div',{class:'card',style:'display:none;margin-bottom:12px'});
-    var createForm = el('form',{class:'stack',style:'gap:10px'});
-    var nameInput = el('input',{id:'chl-team-name',class:'input',type:'text',name:'name',minlength:'3',maxlength:'40',required:'required',autocomplete:'off',placeholder:'Choose a name (3–40 characters)','aria-label':'Team name'});
-    var createError = el('div',{class:'note',role:'status','aria-live':'polite',style:'display:none'});
-    var createActions = el('div',{class:'row wrap',style:'gap:8px'});
-    var createSave = el('button',{class:'btn primary',type:'submit',text:'Create team'});
-    var createCancel = el('button',{class:'btn',type:'button',text:'Cancel'});
-    createActions.appendChild(createSave); createActions.appendChild(createCancel);
-    createForm.appendChild(el('label',{class:'label',text:'Team name',for:'chl-team-name'}));
-    createForm.appendChild(nameInput); createForm.appendChild(createError); createForm.appendChild(createActions); createPanel.appendChild(createForm);
-    createPanel.id='chl-team-create';
-    var openCreate = el('button',{class:'btn primary',type:'button',text:'➕ Create team','aria-expanded':'false','aria-controls':'chl-team-create'});
-    openCreate.addEventListener('click',function(){
-      if(!CHL.user){CHL.navigate('#/login');return;}
-      var opening=createPanel.style.display==='none'; createPanel.style.display=opening?'block':'none'; openCreate.setAttribute('aria-expanded',opening?'true':'false');
-      if(opening)nameInput.focus();
-    });
-    createCancel.addEventListener('click',function(){createPanel.style.display='none';createError.style.display='none';openCreate.setAttribute('aria-expanded','false');});
-    createForm.addEventListener('submit',async function(event){
-      event.preventDefault(); var name=String(nameInput.value||'').trim().replace(/\s+/g,' ');
-      createError.style.display='none'; createError.textContent='';
-      if(name.length<3||name.length>40){createError.textContent='Team names must contain 3–40 characters.';createError.style.display='block';nameInput.focus();return;}
-      createSave.disabled=true;createSave.textContent='Creating…';
-      try{
-        var result=await CHL.authenticatedApiRequest('/api/teams',{method:'POST',body:{name:name}});
-        var team=result&&result.team; if(Array.isArray(team))team=team[0];
-        if(!team||!team.id)throw new Error('The server did not return the created team. Refresh the teams list before trying again.');
-        CHL.toast('Team created.'); CHL.navigate('#/teams/'+encodeURIComponent(team.id));
-      }catch(error){createError.textContent=error&&error.message||'Could not create this team. Please try again.';createError.style.display='block';}
-      finally{createSave.disabled=false;createSave.textContent='Create team';}
-    });
-    o.appendChild(el('div',{class:'row between',style:'margin-bottom:12px;gap:8px;flex-wrap:wrap'},[el('span',{text:'Discover teams and join a community.'}),openCreate]));
-    o.appendChild(createPanel);
+    var top=el('div',{class:'row between',style:'margin-bottom:12px'},[ el('span'), el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){CHL.navigate('#/login');return;} CHL.toast('Create-team form \u2014 connect backend to persist'); }},'\u2795 Create team') ]);
+    o.appendChild(top);
     var list=el('div',{class:'grid live'}); o.appendChild(list); list.appendChild(ui.spinner());
-    CHL.apiRequest('/api/teams?limit=30').then(function(response){
-      list.innerHTML=''; var rows=response&&Array.isArray(response.teams)?response.teams:[];
-      if(!rows.length){list.appendChild(ui.empty('🛡️','No teams yet','Be the first to create a team.'));list.style.display='block';return;}
-      list.style.display=''; rows.forEach(function(t){list.appendChild(el('button',{type:'button',class:'tile',style:'width:100%;text-align:left;color:inherit',onclick:function(){CHL.navigate('#/teams/'+encodeURIComponent(t.id));}},[
-        el('div',{class:'thumb'},[el('div',{class:'ava',text:CHL.initials(t.name).toUpperCase()})]),
-        el('div',{class:'meta'},[el('div',{class:'t',text:t.name}),el('div',{class:'u',text:'Lv '+(t.level||1)+' · '+CHL.fmt(t.points||0)+' pts'})])
-      ]));});
-    }).catch(function(error){list.innerHTML='';list.appendChild(ui.empty('⚠️','Teams unavailable',error&&error.message||'The team service could not be reached. Please retry.'));});
+    sb.from('teams').select('id,name,level,points').order('points',{ascending:false}).limit(30)
+      .then(function(r2){ list.innerHTML=''; var rows=(r2&&r2.data)||[];
+        if(!rows.length){ list.appendChild(ui.empty('\uD83D\uDEE1\uFE0F','No teams yet','Be the first to create a team.')); list.style.display='block'; return; }
+        list.style.display=''; rows.forEach(function(t){ list.appendChild(el('div',{class:'tile',onclick:function(){ CHL.navigate('#/teams/'+t.id); }},[ el('div',{class:'thumb'},[ el('div',{class:'ava',text:CHL.initials(t.name).toUpperCase()}) ]), el('div',{class:'meta'},[ el('div',{class:'t',text:t.name}), el('div',{class:'u',text:'Lv '+(t.level||1)+' \u00B7 '+CHL.fmt(t.points||0)+' pts'}) ]) ])); });
+      }).catch(function(){ list.innerHTML=''; list.appendChild(ui.empty('\uD83D\uDEE1\uFE0F','No teams yet','Be the first to create a team.')); });
   });
   function renderTeam(o, id){
-    var teamId=String(id||''); o.appendChild(ui.spinner());
-    CHL.apiRequest('/api/teams/'+encodeURIComponent(teamId)).then(async function(response){
-      var t=response&&response.team; if(!t)throw new Error('The server did not return this team.');
-      var members=[];
-      try{var memberResponse=await CHL.apiRequest('/api/teams/'+encodeURIComponent(teamId)+'/members');members=memberResponse&&Array.isArray(memberResponse.members)?memberResponse.members:[];}catch(_){members=[];}
-      o.innerHTML='';
-      var details=el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;flex-wrap:wrap'},[
-        el('div',{class:'ava',style:'width:64px;height:64px;font-size:24px',text:CHL.initials(t.name).toUpperCase()}),
-        el('div',{style:'flex:1;min-width:160px'},[el('div',{style:'font-size:20px;font-weight:800',text:t.name}),el('div',{style:'color:var(--mut)',text:'Level '+(t.level||1)+' · '+CHL.fmt(t.points||0)+' points'}),el('div',{style:'color:var(--mut);font-size:12px;margin-top:4px',text:members.length+' member'+(members.length===1?'':'s')})])
-      ]); o.appendChild(details);
-      var isOwner=!!(CHL.user&&String(t.owner_id)===String(CHL.user.id));
-      var isMember=!!(CHL.user&&members.some(function(member){return String(member.user_id)===String(CHL.user.id);}));
-      var action=el('button',{class:'btn primary',type:'button',text:isOwner?'Team owner':(isMember?'Leave team':'Join team')}); action.disabled=isOwner;
-      action.addEventListener('click',async function(){
-        if(!CHL.user){CHL.navigate('#/login');return;}
-        if(isMember&&!window.confirm('Leave this team? You can request to join again later.'))return;
-        action.disabled=true; action.textContent=isMember?'Leaving…':'Joining…';
-        try{
-          if(isMember){await CHL.authenticatedApiRequest('/api/teams/'+encodeURIComponent(teamId)+'/leave',{method:'DELETE',body:{}});CHL.toast('You left the team.');}
-          else{await CHL.authenticatedApiRequest('/api/teams/'+encodeURIComponent(teamId)+'/join',{method:'POST',body:{}});CHL.toast('You joined the team.');}
-          renderTeam(o,teamId);
-        }catch(error){CHL.toast(error&&error.message||'The team membership could not be updated.');action.disabled=false;action.textContent=isOwner?'Team owner':(isMember?'Leave team':'Join team');}
-      });
-      details.appendChild(action);
-      if(isOwner)o.appendChild(el('div',{class:'note',style:'margin-top:8px',text:'You own this team. Transfer ownership before leaving.'}));
-      var memberPanel=el('div',{class:'card',style:'margin-top:12px'}); memberPanel.appendChild(el('div',{style:'font-weight:800;margin-bottom:8px',text:'Members'}));
-      if(!members.length)memberPanel.appendChild(el('div',{class:'note',text:'Member details are currently unavailable.'}));
-      else members.forEach(function(member){var profile=member.profile||{};var display=profile.display_name||profile.username||'Creator';memberPanel.appendChild(el('div',{class:'row between',style:'gap:10px;padding:7px 0;border-bottom:1px solid var(--line)'},[el('span',{text:display}),el('span',{class:'chip',text:member.role==='owner'?'Owner':(member.role||'Member')})]));});
-      o.appendChild(memberPanel); o.appendChild(el('a',{href:'#/teams',class:'btn',style:'margin-top:12px;display:inline-flex'},'← All teams'));
-    }).catch(function(error){o.innerHTML='';o.appendChild(ui.empty('⚠️','Team unavailable',error&&error.message||'This team could not be loaded.',el('a',{href:'#/teams',class:'btn',style:'margin-top:8px'},'All teams')));});
+    o.appendChild(ui.spinner());
+    sb.from('teams').select('id,name,level,points').eq('id',id).maybeSingle()
+      .then(function(res){ o.innerHTML=''; var t=res&&res.data;
+        if(!t){ o.appendChild(ui.empty('\uD83D\uDEE1\uFE0F','Team not found','This team may have disbanded.', el('a',{href:'#/teams',class:'btn',style:'margin-top:8px'},'All teams'))); return; }
+        o.appendChild(el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;flex-wrap:wrap'},[
+          el('div',{class:'ava',style:'width:64px;height:64px;font-size:24px',text:CHL.initials(t.name).toUpperCase()}),
+          el('div',{style:'flex:1;min-width:160px'},[ el('div',{style:'font-size:20px;font-weight:800',text:t.name}), el('div',{style:'color:var(--mut)',text:'Level '+(t.level||1)+' \u00B7 '+CHL.fmt(t.points||0)+' points'}) ]),
+          el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){CHL.navigate('#/login');return;} CHL.toast('Join request sent'); }},'Join team')
+        ]));
+      }).catch(function(e){ o.innerHTML=''; o.appendChild(el('div',{class:'note',text:e.message})); });
   }
 
   CHL.route('/leagues', function(o,r){
