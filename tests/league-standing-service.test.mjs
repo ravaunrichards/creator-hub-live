@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { handleTeamsRoute } from '../backend/src/teams-routes.js';
+import { handleTeamsRoute } from '../reference/teams-routes.js';
 
 function fakeDb({ memberships = [], season = null, standings = [], teams = [], errors = {} } = {}) {
   return {
@@ -70,4 +70,13 @@ const page = await readFile(new URL('../frontend/src/chl-rank-achievements.js', 
 assert.ok(page.includes("CHL.authenticatedApiRequest('/api/leagues/my-standing')"));
 assert.ok(!page.includes("sb.from('team_members')"), 'standing page must not query team_members directly from the browser');
 assert.ok(page.includes('No active league season'));
+const tierBlock = page.match(/var TIERS = \[([\s\S]*?)\n  \];/);
+assert.ok(tierBlock, 'rank tier configuration exists');
+const tierKeys = [...tierBlock[1].matchAll(/key: '([^']+)'/g)].map(match => match[1]);
+assert.deepEqual(tierKeys, ['bronze', 'silver', 'gold', 'master', 'grandmaster']);
+assert.ok(tierBlock[1].includes("divisions: ['I', 'II', 'III']"), 'Bronze/Silver sublevels are preserved');
+assert.ok(tierBlock[1].includes("divisions: ['I', 'II', 'III', 'IV']"), 'Gold I–IV sublevels are preserved');
+assert.ok(!tierBlock[1].includes("key: 'platinum'"));
+assert.ok(!tierBlock[1].includes("key: 'diamond'"));
+assert.ok(!tierBlock[1].includes("key: 'heroic'"));
 console.log('League standing service tests passed (4 route cases + frontend contract).');
