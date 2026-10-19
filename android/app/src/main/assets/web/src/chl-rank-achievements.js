@@ -6,16 +6,16 @@
   if (!CHL || !CHL.routes || !CHL.el || !CHL.ui) return;
   var el = CHL.el;
   var ui = CHL.ui;
+  var sb = CHL.sb;
 
+  // CHL's requested original five-tier competitive rank ladder. Keep team
+  // league divisions A1–D5 separate; never insert unrelated rank tiers here.
   var TIERS = [
-    { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry tier for new competitors to learn the fundamentals.' },
-    { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistent coordination and sound rotation decisions.' },
-    { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Show reliable mechanics, execution and match awareness.' },
-    { key: 'platinum', name: 'Platinum', icon: '💎', divisions: ['I', 'II', 'III', 'IV'], description: 'Apply strategy, character skills and loadout decisions effectively.' },
-    { key: 'diamond', name: 'Diamond', icon: '👑', divisions: ['I', 'II', 'III', 'IV'], description: 'Demonstrate high-level communication, utility and fast decisions.' },
-    { key: 'heroic', name: 'Heroic', icon: '🎖️', divisions: [], description: 'Professional tier for highly skilled competitive squads.' },
-    { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'Exceptional game sense, execution and team synergy.' },
-    { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The regional peak, reserved for top-ranked competitors.', note: 'Top 100–1,000' }
+    { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry rank and first step in the CHL competitive ladder.' },
+    { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistency and progress through the Silver rank.' },
+    { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Advance through Gold before reaching the elite ranks.' },
+    { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'An advanced competitive rank earned through verified results.' },
+    { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The highest CHL competitive rank, awarded only from verified results.' }
   ];
 
   var DIVISION_BANDS = [
@@ -138,26 +138,20 @@
       return;
     }
 
-    // Use the authenticated server route for membership and standings together.
-    // Direct client reads of team_members can be denied by RLS and previously
-    // caused this whole card to fall into the generic verification error state.
-    CHL.authenticatedApiRequest('/api/leagues/my-standing').then(function (standingsData) {
-      standingsData = standingsData || {};
-      var memberships = Array.isArray(standingsData.memberships) ? standingsData.memberships : [];
-      var standings = Array.isArray(standingsData.standings) ? standingsData.standings : [];
-      var teamIds = new Set(memberships.map(function (m) { return String(m.team_id || ''); }).filter(Boolean));
-      var ownRows = standings.filter(function (row) { return teamIds.has(String(row.team_id || '')); });
+    CHL.authenticatedApiRequest('/api/leagues/my-standing').then(function (data) {
+      var memberships = Array.isArray(data && data.memberships) ? data.memberships : [];
+      var ownRows = Array.isArray(data && data.standings) ? data.standings : [];
       body.innerHTML = '';
       if (!memberships.length) {
-        body.appendChild(ui.empty('🛡️', 'No team standing yet', 'Join a CHL team to see its official division, position and points here. No rank has been assigned from unrelated creator activity.'));
+        body.appendChild(ui.empty('🛡️', 'No team standing yet', 'Your account is not listed as a member of a CHL team. Join a team to see its official division, position and points here.'));
         return;
       }
-      if (!standingsData.season) {
-        body.appendChild(ui.empty('🗓️', 'No active league season', 'Your team membership was verified, but CHL has no active season yet. Your division and points have not been changed.'));
+      if (!data.season) {
+        body.appendChild(ui.empty('🗓️', 'No active league season', 'Your team membership was verified, but CHL has no active league season configured. Your rank and division have not been changed.'));
         return;
       }
       if (!ownRows.length) {
-        body.appendChild(ui.empty('🏆', 'Standing not initialized yet', 'Your team membership and active season were verified, but no official standing row exists for your team in this season. No rank or points have been invented.'));
+        body.appendChild(ui.empty('🏆', 'No active-season position available', 'Your team membership and active season were verified, but no official standing exists for your team yet.'));
         return;
       }
       ownRows.forEach(function (row) {
@@ -173,9 +167,10 @@
           el('span', { class: 'chl-rank-division-code', text: division })
         ]));
       });
-    }).catch(function () {
+    }).catch(function (error) {
       body.innerHTML = '';
-      body.appendChild(ui.empty('⚠️', 'Standing could not be verified', 'The league or team-membership service is unavailable. Your rank and division have not been changed. Refresh after the service is reachable.'));
+      var detail = error && error.code ? ' Error code: ' + String(error.code) + '.' : '';
+      body.appendChild(ui.empty('⚠️', 'Standing could not be verified', 'CHL could not verify your team membership and official league standing. Your rank and division have not been changed.' + detail + ' Refresh after the service is reachable.'));
     });
   }
 
