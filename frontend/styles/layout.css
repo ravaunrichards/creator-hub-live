@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview .demo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}.chl-preview .demo-card,.chl-preview .demo-panel{background:white;border:1px solid #e7eaf1;border-radius:18px;padding:18px;box-shadow:0 8px 26px #1a23371a}.chl-preview .demo-card h3{margin:0 0 8px}

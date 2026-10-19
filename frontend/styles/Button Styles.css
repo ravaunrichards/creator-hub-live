@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview .demo-button{border:0;border-radius:999px;background:linear-gradient(135deg,#6d28d9,#2563eb);color:white;padding:12px 18px;font-weight:750;box-shadow:0 8px 20px #4f46e140;transition:transform .18s,box-shadow .18s}.chl-preview .demo-button:hover{transform:translateY(-2px);box-shadow:0 12px 26px #4f46e152}.chl-preview .demo-button:active{transform:scale(.98)}

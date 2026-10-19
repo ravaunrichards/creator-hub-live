@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview :focus-visible{outline:3px solid #f59e0b;outline-offset:3px}.chl-preview .demo-button,.chl-preview input,.chl-preview select{min-height:44px}.chl-preview{color:#111827}.chl-preview .muted{color:#374151}
