@@ -1,2 +1,0 @@
-/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
-.chl-preview .demo-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr))}.chl-preview .demo-button,.chl-preview input{min-height:44px}.chl-preview{padding:clamp(12px,3vw,24px)}@media(max-width:600px){.chl-preview .demo-grid{grid-template-columns:1fr}.chl-preview .demo-toolbar{flex-wrap:wrap}.chl-preview .demo-button{width:100%}}
