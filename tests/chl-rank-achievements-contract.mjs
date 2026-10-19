@@ -29,7 +29,7 @@ for (const required of [
   'Top 100–1,000',
   "CHL.routes['/creator/achievements'] = renderAchievements",
   "CHL.routes['/achievements'] = renderAchievements",
-  "'/api/leagues/standings'",
+  "'/api/leagues/my-standing'",
   "'/api/creator/tasks'",
   'A tier is only official when CHL has a verified ranked result and an assigned rank.',
   'Creator Activity Missions'
@@ -70,7 +70,7 @@ const mockCHL = {
   },
   sb: { from() { return { select() { return this; }, eq() { return Promise.resolve({ data: [] }); } }; } },
   authenticatedApiRequest(path) {
-    if (path === '/api/leagues/standings') return Promise.resolve({ standings: [] });
+    if (path === '/api/leagues/my-standing') return Promise.resolve({ memberships: [], season: null, standings: [] });
     if (path === '/api/creator/tasks') return Promise.resolve({ activeTask: { cycleNo: 1, title: 'Go LIVE for 15 minutes', description: 'Host a real session', progress: 0, target: 15 }, history: [] });
     return Promise.reject(new Error('Unexpected endpoint: ' + path));
   },
