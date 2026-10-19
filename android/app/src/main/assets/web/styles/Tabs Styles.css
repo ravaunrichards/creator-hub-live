@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview .demo-nav{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #e5e7eb;padding-bottom:12px}.chl-preview .demo-nav a{color:#4f46e5;text-decoration:none;font-weight:700;padding:8px 10px;border-radius:9px}.chl-preview .demo-nav a:hover{background:#eef2ff}

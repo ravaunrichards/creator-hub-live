@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+*,*::before,*::after{box-sizing:border-box}.chl-preview h1,.chl-preview h2,.chl-preview p{margin-top:0}.chl-preview button,.chl-preview input{font:inherit}.chl-preview img{max-width:100%;display:block}
