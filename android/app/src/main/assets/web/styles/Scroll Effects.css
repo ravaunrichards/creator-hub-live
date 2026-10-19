@@ -1,2 +1,0 @@
-/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
-.chl-preview .demo-card{transition:transform .25s,box-shadow .25s;animation:chlFloat 4s ease-in-out infinite}.chl-preview .demo-card:hover{transform:translateY(-4px);box-shadow:0 18px 35px #1f293726}@keyframes chlFloat{0%,100%{translate:0 0}50%{translate:0 -3px}}@media(prefers-reduced-motion:reduce){.chl-preview *{animation:none!important;transition:none!important}}
