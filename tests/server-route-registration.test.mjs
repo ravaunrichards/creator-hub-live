@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+const installer = await readFile(new URL('../apply-server-route-fix.mjs', import.meta.url), 'utf8');
+assert.ok(installer.includes('pathname.startsWith("/api/leagues/")'), 'safe installer must register the league route prefix');
+assert.ok(installer.includes('if (count !== 1)'), 'installer must refuse unknown source layouts');
+assert.ok(installer.includes('before-chl-league-route-fix.bak'), 'installer must back up server.js before editing');
+const routes = await readFile(new URL('../reference/teams-routes.js', import.meta.url), 'utf8');
+assert.ok(routes.includes('pathname === "/api/leagues/my-standing"'), 'my-standing endpoint exists');
+assert.ok(routes.includes('pathname === "/api/leagues/standings"'), 'public standings endpoint remains available');
+console.log('Server route-registration contract passed.');
