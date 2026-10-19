@@ -1,0 +1,2 @@
+/* CHL CSS Style Lab: standalone visual experiment. Scoped to .chl-preview; review before production integration. */
+.chl-preview{background:linear-gradient(135deg,#312e81,#0891b2);padding:20px;border-radius:20px}.chl-preview .demo-card,.chl-preview .demo-panel{background:#ffffff29;color:white;border:1px solid #ffffff55;backdrop-filter:blur(14px);box-shadow:0 12px 35px #0003}.chl-preview .muted{color:#ffffffc9}
