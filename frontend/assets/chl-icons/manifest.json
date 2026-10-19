@@ -1,0 +1,72 @@
+{
+  "name": "Creator Hub Live UI icon additions",
+  "version": "1.0.0",
+  "policy": "Additive; existing root icons and gift assets are not replaced.",
+  "icons": [
+    {
+      "id": "audio-live",
+      "path": "assets/chl-icons/audio-live.svg",
+      "accessible_name": "Audio Live"
+    },
+    {
+      "id": "captions",
+      "path": "assets/chl-icons/captions.svg",
+      "accessible_name": "Captions"
+    },
+    {
+      "id": "device-desktop",
+      "path": "assets/chl-icons/device-desktop.svg",
+      "accessible_name": "Device Desktop"
+    },
+    {
+      "id": "device-tablet",
+      "path": "assets/chl-icons/device-tablet.svg",
+      "accessible_name": "Device Tablet"
+    },
+    {
+      "id": "guest-add",
+      "path": "assets/chl-icons/guest-add.svg",
+      "accessible_name": "Guest Add"
+    },
+    {
+      "id": "live-status",
+      "path": "assets/chl-icons/live-status.svg",
+      "accessible_name": "Live Status"
+    },
+    {
+      "id": "mobile-device",
+      "path": "assets/chl-icons/mobile-device.svg",
+      "accessible_name": "Mobile Device"
+    },
+    {
+      "id": "moderator-shield",
+      "path": "assets/chl-icons/moderator-shield.svg",
+      "accessible_name": "Moderator Shield"
+    },
+    {
+      "id": "poll",
+      "path": "assets/chl-icons/poll.svg",
+      "accessible_name": "Poll"
+    },
+    {
+      "id": "question",
+      "path": "assets/chl-icons/question.svg",
+      "accessible_name": "Question"
+    },
+    {
+      "id": "reaction",
+      "path": "assets/chl-icons/reaction.svg",
+      "accessible_name": "Reaction"
+    },
+    {
+      "id": "screen-share",
+      "path": "assets/chl-icons/screen-share.svg",
+      "accessible_name": "Screen Share"
+    },
+    {
+      "id": "video-live",
+      "path": "assets/chl-icons/video-live.svg",
+      "accessible_name": "Video Live"
+    }
+  ]
+}
