@@ -16,33 +16,36 @@ This is the **rank/achievement interface correction**, not a new server-side ran
 
 ## Files in this ZIP
 
-Only the changed/new files are included:
+This is a targeted edited-files package, not the full project. It contains only the files needed for the standing-route correction, its web/Android presentation, and focused verification:
 
-- `frontend/index.html`
-- `frontend/sw.js`
-- `frontend/src/chl-rank-achievements.js` (new)
-- `frontend/styles/creator-ranks.css` (new)
-- `android/app/src/main/assets/web/index.html`
-- `android/app/src/main/assets/web/sw.js`
-- `android/app/src/main/assets/web/src/chl-rank-achievements.js` (new)
-- `android/app/src/main/assets/web/styles/creator-ranks.css` (new)
-- `tests/chl-rank-achievements-contract.mjs` (new)
-- `CHL-RANK-ACHIEVEMENTS-MANUAL-INSTALL.md` (this guide)
+- `backend/src/team-leagues.js` — authenticated `/api/leagues/my-standing` route.
+- `backend/tests/team-standing-route.test.js` — focused backend route regression tests.
+- `frontend/src/chl-rank-achievements.js` — corrected Ranks & Achievements page.
+- `frontend/index.html` and `frontend/sw.js` — load and precache the new page assets.
+- `frontend/styles/creator-ranks.css` — responsive page styling.
+- `android/app/src/main/assets/web/src/chl-rank-achievements.js` — synchronized Android WebView page.
+- `android/app/src/main/assets/web/index.html` and `android/app/src/main/assets/web/sw.js` — Android asset loading and precache.
+- `android/app/src/main/assets/web/styles/creator-ranks.css` — matching Android styling.
+- `tests/chl-rank-achievements-contract.mjs` — web/Android and UI contract test.
+- `README-CHL-TEAM-STANDING-FIX.txt` and this guide.
 
-No existing gifter-badge files are included in the ZIP; that is deliberate so they cannot be accidentally overwritten.
+No wallet, gift-catalogue, gifter-badge, live-room, environment, or unrelated project files are included.
 
 ## Manual installation
 
-1. Keep a backup of the current `main` branch or save a copy of each existing file listed above.
-2. Upload the ZIP contents to the same paths in the existing `ravaunrichards/creator-hub-live` repository. Add the four files marked **new**; replace only the four existing web/Android HTML and service-worker files listed above. Do not replace the repository or unrelated files.
-3. Confirm the static-site build has completed before opening Creator Center → Ranks & Achievements. The service-worker cache was bumped to `chl-web-v3-3-7` and the new assets are in the precache list.
-4. Run the focused contract check from the repository root:
+1. Back up only the matching files listed above before replacing them. Keep your existing repository and all unrelated files.
+2. Copy each ZIP file to the exact same relative path in the existing `creator-hub-live` repository. The existing `backend/src/server.js` already registers the league route; it is intentionally not included because it is not changed by this fix.
+3. Run these focused checks from the repository root:
 
    ```sh
+   node --test backend/tests/team-standing-route.test.js
    node tests/chl-rank-achievements-contract.mjs
    ```
 
-5. Test the page signed in and signed out, on desktop and a narrow phone viewport. Verify team standing is based on the signed-in user's actual `team_members` relation and `/api/leagues/standings` response. If the backend or season has no standings, the page must say so rather than show sample points.
+4. After both checks pass, deploy the backend and frontend through your normal authorized process. Clear/reload the web app or update the Android APK as appropriate so the service-worker cache refreshes.
+5. Test signed in and signed out on desktop and a narrow phone viewport. Verify the card distinguishes no membership, no active season, and uninitialized standings.
+
+The live database currently contains no teams, memberships, seasons, or standings. This correction does not create sample data or bypass the active-season safety checks, so a real standing will appear only after genuine teams and an authorized season are configured.
 
 ## Preserved CHL specification context
 
