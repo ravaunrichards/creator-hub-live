@@ -1,0 +1,199 @@
+{
+  "project": "Creator Hub Live",
+  "package_kind": "full local recovery reconstruction",
+  "created_utc": "2026-10-18T00:36:56.523017+00:00",
+  "remote_services_modified": false,
+  "note": "Missing page/style modules were reconstructed locally; this is not byte-for-byte recovery of the unavailable creator-pages update archive. Android WebView assets are synced; the APK binaries were not rebuilt in this environment.",
+  "changed_files": [
+    {
+      "path": "frontend/src/livekit.js",
+      "bytes": 26003,
+      "sha256": "32018a3700a734bacd1e3445c663f55aed4fb94a6f15d6fe9132d138e7dbc906"
+    },
+    {
+      "path": "frontend/src/pages-room.js",
+      "bytes": 82458,
+      "sha256": "ab63a181e1a439a02d77a0d565e35c0eff21d79cda2316a12d1b4d53f708002a"
+    },
+    {
+      "path": "frontend/src/pages-wallet.js",
+      "bytes": 37552,
+      "sha256": "a7a42f01a7331ba8e217755e4c4f3e1dc89b07960896e3344d2ef18ed2fb23e9"
+    },
+    {
+      "path": "frontend/src/pages.js",
+      "bytes": 3788,
+      "sha256": "945ba8c89509d8028aa926b45799e03096b1b2b20b5633a04cc7a7ff3677558b"
+    },
+    {
+      "path": "frontend/src/pages-teams.js",
+      "bytes": 3732,
+      "sha256": "9b29fdc4312611edb591231c3c962a1f63670cc661d5512a0a357111427fc561"
+    },
+    {
+      "path": "frontend/src/pages-accessibility.js",
+      "bytes": 3086,
+      "sha256": "930ea3f3aa9c8ab83ebefa5971f19fe651869bf46396777ce06e17b162e83b0f"
+    },
+    {
+      "path": "frontend/src/pages-account.js",
+      "bytes": 2462,
+      "sha256": "8cf3d8e80ec4083d936aeac10f40f247676fc5f2126d32b69e302c99906690a4"
+    },
+    {
+      "path": "frontend/src/pages-community.js",
+      "bytes": 1579,
+      "sha256": "d56ba0728e43b061500ea8d4273b57cec45e6f45e57a0a173916c8975757ec21"
+    },
+    {
+      "path": "frontend/src/pages-profile.js",
+      "bytes": 404,
+      "sha256": "30365ebd4f9ebf2365b8e2b2c2f53daeda6c94b6acb4e7a3ada8aea73049e657"
+    },
+    {
+      "path": "frontend/src/pages-platform-tools.js",
+      "bytes": 2138,
+      "sha256": "985f86ff52ee62f47ec6e23c5e957a0a2d04e892b9db20b12942b7516e3ddd74"
+    },
+    {
+      "path": "frontend/src/studio-edition.js",
+      "bytes": 586,
+      "sha256": "b6fee90654e005d0f25130c18caf7b9b7ed747a0db5c2c862f1adc5c137661f9"
+    },
+    {
+      "path": "frontend/styles/studio-edition.css",
+      "bytes": 676,
+      "sha256": "c08389754561a242d26bf5a50b3fa78d0ccfe76f51fcb55effef483ec0bdb6aa"
+    },
+    {
+      "path": "frontend/styles/nexus-edition.css",
+      "bytes": 1296,
+      "sha256": "369e2adca7ce4df257a62c47e246edf31e5e8574c74402d9e11c334401a20757"
+    },
+    {
+      "path": "frontend/styles/chl-style-system.css",
+      "bytes": 926,
+      "sha256": "5839d9fb8e4cd1ea7fc03a7937af65799bd42f9c436f664ad6dd6b83293cbef7"
+    },
+    {
+      "path": "frontend/index.html",
+      "bytes": 5164,
+      "sha256": "1ef5376d8b93394834eeefe59ae032352a2e45d226fa43e6c13e0c92391d6300"
+    },
+    {
+      "path": "frontend/sw.js",
+      "bytes": 2724,
+      "sha256": "faf63edb5c1750235ec9a87249bd59c8fc968f9cc7c53c9d74c18dde4b6df5d8"
+    },
+    {
+      "path": "backend/src/server.js",
+      "bytes": 117895,
+      "sha256": "54c27d98fddfad0114776022e5565aaf225bd5d33025ad880a52a6bbf5157b36"
+    },
+    {
+      "path": "backend/src/teams-routes.js",
+      "bytes": 5051,
+      "sha256": "7874de5d0a87edf5fdd7416f414125bd5226a3e5794b0914b04b7b17ebacebcd"
+    },
+    {
+      "path": "backend/src/team-leagues.js",
+      "bytes": 3492,
+      "sha256": "b9e956ae4ba39e427feab3fec23def6bdb0916df58bc9893f15ab40f1936f1f4"
+    },
+    {
+      "path": "backend/package.json",
+      "bytes": 1194,
+      "sha256": "4e2ec73f67fabf4b7fcc3dbd15f50b6a95b2b54dcd148190afb5f6d7ee9cd264"
+    },
+    {
+      "path": "tests/recovery-pages-contract.mjs",
+      "bytes": 2539,
+      "sha256": "c72a961c0880c1df002b4eb3e5ed381fc7f3b28c6f83b97d3b9f18b9c23b81bd"
+    },
+    {
+      "path": "tests/live-controls-contract.mjs",
+      "bytes": 2221,
+      "sha256": "8a891b8d8e946990319b75beae9ef508cc44fe9bb2ac6358c26791fd58bba7a2"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/livekit.js",
+      "bytes": 26003,
+      "sha256": "32018a3700a734bacd1e3445c663f55aed4fb94a6f15d6fe9132d138e7dbc906"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-room.js",
+      "bytes": 82458,
+      "sha256": "ab63a181e1a439a02d77a0d565e35c0eff21d79cda2316a12d1b4d53f708002a"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-wallet.js",
+      "bytes": 37552,
+      "sha256": "a7a42f01a7331ba8e217755e4c4f3e1dc89b07960896e3344d2ef18ed2fb23e9"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages.js",
+      "bytes": 3788,
+      "sha256": "945ba8c89509d8028aa926b45799e03096b1b2b20b5633a04cc7a7ff3677558b"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-teams.js",
+      "bytes": 3732,
+      "sha256": "9b29fdc4312611edb591231c3c962a1f63670cc661d5512a0a357111427fc561"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-accessibility.js",
+      "bytes": 3086,
+      "sha256": "930ea3f3aa9c8ab83ebefa5971f19fe651869bf46396777ce06e17b162e83b0f"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-account.js",
+      "bytes": 2462,
+      "sha256": "8cf3d8e80ec4083d936aeac10f40f247676fc5f2126d32b69e302c99906690a4"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-community.js",
+      "bytes": 1579,
+      "sha256": "d56ba0728e43b061500ea8d4273b57cec45e6f45e57a0a173916c8975757ec21"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-profile.js",
+      "bytes": 404,
+      "sha256": "30365ebd4f9ebf2365b8e2b2c2f53daeda6c94b6acb4e7a3ada8aea73049e657"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/pages-platform-tools.js",
+      "bytes": 2138,
+      "sha256": "985f86ff52ee62f47ec6e23c5e957a0a2d04e892b9db20b12942b7516e3ddd74"
+    },
+    {
+      "path": "android/app/src/main/assets/web/src/studio-edition.js",
+      "bytes": 586,
+      "sha256": "b6fee90654e005d0f25130c18caf7b9b7ed747a0db5c2c862f1adc5c137661f9"
+    },
+    {
+      "path": "android/app/src/main/assets/web/styles/studio-edition.css",
+      "bytes": 676,
+      "sha256": "c08389754561a242d26bf5a50b3fa78d0ccfe76f51fcb55effef483ec0bdb6aa"
+    },
+    {
+      "path": "android/app/src/main/assets/web/styles/nexus-edition.css",
+      "bytes": 1296,
+      "sha256": "369e2adca7ce4df257a62c47e246edf31e5e8574c74402d9e11c334401a20757"
+    },
+    {
+      "path": "android/app/src/main/assets/web/styles/chl-style-system.css",
+      "bytes": 926,
+      "sha256": "5839d9fb8e4cd1ea7fc03a7937af65799bd42f9c436f664ad6dd6b83293cbef7"
+    },
+    {
+      "path": "android/app/src/main/assets/web/index.html",
+      "bytes": 5164,
+      "sha256": "1ef5376d8b93394834eeefe59ae032352a2e45d226fa43e6c13e0c92391d6300"
+    },
+    {
+      "path": "android/app/src/main/assets/web/sw.js",
+      "bytes": 2724,
+      "sha256": "faf63edb5c1750235ec9a87249bd59c8fc968f9cc7c53c9d74c18dde4b6df5d8"
+    }
+  ]
+}

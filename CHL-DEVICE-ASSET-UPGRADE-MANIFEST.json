@@ -1,0 +1,40 @@
+{
+  "project": "Creator Hub Live",
+  "package": "Device, Icon, Model & Verification Upgrade",
+  "date": "2026-10-17",
+  "install_mode": "manual",
+  "remote_changes": false,
+  "replaced_files": [
+    "frontend/index.iphone.html"
+  ],
+  "added_files": [
+    "INSTALL.md",
+    "docs/PLATFORM-PATTERNS.md",
+    "frontend/assets/chl-icons/README.md",
+    "frontend/assets/chl-icons/audio-live.svg",
+    "frontend/assets/chl-icons/captions.svg",
+    "frontend/assets/chl-icons/device-desktop.svg",
+    "frontend/assets/chl-icons/device-tablet.svg",
+    "frontend/assets/chl-icons/guest-add.svg",
+    "frontend/assets/chl-icons/live-status.svg",
+    "frontend/assets/chl-icons/manifest.json",
+    "frontend/assets/chl-icons/mobile-device.svg",
+    "frontend/assets/chl-icons/moderator-shield.svg",
+    "frontend/assets/chl-icons/poll.svg",
+    "frontend/assets/chl-icons/question.svg",
+    "frontend/assets/chl-icons/reaction.svg",
+    "frontend/assets/chl-icons/screen-share.svg",
+    "frontend/assets/chl-icons/video-live.svg",
+    "frontend/index.iphone.html",
+    "models/GLB-QUALITY-STANDARD.md",
+    "patches/README.md",
+    "scripts/audit-chl-assets.mjs",
+    "scripts/sync-web-assets-safe.mjs",
+    "tests/device-readiness-contract.mjs",
+    "verification/VERIFICATION-REPORT.md",
+    "verification/device-release-matrix.md"
+  ],
+  "existing_gift_models_modified": false,
+  "wallet_payment_or_database_changes": false,
+  "device_builds_performed": false
+}
