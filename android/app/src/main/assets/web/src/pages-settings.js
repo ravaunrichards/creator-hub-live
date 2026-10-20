@@ -3,11 +3,11 @@
   'use strict';
   var CHL = window.CHL; var el = CHL.el, ui = CHL.ui, sb = CHL.sb;
   var lastLoadedSettings = null;
-  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{mode:'individual',theme:'night',typography:'system',surfaces:'standard',density:'comfortable',motion:'standard',contrast:'standard'} };
+  var SETTING_DEFAULTS = { privacy:{account:'public',messages:'everyone',comments:'everyone'}, notifications:{follows:true,gifts:true,live:true,mentions:true,messages:true,likes:true,comments:true}, live:{audience:'public',guest_permissions:'allowed',max_guests:8}, appearance:{theme:'dark',layout:'classic',font:'system',scale:'1',accent:'violet'} };
   var SNAV=[
-    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/appearance',label:'Appearance'},{h:'#/settings/security',label:'Security'},
+    {h:'#/settings/profile',label:'Profile'},{h:'#/settings/security',label:'Security'},
     {h:'#/settings/privacy',label:'Privacy'},{h:'#/settings/blocked',label:'Blocked accounts'},{h:'#/settings/notifications',label:'Notifications'},
-    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'}
+    {h:'#/settings/payments',label:'Payments'},{h:'#/settings/live',label:'LIVE'},{h:'#/settings/appearance',label:'Appearance'}
   ];
   function snav(){ var bar=el('div',{class:'row wrap',style:'gap:8px;margin-bottom:16px'}); SNAV.forEach(function(it){ var on=CHL.current.path===it.h.replace('#',''); bar.appendChild(el('a',{href:it.h,class:'chip'+(on?' on':'')},it.label)); }); return bar; }
   function head(o,title,sub){ o.appendChild(ui.pageHead(title,sub)); if(!CHL.configured){ o.appendChild(ui.setupNotice()); return true;} o.appendChild(snav()); return false; }
@@ -23,7 +23,7 @@
     var base = lastLoadedSettings || SETTING_DEFAULTS;
     // Keep the current appearance preferences when saving another settings category,
     // so changing privacy or LIVE controls never overwrites the appearance choices.
-    var currentAppearance = CHL.StyleSwitcher && typeof CHL.StyleSwitcher.getPreference === 'function'
+    var currentAppearance = (CHL.StyleSwitcher && typeof CHL.StyleSwitcher.getPreference === 'function')
       ? CHL.StyleSwitcher.getPreference()
       : base.appearance;
     var payload = {user_id:CHL.user.id,privacy:value.privacy||base.privacy,notifications:value.notifications||base.notifications,live:value.live||base.live,appearance:value.appearance||currentAppearance||base.appearance,updated_at:new Date().toISOString()};
@@ -35,19 +35,9 @@
   }
   function check(name,label,checked){ return el('label',{class:'row',style:'gap:8px;margin:10px 0'},[el('input',{type:'checkbox',name:name,checked:!!checked}),el('span',{text:label})]); }
 
-  CHL.route('/settings/appearance', function(o){
-    o.appendChild(ui.pageHead('Appearance','Choose an individual style or build and test a compatible style-family combination.'));
-    o.appendChild(snav());
-    var mount=el('div',{class:'chl-style-switcher-mount'});
-    o.appendChild(mount);
-    if(CHL.StyleSwitcher) CHL.StyleSwitcher.render(mount);
-    else mount.appendChild(el('div',{class:'note',text:'The Style Switcher did not load. Reload the app and check the browser console.'}));
-  });
-
   CHL.route('/settings', function(o){ if(head(o,'Settings','Manage your account.')) return; o.appendChild(el('div',{class:'card',text:'Choose a settings category above. Account settings are stored with your profile and restored after reopening.'})); });
 
-  CHL.route('/settings/profile', function(o){ if(head(o,'Profile settings','Customize the public identity people see when they visit your account.')) return; var p=CHL.profile||{}; var f=el('form',{style:'max-width:620px',onsubmit:function(e){e.preventDefault();saveProfile(f);}}); f.appendChild(CHL._field('Display name','display_name','Your public display name')); f.appendChild(CHL._field('Username','username','unique_username')); f.appendChild(labelArea('Bio','bio')); var avatarField=CHL._field('Profile photo HTTPS URL','avatar_url','https://…');var coverField=CHL._field('Profile cover HTTPS URL','cover_url','https://…');f.appendChild(avatarField);f.appendChild(makeCropEditor('profile photo','avatar_url',600,600));f.appendChild(coverField);f.appendChild(makeCropEditor('profile cover','cover_url',1600,500)); f.appendChild(el('p',{class:'sub',text:'Choose a photo, zoom and reposition it, then upload the cropped result. Cropped images are stored in your Creator Hub Live media bucket. You can also keep using direct HTTPS image URLs.'})); f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save profile')); f.display_name.value=p.display_name||''; f.username.value=p.username||''; if(f.bio) f.bio.value=p.bio||''; f.avatar_url.value=p.avatar_url||''; f.cover_url.value=p.cover_url||''; o.appendChild(f); });
-  function makeCropEditor(label,fieldName,outWidth,outHeight){var panel=el('section',{class:'chl-photo-crop-editor card',style:'margin:10px 0;padding:12px'});panel.appendChild(el('strong',{text:'Crop and zoom '+label}));var pick=el('input',{type:'file',accept:'image/jpeg,image/png,image/webp',class:'input','aria-label':'Choose '+label+' image',style:'margin-top:8px'});panel.appendChild(pick);var canvas=el('canvas',{width:String(outWidth),height:String(outHeight),class:'chl-photo-crop-canvas',style:'display:block;width:100%;max-width:520px;max-height:300px;object-fit:contain;background:#10131b;border-radius:10px;margin:10px 0'});panel.appendChild(canvas);var ctx=canvas.getContext('2d');var image=null;var zoom=el('input',{type:'range',min:'1',max:'3',step:'0.05',value:'1',class:'input','aria-label':'Photo zoom'});var x=el('input',{type:'range',min:'-100',max:'100',step:'1',value:'0',class:'input','aria-label':'Move photo left or right'});var y=el('input',{type:'range',min:'-100',max:'100',step:'1',value:'0',class:'input','aria-label':'Move photo up or down'});function slider(labelText,input){panel.appendChild(el('label',{class:'field'},[el('span',{text:labelText}),input]));}slider('Zoom in / out',zoom);slider('Move left / right',x);slider('Move up / down',y);var upload=el('button',{class:'btn',type:'button',text:'Upload cropped image'});var status=el('p',{class:'sub','aria-live':'polite',text:'Select an image to preview the crop.'});panel.appendChild(upload);panel.appendChild(status);function draw(){if(!image)return;ctx.clearRect(0,0,outWidth,outHeight);var scale=Math.max(outWidth/image.naturalWidth,outHeight/image.naturalHeight)*Number(zoom.value||1);var w=image.naturalWidth*scale,h=image.naturalHeight*scale;var maxX=Math.max(0,(w-outWidth)/2),maxY=Math.max(0,(h-outHeight)/2);var dx=(outWidth-w)/2+(Number(x.value)/100)*maxX;var dy=(outHeight-h)/2+(Number(y.value)/100)*maxY;ctx.drawImage(image,dx,dy,w,h);}pick.addEventListener('change',function(){var file=pick.files&&pick.files[0];if(!file)return;if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>12*1024*1024){status.textContent='Choose a JPG, PNG or WebP image under 12 MB.';pick.value='';return;}var local=URL.createObjectURL(file);var img=new Image();img.onload=function(){if(image&&image.src&&image.src.indexOf('blob:')===0)URL.revokeObjectURL(image.src);image=img;zoom.value='1';x.value='0';y.value='0';draw();status.textContent='Preview ready. Adjust zoom and position, then upload.';};img.onerror=function(){status.textContent='This image could not be opened.';URL.revokeObjectURL(local);};img.src=local;});[zoom,x,y].forEach(function(input){input.addEventListener('input',draw);});upload.addEventListener('click',async function(){if(!image){status.textContent='Choose a photo first.';return;}if(!sb||!sb.storage){status.textContent='Image storage is not configured. Use the HTTPS URL field instead.';return;}upload.disabled=true;status.textContent='Uploading cropped image…';try{var blob=await new Promise(function(resolve,reject){canvas.toBlob(function(b){if(b)resolve(b);else reject(new Error('Could not prepare the cropped image.'));},'image/jpeg',0.9);});var path=CHL.user.id+'/profile-'+fieldName+'-'+Date.now()+'.jpg';var result=await sb.storage.from('creator-media').upload(path,blob,{contentType:'image/jpeg',upsert:false});if(result.error)throw result.error;var urlResult=sb.storage.from('creator-media').getPublicUrl(path);var url=urlResult&&urlResult.data&&urlResult.data.publicUrl;if(!url)throw new Error('Upload completed but no public media URL was returned.');f[fieldName].value=url;status.textContent='Cropped image uploaded. Press Save profile to apply it.';CHL.toast('Cropped image uploaded. Save your profile to apply it.');}catch(error){status.textContent=error.message||'Could not upload the cropped image.';}finally{upload.disabled=false;}});return panel;}
+  CHL.route('/settings/profile', function(o){ if(head(o,'Profile settings','Customize the public identity people see when they visit your account.')) return; var p=CHL.profile||{}; var f=el('form',{style:'max-width:620px',onsubmit:function(e){e.preventDefault();saveProfile(f);}}); f.appendChild(CHL._field('Display name','display_name','Your public display name')); f.appendChild(CHL._field('Username','username','unique_username')); f.appendChild(labelArea('Bio','bio')); f.appendChild(CHL._field('Profile photo HTTPS URL','avatar_url','https://…')); f.appendChild(CHL._field('Profile cover HTTPS URL','cover_url','https://…')); f.appendChild(el('p',{class:'sub',text:'Use direct HTTPS image URLs you own or are authorized to use. Your username is unique and case-insensitive; unavailable names are rejected by the database.'})); f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save profile')); f.display_name.value=p.display_name||''; f.username.value=p.username||''; if(f.bio) f.bio.value=p.bio||''; f.avatar_url.value=p.avatar_url||''; f.cover_url.value=p.cover_url||''; o.appendChild(f); });
   function labelArea(label,name){ var w=el('label',{class:'field'},[el('span',{text:label})]); w.appendChild(el('textarea',{class:'input',name:name,rows:'3'})); return w; }
   function saveProfile(f){ var u=CHL.user; if(!u) return; var patch={display_name:f.display_name.value.trim(),username:f.username.value.trim(),bio:f.bio?f.bio.value.trim():'',avatar_url:String(f.avatar_url.value||'').trim()||null,cover_url:String(f.cover_url.value||'').trim()||null}; if(!/^[a-z0-9_.]{3,30}$/i.test(patch.username)){CHL.toast('Username: 3-30 letters, numbers, underscores or periods.');return;} for(var key of ['avatar_url','cover_url']){if(patch[key]){try{var parsed=new URL(patch[key]);if(parsed.protocol!=='https:')throw new Error();}catch(_){CHL.toast('Profile photo and cover URLs must be valid HTTPS URLs.');return;}}} sb.from('profiles').update(patch).eq('id',u.id).then(function(r){if(r&&r.error){CHL.toast(r.error.code==='23505'?'That username is already taken. Choose another one.':r.error.message);return;} CHL.refreshAuth().then(function(){CHL.toast('Profile saved');CHL.navigate('#/profile');});}); }
 
@@ -117,6 +107,17 @@
       f.appendChild(el('p',{class:'sub',text:'The host can review requests, accept or reject viewers, invite a creator by username, mute their published audio, stop video, and remove a guest. The host remains on stage separately from the guest limit.'}));
       f.appendChild(el('button',{class:'btn primary',type:'submit'},'Save LIVE settings')); card.appendChild(f);
     }catch(e){card.innerHTML='';card.appendChild(el('div',{class:'note',text:e.message||'Could not load settings.'}));}
+  });
+
+  CHL.route('/settings/appearance', function(o){
+    if(head(o,'Appearance','Choose an individual style or combine compatible style families. Preview and run the style relay before saving.')) return;
+    if(!CHL.StyleSwitcher || typeof CHL.StyleSwitcher.render!=='function'){
+      o.appendChild(el('div',{class:'note',text:'Appearance controls are unavailable. Reload Creator Hub Live and try again.'}));
+      return;
+    }
+    var mount=el('div',{class:'chl-style-switcher-mount'});
+    o.appendChild(mount);
+    CHL.StyleSwitcher.render(mount);
   });
 
   function selectField(label,name,values,current){
