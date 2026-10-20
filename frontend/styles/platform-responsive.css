@@ -252,8 +252,9 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 
-/* CHL For You: shorten only the video element on phone-sized/touch screens.
-   Keep the feed card, snap points, scroller, and desktop rules unchanged. */
+/* CHL For You phone video sizing fix.
+   Only the video element is reduced; feed card, scroll container, snap points,
+   captions, controls, and desktop sizing are intentionally left unchanged. */
 @media screen and (max-width: 760px), screen and (hover: none) and (pointer: coarse) {
   html.chl-feed-active .chl-feed-item > video.chl-feed-media {
     position: absolute !important;
@@ -264,11 +265,11 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
     inset: 50% auto auto 50% !important;
     transform: translate(-50%, -50%) !important;
     width: auto !important;
-    height: 68vh !important;
-    height: 68dvh !important;
-    max-width: 94vw !important;
-    max-height: 68vh !important;
-    max-height: 68dvh !important;
+    height: 58vh !important;
+    height: 58dvh !important;
+    max-width: 90vw !important;
+    max-height: 58vh !important;
+    max-height: 58dvh !important;
     object-fit: contain !important;
     object-position: center center !important;
     margin: 0 !important;
