@@ -161,40 +161,14 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
 .chl-feed-item { position: relative; isolation: isolate; flex: 0 0 100%; width: 100%; min-height: 360px; height: 100%; overflow: hidden; scroll-snap-align: start; scroll-snap-stop: always; background: radial-gradient(ellipse at 20% 20%, #293451, #090b13 66%); }
 .chl-feed-item:focus-visible { outline: 3px solid #88c7ff; outline-offset: -4px; }
 .chl-feed-media { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; object-position: center; background: #090b13; }
-/* For You videos: constrain the actual video box as well as its fit.
-   The previous patch only changed object-fit, so portrait videos could still
-   occupy nearly the entire feed canvas and appear oversized on phones. */
-html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-  position: absolute !important;
-  inset: 50% auto auto 50% !important;
-  transform: translate(-50%, -50%) !important;
-  width: auto !important;
-  height: auto !important;
-  max-width: 100% !important;
-  max-height: calc(100% - 132px) !important;
-  object-fit: contain !important;
-  object-position: center center !important;
-}
-@media (min-width: 761px) {
-  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    max-height: calc(100% - 96px) !important;
-  }
-}
-/* Mobile website only: keep For You videos visibly smaller than the feed canvas.
-   This override is deliberately limited to phone/tablet widths and does not
-   change image sizing or the desktop layout. */
-@media (max-width: 760px) {
-  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    inset: 50% auto auto 50% !important;
-    width: auto !important;
-    height: auto !important;
-    max-width: 82vw !important;
-    max-height: 62% !important;
-    object-fit: contain !important;
-    object-position: center center !important;
-  }
-}
 .chl-feed-item:has(video) .chl-feed-media { cursor: pointer; }
+.chl-feed-media.chl-feed-video { object-fit: contain; object-position: center; background: #05060a; }
+.chl-feed-video::-webkit-media-controls { opacity: 1; }
+.chl-feed-video-status { position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(84%, 440px); padding: 14px 16px; border: 1px solid rgba(255,255,255,.24); border-radius: 14px; background: rgba(8,10,17,.92); color: #fff; font-size: 14px; line-height: 1.5; text-align: center; box-shadow: 0 8px 28px rgba(0,0,0,.35); pointer-events: none; }
+.chl-feed-video-status[hidden] { display: none !important; }
+.chl-feed-video[data-video-state="ready"], .chl-feed-video[data-video-state="playing"] { background: #05060a; }
+.chl-feed-delete { color: #ffd6df; }
+.chl-post-video { object-fit: contain; max-height: min(72vh, 760px); background: #05060a; }
 .chl-feed-item--text { background: radial-gradient(ellipse at 28% 22%, rgba(137,103,255,.75), transparent 42%), radial-gradient(ellipse at 80% 68%, rgba(255,56,111,.5), transparent 40%), #0d1220; }
 .chl-feed-text-art { position: absolute; inset: 12% 8% 22%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; color: rgba(255,255,255,.25); font-size: clamp(17px, 2.4vw, 30px); font-weight: 900; letter-spacing: .16em; text-align: center; pointer-events: none; }
 .chl-feed-text-art span:last-child { color: rgba(255,255,255,.7); font-size: clamp(52px, 12vw, 110px); }
@@ -284,3 +258,24 @@ html.chl-feed-active .chl-feed-item > video.chl-feed-media {
   .chl-feed-spinner { animation: none; border-right-color: #fff; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+
+/* Mobile browser only: make the For You video a smaller, centered frame.
+   Keep desktop rules unchanged and leave the feed controls around it usable. */
+@media screen and (max-width: 760px) {
+  html.chl-feed-active .chl-feed-item > video.chl-feed-media,
+  html.chl-feed-active .chl-feed-item > video.chl-feed-video {
+    position: absolute !important;
+    inset: 50% auto auto 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 78vw !important;
+    max-height: 58vh !important;
+    max-height: 58dvh !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    margin: 0 !important;
+  }
+}
