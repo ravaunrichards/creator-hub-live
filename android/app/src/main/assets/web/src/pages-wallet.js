@@ -17,25 +17,69 @@
     packagePanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Available coin packages' }));
     packagePanel.appendChild(el('p', { class: 'sub', text: 'Your saved packages and prices are loaded from the active wallet catalogue. Checkout remains PayPal-only.' }));
     var packageGrid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px' });
-    packageGrid.appendChild(el('div', { class: 'note', text: 'Loading your coin packages…' }));
+    packageGrid.appendChild(el('div', { class: 'note', text: 'Loading server-priced coin packages…' }));
     packagePanel.appendChild(packageGrid); outlet.appendChild(packagePanel);
+    // Official CHL coin package display. Checkout still requires a fresh backend quote;
+    // these labels remain visible even if the quote endpoint is temporarily unavailable.
+    var presetPackages = [
+      { coins: 100, displayPrice: 0.99 },
+      { coins: 500, displayPrice: 4.99 },
+      { coins: 1000, displayPrice: 9.99 },
+      { coins: 2500, displayPrice: 24.99 },
+      { coins: 5000, displayPrice: 49.99 },
+      { coins: 10000, displayPrice: 99.99 }
+    ];
+    var presetCoins = presetPackages.map(function (item) { return item.coins; });
+    var presetPriceByCoins = Object.create(null);
+    presetPackages.forEach(function (item) { presetPriceByCoins[item.coins] = item.displayPrice; });
+    var presetSet = Object.create(null); presetCoins.forEach(function(n){ presetSet[n] = true; });
     try {
       var packageData = await CHL.authenticatedApiRequest('/api/wallet/packages');
       var packages = packageData && Array.isArray(packageData.packages) ? packageData.packages : [];
       packageGrid.innerHTML = '';
-      if (!packages.length) packageGrid.appendChild(el('div', { class: 'note', text: 'No active coin packages are currently available. Your custom coin amount remains available below.' }));
+      var presetResults = await Promise.all(presetCoins.map(async function(coins) {
+        var card = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
+        card.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(coins) + ' coins' }));
+        var priceNode = el('div', { style: 'font-size:17px;font-weight:800', text: formatMoney(presetPriceByCoins[coins], 'USD'), 'aria-live': 'polite' });
+        card.appendChild(priceNode);
+        var buyPackage = el('button', { class: 'btn primary block', type: 'button', text: 'Choose payment', disabled: true, onclick: function(){ selectPaymentMethod({coins:coins}); } });
+        card.appendChild(buyPackage); packageGrid.appendChild(card);
+        try {
+          var quote = await CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(coins));
+          var price = Number(quote && quote.amountUsd);
+          if (!Number.isFinite(price) || price <= 0) throw new Error('No valid server quote');
+          priceNode.textContent = formatMoney(price, quote.currency || 'USD');
+          buyPackage.disabled = false;
+          return { coins: coins, card: card, ok: true };
+        } catch (_) {
+          priceNode.textContent = 'Target price: ' + formatMoney(presetPriceByCoins[coins], 'USD') + ' · secure quote unavailable';
+          buyPackage.disabled = true;
+          return { coins: coins, card: card, ok: false };
+        }
+      }));
       packages.forEach(function(pkg) {
         var coins = Number(pkg.coins), price = Number(pkg.priceUsd);
-        if (!Number.isSafeInteger(coins) || coins <= 0 || !Number.isFinite(price) || price <= 0) return;
+        if (!Number.isSafeInteger(coins) || coins <= 0 || !Number.isFinite(price) || price <= 0 || presetSet[coins]) return;
         var card = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
         card.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(coins) + ' coins' }));
         card.appendChild(el('div', { style: 'font-size:17px;font-weight:800', text: formatMoney(price, pkg.currency || 'USD') }));
-        var buyPackage = el('button', { class: 'btn primary block', type: 'button', text: 'Buy package', onclick: function(){ buy({coins:coins}); } });
-        card.appendChild(buyPackage); packageGrid.appendChild(card);
+        card.appendChild(el('button', { class: 'btn primary block', type: 'button', text: 'Choose payment', onclick: function(){ selectPaymentMethod({coins:coins}); } }));
+        packageGrid.appendChild(card);
       });
-      if (!packageGrid.children.length) packageGrid.appendChild(el('div', { class: 'note', text: 'The package catalogue did not return any valid prices. No checkout was started.' }));
+      if (!packageGrid.children.length) packageGrid.appendChild(el('div', { class: 'note', text: 'No server-priced coin packages are available right now. Your custom coin amount remains available below.' }));
+      if (presetResults.every(function(x){ return !x.ok; })) {
+        packageGrid.appendChild(el('div', { class: 'note', text: 'Preset prices are unavailable until the wallet service returns a valid quote. No checkout was started.' }));
+      }
     } catch (packageError) {
-      packageGrid.innerHTML = ''; packageGrid.appendChild(el('div', { class: 'note', text: packageError.message || 'Your packages could not be loaded. You can still request a server-priced custom amount below.' }));
+      packageGrid.innerHTML = '';
+      presetCoins.forEach(function(coins){
+        var card = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
+        card.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(coins) + ' coins' }));
+        card.appendChild(el('div', { class: 'note', text: 'Target price: ' + formatMoney(presetPriceByCoins[coins], 'USD') + '. Checkout unlocks when the server confirms the price.' }));
+        card.appendChild(el('button', { class: 'btn primary block', type: 'button', text: 'Choose payment', disabled: true }));
+        packageGrid.appendChild(card);
+      });
+      packageGrid.appendChild(el('div', { class: 'note', text: packageError.message || 'Your packages could not be loaded. You can still request a server-priced custom amount below.' }));
     }
     var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:8px' });
     customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your coin amount' }));
@@ -46,7 +90,7 @@
     customLabel.appendChild(customInput); customForm.appendChild(customLabel);
     var customPrice = el('div', { class: 'card', style: 'min-width:140px;padding:10px 12px' }, [el('div', { class: 'sub', text: 'Server quote (USD)' }), el('strong', { text: 'Enter coins' })]);
     var customPriceValue = customPrice.querySelector('strong');
-    var customBuy = el('button', { class: 'btn primary', type: 'submit', disabled: true, text: 'Continue to PayPal' });
+    var customBuy = el('button', { class: 'btn primary', type: 'submit', disabled: true, text: 'Choose payment method' });
     customForm.appendChild(customPrice); customForm.appendChild(customBuy); customPanel.appendChild(customForm);
     var customNote = el('div', { class: 'note', 'aria-live': 'polite', text: 'The amount is quoted again by the server when checkout starts. Coins are credited only after verified PayPal payment.' });
     customPanel.appendChild(customNote); outlet.appendChild(customPanel);
@@ -70,7 +114,7 @@
       }
     }
     customInput.addEventListener('input', function () { if (quoteTimer) window.clearTimeout(quoteTimer); quoteTimer = window.setTimeout(refreshCustomQuote, 350); });
-    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } buy({ coins: value }); });
+    customForm.addEventListener('submit', function (event) { event.preventDefault(); var value = Number(customInput.value); if (!currentQuote || Number(currentQuote.coins) !== value) { refreshCustomQuote(); CHL.toast('Wait for the current server quote before checkout.'); return; } selectPaymentMethod({ coins: value }); });
 
     outlet.appendChild(el('div', { class: 'note', text: 'PayPal is the only wallet recharge provider. The browser never supplies the payable amount or credits coins directly.' }));
     await renderCurrencyConversion(outlet, stat);
@@ -202,7 +246,30 @@
     try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited || d.captured ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
     catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
   }
-  async function buy(p) {
+  function selectPaymentMethod(p) {
+    var coins = Number(p && p.coins);
+    if (!Number.isSafeInteger(coins) || coins < 1 || coins > 50000) { CHL.toast('Choose a valid whole-number coin amount.'); return; }
+    var overlay = el('div', { class: 'chl-payment-overlay', style: 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px' });
+    var dialog = el('section', { class: 'card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'chl-payment-title', tabindex: '-1', style: 'width:min(100%,420px);padding:20px;box-shadow:0 20px 70px rgba(0,0,0,.4)' });
+    dialog.appendChild(el('div', { id: 'chl-payment-title', class: 'h1', style: 'font-size:20px;margin-bottom:6px', text: 'Choose payment method' }));
+    dialog.appendChild(el('p', { class: 'sub', text: CHL.fmt(coins) + ' coins · payment is confirmed by the secure server before coins are credited.' }));
+    var choice = el('label', { class: 'card', style: 'display:flex;align-items:center;gap:12px;padding:14px;margin:12px 0;cursor:pointer;border:2px solid var(--brand)' });
+    var radio = el('input', { type: 'radio', name: 'chl-payment-provider', value: 'paypal', checked: 'checked', required: 'required' });
+    choice.appendChild(radio);
+    choice.appendChild(el('span', {}, [el('strong', { text: 'PayPal' }), el('span', { class: 'sub', style: 'display:block', text: 'Secure checkout · currently available' })]));
+    dialog.appendChild(choice);
+    dialog.appendChild(el('div', { class: 'note', text: 'PayPal is the only payment provider currently enabled. Other methods will appear here only after they are configured and verified.' }));
+    var actions = el('div', { class: 'row wrap', style: 'justify-content:flex-end;gap:8px;margin-top:16px' });
+    actions.appendChild(el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: close }));
+    actions.appendChild(el('button', { class: 'btn primary', type: 'button', text: 'Continue to PayPal', onclick: function(){ close(); startPaypalCheckout({coins:coins}); } }));
+    dialog.appendChild(actions); overlay.appendChild(dialog);
+    overlay.addEventListener('click', function(event){ if(event.target === overlay) close(); });
+    document.addEventListener('keydown', onKeydown);
+    function onKeydown(event){ if(event.key === 'Escape') close(); }
+    function close(){ document.removeEventListener('keydown', onKeydown); if(overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+    document.body.appendChild(overlay); dialog.focus();
+  }
+  async function startPaypalCheckout(p) {
     try {
       var d = await CHL.authenticatedApiRequest('/api/payments/paypal/create-order', { method: 'POST', headers: { 'Idempotency-Key': 'checkout:' + CHL.uuid() }, body: { coins: p.coins } });
       if (!d || !d.approveUrl) throw new Error('PAYMENT_PROVIDER_ERROR: checkout approval URL was not returned.');
@@ -256,12 +323,12 @@
   CHL.ownProfile = function (outlet) {
     var p=CHL.profile||{},u=CHL.user,name=p.display_name||p.username||(u&&u.email)||'You';
     var header=el('section',{class:'card chl-profile-header'});var cover=el('div',{class:'chl-profile-cover'});if(p.cover_url)cover.appendChild(el('img',{src:p.cover_url,alt:'',loading:'lazy'}));header.appendChild(cover);
-    var identity=el('div',{class:'chl-profile-identity'});identity.appendChild(p.avatar_url?el('img',{src:p.avatar_url,alt:name+' profile image',class:'chl-profile-avatar'}):el('div',{class:'ava chl-profile-avatar chl-profile-avatar-fallback',text:CHL.initials(name).toUpperCase()}));var detail=el('div',{class:'chl-profile-detail'});detail.appendChild(el('div',{class:'chl-profile-display-name',text:name}));detail.appendChild(el('div',{class:'sub',text:'@'+(p.username||'set-your-username')}));if(p.bio)detail.appendChild(el('p',{class:'chl-profile-bio',text:p.bio}));detail.appendChild(el('div',{class:'sub',text:(u&&u.email)||''}));var metrics=el('div',{class:'chl-profile-metrics'});var postMetric=el('a',{class:'chl-profile-metric',href:'#/profile'},[el('strong',{text:'…'}),el('span',{text:'Posts'})]);var followerMetric=el('a',{class:'chl-profile-metric',href:'#/my-profile/followers'},[el('strong',{text:'…'}),el('span',{text:'Followers'})]);var followingMetric=el('a',{class:'chl-profile-metric',href:'#/my-profile/following'},[el('strong',{text:'…'}),el('span',{text:'Following'})]);metrics.appendChild(postMetric);metrics.appendChild(followerMetric);metrics.appendChild(followingMetric);detail.appendChild(metrics);identity.appendChild(detail);header.appendChild(identity);header.appendChild(el('div',{class:'row wrap chl-profile-actions'},[el('a',{href:'#/settings/profile',class:'btn primary',text:'Edit profile'}),el('a',{href:'#/my-profile/friends',class:'btn',text:'Friends'}),el('a',{href:'#/settings/privacy',class:'btn',text:'Privacy settings'}),el('button',{class:'btn',type:'button',text:'Log out',onclick:CHL.signOut})]));outlet.appendChild(header);
+    var identity=el('div',{class:'chl-profile-identity'});identity.appendChild(p.avatar_url?el('img',{src:p.avatar_url,alt:name+' profile image',class:'chl-profile-avatar'}):el('div',{class:'ava chl-profile-avatar chl-profile-avatar-fallback',text:CHL.initials(name).toUpperCase()}));var detail=el('div',{class:'chl-profile-detail'});detail.appendChild(el('div',{class:'chl-profile-display-name',text:name}));detail.appendChild(el('div',{class:'sub',text:'@'+(p.username||'set-your-username')}));if(p.bio)detail.appendChild(el('p',{class:'chl-profile-bio',text:p.bio}));detail.appendChild(el('div',{class:'sub',text:(u&&u.email)||''}));var metrics=el('div',{class:'chl-profile-metrics'});var postMetric=el('a',{class:'chl-profile-metric',href:'#/profile'},[el('strong',{text:'…'}),el('span',{text:'Posts'})]);var videoMetric=el('a',{class:'chl-profile-metric',href:'#/profile'},[el('strong',{text:'…'}),el('span',{text:'Videos'})]);var followerMetric=el('a',{class:'chl-profile-metric',href:'#/my-profile/followers'},[el('strong',{text:'…'}),el('span',{text:'Followers'})]);var followingMetric=el('a',{class:'chl-profile-metric',href:'#/my-profile/following'},[el('strong',{text:'…'}),el('span',{text:'Following'})]);metrics.appendChild(postMetric);metrics.appendChild(videoMetric);metrics.appendChild(followerMetric);metrics.appendChild(followingMetric);detail.appendChild(metrics);identity.appendChild(detail);header.appendChild(identity);header.appendChild(el('div',{class:'row wrap chl-profile-actions'},[el('a',{href:'#/settings/profile',class:'btn primary',text:'Edit profile'}),el('a',{href:'#/my-profile/friends',class:'btn',text:'Friends'}),el('a',{href:'#/settings/privacy',class:'btn',text:'Privacy settings'}),el('button',{class:'btn',type:'button',text:'Log out',onclick:CHL.signOut})]));outlet.appendChild(header);
     var requestPanel=el('section',{class:'card',style:'margin-top:12px'});requestPanel.appendChild(ui.spinner());outlet.appendChild(requestPanel);
     async function loadFollowRequests(){try{var requests=await CHL.sb.from('follows').select('follower_id,created_at').eq('followee_id',u.id).eq('status','pending').order('created_at',{ascending:false}).limit(50);if(requests.error)throw requests.error;var edges=requests.data||[];requestPanel.innerHTML='';if(!edges.length){requestPanel.remove();return;}requestPanel.appendChild(el('div',{class:'row between wrap',style:'gap:8px;margin-bottom:10px'},[el('strong',{text:'Follow requests'}),el('span',{class:'badge',text:String(edges.length)})]));var people=await CHL.sb.from('profiles').select('id,username,display_name,avatar_url,bio').in('id',edges.map(function(x){return x.follower_id;}));if(people.error)throw people.error;var byId={};(people.data||[]).forEach(function(person){byId[String(person.id)]=person;});edges.forEach(function(edge){var person=byId[String(edge.follower_id)]||{};var personName=person.display_name||person.username||'Creator';var row=el('div',{class:'chl-profile-person'});row.appendChild(person.avatar_url?el('img',{src:person.avatar_url,alt:'',class:'chl-profile-person-avatar'}):el('div',{class:'ava chl-profile-person-avatar',text:CHL.initials(personName).toUpperCase()}));row.appendChild(el('div',{style:'flex:1;min-width:0'},[el('strong',{text:personName}),el('div',{class:'sub',text:'@'+(person.username||'creator')})]));var accept=el('button',{class:'btn primary',type:'button',text:'Accept'});var decline=el('button',{class:'btn',type:'button',text:'Decline'});accept.addEventListener('click',async function(){accept.disabled=true;decline.disabled=true;try{await CHL.authenticatedApiRequest('/api/social/follow-requests/'+encodeURIComponent(edge.follower_id),{method:'PATCH',body:{}});row.remove();CHL.toast('Follow request accepted.');var count=await CHL.sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',u.id).eq('status','accepted');if(!count.error)followerMetric.querySelector('strong').textContent=CHL.fmt(count.count||0);if(!requestPanel.querySelector('.chl-profile-person'))requestPanel.remove();}catch(error){CHL.toast(error.message||'Could not accept request.');accept.disabled=false;decline.disabled=false;}});decline.addEventListener('click',async function(){accept.disabled=true;decline.disabled=true;try{await CHL.authenticatedApiRequest('/api/social/follow-requests/'+encodeURIComponent(edge.follower_id),{method:'DELETE',body:{}});row.remove();CHL.toast('Follow request declined.');if(!requestPanel.querySelector('.chl-profile-person'))requestPanel.remove();}catch(error){CHL.toast(error.message||'Could not decline request.');accept.disabled=false;decline.disabled=false;}});row.appendChild(accept);row.appendChild(decline);requestPanel.appendChild(row);});}catch(error){requestPanel.innerHTML='';requestPanel.appendChild(el('div',{class:'note',text:error.message||'Follow requests could not be loaded.'}));}}
     loadFollowRequests();
     var postsPanel=el('section',{class:'card chl-profile-posts',style:'margin-top:12px'});postsPanel.appendChild(el('div',{class:'chl-profile-posts-heading'},[el('strong',{text:'Your posts'}),el('a',{href:'#/create',class:'btn primary',text:'Create post'}),el('span',{class:'sub',text:'Newest first'})]));var list=el('div',{class:'chl-profile-post-list'});var sentinel=el('div',{class:'chl-load-sentinel',text:'Loading posts…'});postsPanel.appendChild(list);postsPanel.appendChild(sentinel);outlet.appendChild(postsPanel);
-    Promise.all([CHL.sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',u.id).eq('is_draft',false).eq('is_test',false),CHL.sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',u.id).eq('status','accepted'),CHL.sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',u.id).eq('status','accepted')]).then(function(r){postMetric.querySelector('strong').textContent=CHL.fmt(r[0].count||0);followerMetric.querySelector('strong').textContent=CHL.fmt(r[1].count||0);followingMetric.querySelector('strong').textContent=CHL.fmt(r[2].count||0);}).catch(function(){});
+    Promise.all([CHL.sb.from('posts').select('id',{count:'exact',head:true}).eq('author_id',u.id).eq('is_draft',false).eq('is_test',false),CHL.sb.from('posts').select('kind,media').eq('author_id',u.id).eq('is_draft',false).eq('is_test',false).limit(1000),CHL.sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('followee_id',u.id).eq('status','accepted'),CHL.sb.from('follows').select('followee_id',{count:'exact',head:true}).eq('follower_id',u.id).eq('status','accepted')]).then(function(r){postMetric.querySelector('strong').textContent=CHL.fmt(r[0].count||0);var videoRows=r[1].data||[];videoMetric.querySelector('strong').textContent=CHL.fmt(videoRows.filter(function(row){var media=Array.isArray(row.media)?row.media:[];return row.kind==='video'||row.kind==='short'||media.some(function(m){return m&&/^video/i.test(String(m.type||''));});}).length);followerMetric.querySelector('strong').textContent=CHL.fmt(r[2].count||0);followingMetric.querySelector('strong').textContent=CHL.fmt(r[3].count||0);}).catch(function(){});
     var offset=0,busy=false,more=true,observer=null;async function loadPosts(){if(busy||!more)return;busy=true;try{var result=await CHL.sb.from('posts').select('id,author_id,caption,kind,media,cover_url,created_at,view_count,like_count,comment_count,allow_comments').eq('author_id',u.id).eq('is_draft',false).eq('is_test',false).order('created_at',{ascending:false}).range(offset,offset+11);if(result.error)throw result.error;var rows=result.data||[];if(!rows.length&&offset===0){list.appendChild(ui.empty('📝','No posts yet','Publish your first post to start your profile.'));sentinel.remove();return;}rows.forEach(function(post){if(CHL.renderProfilePost)list.appendChild(CHL.renderProfilePost(post));else list.appendChild(el('a',{href:'#/post/'+post.id,class:'card',text:post.caption||'Open post'}));});offset+=rows.length;more=rows.length===12;sentinel.textContent=more?'Scroll to load older posts':'You’re all caught up';if(!more&&observer)observer.disconnect();}catch(error){sentinel.textContent='Could not load posts. Tap to retry.';sentinel.onclick=loadPosts;}finally{busy=false;}}if('IntersectionObserver' in window){observer=new IntersectionObserver(function(entries){if(entries.some(function(entry){return entry.isIntersecting;}))loadPosts();},{rootMargin:'400px'});observer.observe(sentinel);}else sentinel.addEventListener('click',loadPosts);loadPosts();
   };
   function field(label, name, ph, type) { var w = el('label', { class: 'field' }, [el('span', { text: label })]); w.appendChild(el('input', { class: 'input', name: name, placeholder: ph || '', type: type || 'text' })); return w; }

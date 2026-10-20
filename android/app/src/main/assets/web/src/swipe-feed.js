@@ -13,31 +13,6 @@
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   };
 
-  var RESTORE_MAX_PAGES = 20;
-  function positionKey(mode) { return 'chl-feed-position-' + mode; }
-  function readPosition(mode) {
-    try {
-      var raw = window.sessionStorage && window.sessionStorage.getItem(positionKey(mode));
-      if (!raw) return null;
-      var saved = JSON.parse(raw);
-      if (!saved || (!saved.postId && !Number.isFinite(saved.index))) return null;
-      return { postId: typeof saved.postId === 'string' ? saved.postId : '', index: Math.max(0, Number(saved.index) || 0) };
-    } catch (_) { return null; }
-  }
-  function savePosition(feed, postId, index) {
-    if (!feed || !postId) return;
-    try {
-      if (window.sessionStorage) window.sessionStorage.setItem(positionKey(feed.mode), JSON.stringify({ postId: String(postId), index: Math.max(0, Number(index) || 0) }));
-    } catch (_) { /* Position memory is best-effort in restricted browser contexts. */ }
-  }
-  function saveActivePosition(feed) {
-    if (!feed || !feed.items || !feed.items.length) return;
-    var active = feed.scroller && feed.scroller.querySelector('.chl-feed-item.is-active');
-    var id = active && active.getAttribute('data-post-id');
-    if (!id && feed.items[feed.activeIndex]) id = feed.items[feed.activeIndex].id;
-    if (id) savePosition(feed, id, feed.activeIndex);
-  }
-
   function safeUrl(value) {
     return typeof value === 'string' && /^https:\/\//i.test(value) ? value : '';
   }
@@ -70,9 +45,7 @@
       document.documentElement.classList.remove('chl-feed-active');
       return;
     }
-    saveActivePosition(activeFeed);
     activeFeed.destroyed = true;
-    if (activeFeed.visibilityHandler) document.removeEventListener('visibilitychange', activeFeed.visibilityHandler);
     if (activeFeed.itemObserver) activeFeed.itemObserver.disconnect();
     if (activeFeed.loadObserver) activeFeed.loadObserver.disconnect();
     if (activeFeed.fallbackScroll && activeFeed.scroller) activeFeed.scroller.removeEventListener('scroll', activeFeed.fallbackScroll);
@@ -128,14 +101,8 @@
       likedIds: new Set(),
       savedIds: new Set(),
       followedIds: new Set(),
-      pendingFollowIds: new Set(),
-      restoreState: readPosition(mode),
-      restorePending: false,
-      restorePages: 0,
-      continueRestore: false,
-      visibilityHandler: null
+      pendingFollowIds: new Set()
     };
-    feed.restorePending = !!feed.restoreState;
     activeFeed = feed;
     document.documentElement.classList.add('chl-feed-active');
     outlet.innerHTML = '';
@@ -332,16 +299,9 @@
       var media = mediaOf(post);
       var video = null;
       if (media.length && String(media[0].type || '').indexOf('video') === 0) {
-        video = el('video', { class: 'chl-feed-media', src: media[0].url, playsinline: true, muted: true, loop: true, tabindex: '0', role: 'button', preload: index < 2 ? 'metadata' : 'none', 'aria-label': 'Creator video. Activate to play or pause.' });
+        video = el('video', { class: 'chl-feed-media chl-feed-video', src: media[0].url, playsinline: true, muted: true, loop: true, controls: true, tabindex: '0', preload: index < 2 ? 'metadata' : 'none', 'aria-label': 'Creator video. Use playback controls to play or pause.' });
         if (safeUrl(post.cover_url)) video.setAttribute('poster', post.cover_url);
-        function toggleVideoPlayback() {
-          if (video.paused) video.play().catch(function () { CHL.toast('Playback was blocked. Tap the video to try again.'); });
-          else video.pause();
-        }
-        video.addEventListener('click', toggleVideoPlayback);
-        video.addEventListener('keydown', function (event) {
-          if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); toggleVideoPlayback(); }
-        });
+        video.addEventListener('error', function () { video.setAttribute('data-playback-error','true'); });
         item.appendChild(video);
       } else if (media.length) {
         var image = el('img', { class: 'chl-feed-media', src: media[0].url, alt: 'Post media', loading: index < 2 ? 'eager' : 'lazy', decoding: 'async' });
@@ -374,6 +334,7 @@
       setPressed(save, feed.savedIds.has(post.id));
       right.appendChild(save);
       right.appendChild(el('button', { class: 'chl-feed-action', type: 'button', 'aria-label': 'Share post', onclick: function () { sharePost(post); } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '↗' }), el('strong', { class: 'chl-feed-action-label', text: 'Share' })]));
+      if (CHL.user && String(authorId) === String(CHL.user.id)) { var removePost = el('button', { class: 'chl-feed-action chl-feed-delete', type: 'button', 'aria-label': 'Delete your post', onclick: async function () { if (!window.confirm('Delete this post? This cannot be undone.')) return; removePost.disabled = true; try { var deleted = await CHL.sb.from('posts').delete().eq('id', post.id).eq('author_id', CHL.user.id).select('id').maybeSingle(); if (deleted.error) throw deleted.error; if (!deleted.data) throw new Error('Post was not deleted. Check that you are signed in as its owner.'); if (video) { try { video.pause(); video.removeAttribute('src'); video.load(); } catch (_) {} } item.remove(); feed.items = feed.items.filter(function (entry) { return entry.post.id !== post.id; }); CHL.toast('Post deleted.'); } catch (error) { CHL.toast(error.message || 'Could not delete this post.'); removePost.disabled = false; } } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '⌫' }), el('strong', { class: 'chl-feed-action-label', text: 'Delete' })]); right.appendChild(removePost); }
       right.appendChild(el('button', { class: 'chl-feed-action', type: 'button', 'aria-label': 'View creator profile for gifting and LIVE availability', onclick: function () { CHL.navigate('#/profile/' + encodeURIComponent(authorHandle || authorId || '')); } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '✦' }), el('strong', { class: 'chl-feed-action-label', text: 'Creator' })]));
       item.appendChild(right);
 
@@ -411,62 +372,21 @@
 
     function activate(index) {
       if (feed.destroyed) return;
-      var cards = scroller.querySelectorAll('.chl-feed-item');
-      if (!cards.length) return;
-      index = Math.max(0, Math.min(cards.length - 1, Number(index) || 0));
       feed.activeIndex = index;
+      var cards = scroller.querySelectorAll('.chl-feed-item');
       cards.forEach(function (card, i) {
         card.classList.toggle('is-active', i === index);
         var v = card.querySelector('video');
         if (!v) return;
-
-        /* Prioritize the active video and warm only the next two. Older/distant
-           videos are left at preload=none so long feeds do not fetch everything. */
-        var distance = i - index;
-        var desiredPreload = distance === 0 ? 'auto' : (distance > 0 && distance <= 2 ? 'metadata' : 'none');
-        if (v.preload !== desiredPreload) {
-          v.preload = desiredPreload;
-          if (desiredPreload !== 'none' && v.readyState === 0) {
-            try { v.load(); } catch (_) {}
-          }
-        }
-
         v.muted = feed.muted;
-        if (i === index && !document.hidden && !reduceMotion()) {
+        if (i === index && !reduceMotion()) {
           var play = v.play();
           if (play && play.catch) play.catch(function () { /* user can start playback explicitly */ });
-        } else {
+        } else if (i !== index) {
           try { v.pause(); } catch (_) {}
         }
       });
-      if (!feed.restorePending && feed.items[index]) savePosition(feed, feed.items[index].id, index);
       if (index >= feed.items.length - 3) loadNext(false);
-    }
-
-    function restorePositionIfReady() {
-      if (!feed.restorePending) return true;
-      var targetIndex = -1;
-      var saved = feed.restoreState || {};
-      if (saved.postId) targetIndex = feed.items.findIndex(function (post) { return String(post.id) === saved.postId; });
-      if (targetIndex < 0 && (feed.exhausted || feed.restorePages >= RESTORE_MAX_PAGES) && feed.items.length) {
-        targetIndex = Math.min(saved.index || 0, feed.items.length - 1);
-      }
-      if (targetIndex < 0 && feed.exhausted && !feed.items.length) {
-        feed.restorePending = false;
-        return true;
-      }
-      if (targetIndex < 0) return false;
-      var targetPostId = String(feed.items[targetIndex].id);
-      var postNodes = scroller.querySelectorAll('.chl-feed-item');
-      var node = Array.prototype.find.call(postNodes, function (candidate) {
-        return candidate.getAttribute('data-post-id') === targetPostId;
-      });
-      feed.restorePending = false;
-      if (node) {
-        node.scrollIntoView({ behavior: 'auto', block: 'start' });
-        activate(targetIndex);
-      }
-      return true;
     }
 
     function observeItem(item, index) {
@@ -493,10 +413,7 @@
         var authors = rows.map(function (p) { return p.author_id; }).filter(function (id, i, all) { return id && id !== CHL.user.id && all.indexOf(id) === i; });
         if (authors.length) {
           var follows = await CHL.sb.from('follows').select('followee_id,status').eq('follower_id', CHL.user.id).in('followee_id', authors);
-          if (!follows.error) list(follows.data).forEach(function (row) {
-            if (row.status === 'pending') feed.pendingFollowIds.add(row.followee_id);
-            else if (row.status === 'accepted') feed.followedIds.add(row.followee_id);
-          });
+          if (!follows.error) list(follows.data).forEach(function (row) { if (row.status === 'pending') feed.pendingFollowIds.add(row.followee_id); else feed.followedIds.add(row.followee_id); });
         }
       } catch (_) {}
       try {
@@ -549,11 +466,6 @@
         if (rows.length) feed.cursor = { created_at: rows[rows.length - 1].created_at, id: rows[rows.length - 1].id };
         await loadInteractionState(rows);
         appendRows(rows);
-        if (rows.length) feed.restorePages += 1;
-        if (feed.restorePending) {
-          var restored = restorePositionIfReady();
-          feed.continueRestore = !restored && rows.length > 0 && !feed.exhausted;
-        }
         status.textContent = feed.exhausted ? 'You’re all caught up.' : '';
         if (!feed.items.length && !feed.destroyed) {
           showStatus(scroller, 'No posts yet', feed.mode === 'following' ? 'Posts from creators you follow will appear here.' : 'Public creator posts will appear here when they are published.', feed.mode === 'following' ? 'Discover creators' : 'Create a post', function () { CHL.navigate(feed.mode === 'following' ? '#/discover' : '#/compose'); });
@@ -562,17 +474,8 @@
         if (feed.destroyed) return;
         status.textContent = '';
         if (!feed.items.length) showStatus(scroller, 'The feed could not load', (err && err.message) || 'Check your connection and try again.', 'Retry', function () { loadNext(true); });
-        else {
-          status.innerHTML = '';
-          status.appendChild(el('button', { type: 'button', class: 'btn', onclick: function () { loadNext(false); }, text: 'Retry loading more' }));
-        }
-      } finally {
-        feed.loading = false;
-        if (feed.continueRestore && !feed.destroyed && !feed.exhausted) {
-          feed.continueRestore = false;
-          loadNext(false);
-        }
-      }
+        else status.appendChild(el('button', { type: 'button', class: 'btn', onclick: function () { loadNext(false); }, text: 'Retry loading more' }));
+      } finally { feed.loading = false; }
     }
 
     if ('IntersectionObserver' in window) {
@@ -612,12 +515,6 @@
       activate(next);
     };
     scroller.addEventListener('keydown', feed.keyHandler);
-    feed.visibilityHandler = function () {
-      if (document.hidden) {
-        scroller.querySelectorAll('video').forEach(function (video) { try { video.pause(); } catch (_) {} });
-      } else if (!feed.destroyed) activate(feed.activeIndex);
-    };
-    document.addEventListener('visibilitychange', feed.visibilityHandler);
     loadNext(true);
   };
 })();
