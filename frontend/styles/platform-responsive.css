@@ -268,11 +268,11 @@ html.chl-feed-active .chl-feed-item > video.chl-feed-media {
   margin: 0 !important;
 }
 
-/* Phones: keep the video a little shorter while retaining its natural proportions. */
+/* Phones: reduce video height more noticeably; keep width responsive and preserve proportions. */
 @media screen and (max-width: 760px), screen and (hover: none) and (pointer: coarse) {
   html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    max-width: 92vw !important;
-    max-height: 78vh !important;
-    max-height: 78dvh !important;
+    max-width: 90vw !important;
+    max-height: 65vh !important;
+    max-height: 65dvh !important;
   }
 }
