@@ -770,42 +770,355 @@
     if (activeMediaMode !== 'screen' && activeMediaMode !== 'video') {
       var modeError = new Error('Screen sharing is unavailable in Audio-only LIVE.');
       modeError.code = 'MEDIA_MODE_RESTRICTED';
-      ¼ÚXW×ÌLnî&Õ²+3Š›‰a È`1ı%¶!‰ÆE%eÚw[wd#RØJ2<åøhgd8 iˆkTc$ùªfO6\ÿäl*8+0`”a!3Zl¨W}~?µæ,e$³t•³g3o/kpba Ï¦`Ò+9ŞPÿR.z%H%nµ, Ä¡­ôD¤s=_ÉVGÇHwNLEUµ^Î)C\ÑÔ…‰Aø î.[4àŠr†`¤%“Å.
-»kf) e`PŒ5ín ˜ÒeX¹~ 2fDBdai3'¨ÖCXYØlbH`ÙØ½xB," YZ¦`íU^)î/àDÅmDQhmdÉ('ıœ{hµÕkßõdùk(¬­Ìj€‡d¤-N'Ù^AuùÿO0,ˆ$Ù
-bÀ 6-za68·¬qljpER*dÆ7%£ëõtcVò×³q
-Tº98xöÀ‚§vaìöÁHêA}ö10[y$>BX/'HTKwuHnä2}¯Dä)÷ˆ 2méY3Z
-<©Àt10b©;:P¦¥:$0c@ÁTLbBñ±`¾Ub
-`0%.€aˆ   '[(N äÂÛHaÙmw5İS^	Sÿ5f†'k¸ş.3¼t€ùK¶é3u[tqäwow\ßBq„¡ Ä¡d
-@9èy°ı,¦†¾(â£2µp:PP‹okõ¡a!ğiiS"msïe"b§B`säJa-aWÔ:,b!À½… êD3ØÃj34GrRiJ±1aòêt¦ib%Àhà0¸‚hª§ãº-?M ¨)@py2-Ã¸.#!¹°pÁ"à)¡†gœ`¨ôxõUªè ‡¨ÃÉT*}C â9,bJ„‚64’ukF"h' jòö nª¨JE­Ò—knP{¬ ‹±(h|èCà4¡â!"[Ä½æ1 ì™?d`€¡x°{ÔÇ7fnBÜ„^WX´A`ZEnƒŠx"	*´RàipPOæà}h%z½ê$ ( ûI  u­+È[¢ÈF¯c´ïT{J{VWÊÀ2m!"AG}vó¢Cf7<Jîƒ)!)»„!TÑ¹~#ÆÃ$btxĞ*‰o[z Fxo;§,ìëmn# và ¼SÑ²(½ìNö§sînhlgsÅd&ê,}Â@àd2!¤` )í(;;ætÀ1ãfì\œ[QúDdb>,gnÿ%% j`i5
-e½»*>. )® I'*xpOedia ågx`1a^1-¢hCOå$¥òÑº$šb	  jè|6µ<wGgaJ*q(AdgutÏx»‚ staèG/€ $Hbôte„Ëšb}ò'‡îv±acuW4qÎi%Y >2âSf@'en )0ŒØl@.'ºÆ;>^ivD Œ!/À) Y¨Cq^>o±fyì	»ª4õøUX¡°,™öu´[oq$02´F@(düw-ı]µ£4Úd#ïO&õYóÉKªº!14äÆ
-Ü¤ìa-dşå|$êR¤Ø¨°($aë‹d(÷[|ïñstÏô¯ÏBUç*çµ7=ˆè³'i)$¨ñíF@0A¨IJjGy¯å,¨ d@UM¬ jjà V`2·‡Sï0uM¢“Ò``åì`IOiaîÆRŠ A,J1-*¥$G|EqEÎJê z:9¦% ¬›‹X `8)ï (`J.<sd0à3ìoqèÅş´ (+ı¢Q%
-hhÈ]' {),ÿ:0–pŸd°©‘èvgWv+ÿ3>W®¡é`û?  :¥ ñ +òfnz&İ¤}oÛf1*™B*°ó‡6¢+IcpxÑUˆÆèN~cØlMÄ_ØîliÔ${ó4­$#“bÃr¤ë/> 04ê980 Ãbıâµh*  cì#,Šd<m,´H‰!h,²Dy[±w$,nş!"¨7u»! s‚'\ @&i}|ùN<6ÅLg¶ës9†YÑ½pÂĞ3ij,ƒ>0ë´Utƒ€êÉø"`(3ï¸eAnEò
-°/¹ cH  ëqyï±iõğzå{¡ııQYo¥!! c;dÛ($	p¦éeØñ^ &õSf¾Ê0zàõY2´CV;}Ï`h%ô g¿ÓZ|æ6Åu?&l-n äZaË2•Gj†{¼¬1>*`)å†)Ê6àzu$åFÁVp^8ëTeĞàc) lVgWiTeoY×ån•;$í=¤EäŠ)h p`a9%4%¬V¢ïtâŒ„[weIOìäú¹õ»PXh(§²0(ÍfîÒÏû*u3'!bõff¡øÙt"",Ïãw1cu0%Q#WNôKQ-" ’p(;¡ +(Òm‹*áe Ate1|2F!hqdıîd«Á*0ù%_:C}q9d ¨.`rnö9:ÿjp’ƒ€öùˆé´¹ıO…®22&. îÚeº]ALF*‘àâ<óD®
-gÈÁÜf¸˜kb8	ù&;6ÊÌ«dûKTe@Ü¯X @uâ‹•*»zıÑ`µ=‰IŠØK*Xb¯)‹ïvåğœòIQs¹Í,J˜°<K,H@`"¡»>k /¦pè>2#$p¿cÈ!.`8¢ÿÊùbh 42¥yñL~5d /c#l,8½ŒƒatŠ6EB' *&gs*o]_U2#jlm+£Ldnİ2mç8]a,èzñipoPÈÄâpm	Ò5}eE*Ä«bº-ë’CŒìlc´f3@âIÄ"+¹”¦[.ódig* IZ 'jdñK@ À9
-ÙB%ó±(d¨2á€¤\j¡3ëjöò $j©9˜x`î«
+      throw modeError;
+    }
+    if (!activeRoom) {
+      var error = new Error(
+        'Not connected to LIVE.'
+      );
 
-  ®&b@h`ú¡RÆOSA~õ#äˆËKü©Ş}2ÌJ~qYymÒ#ï.}'` 0¾ ¿efıúÂf"¤éG¦Õ{(¥ÆüpzE÷e\ß|¤¯i0ÖAæõy(¡ãg‡é`¢E¬@1;:mus&Z¤
-(!7!°!‚étTwıfÎ|C¶ŸfirUSqucg*O'ˆ/¨rµoc¸5ÎtR `•q€(¬š²r!êwôl²Çãû:e·n™A+ €u;D
-äaë«J, ç´“r|aü4`%kôy	b°%êCïkzGû @eãğ TxÙƒ&`·²H’¢N1±Ï-MKù\+bÉ|À)ks{Îcï’ ´M/@Ã¯ˆ:¿rd½¾-Jd~CÍl«Cé’Ñ` Ÿà’à!gy{úúÅø$ Üë 0l'p$FÜ!L"£|mOõrê®da":"è<H¡#‹¢6}!åÑ¤xÆutmq²Ğ¬#I _ J@ ƒ1ğªù.{*ÂÁáº€“)árhÀ0‘d¦£¤:¯*°P0Bd‚ZcèvÍ€M›M)Õeq8uz`ê(U*5J"Ô]läìÊ²*¼!l!93õAqX¦üÀ.aòŠIm3o%ÜF !â(¢), /FhE	[Ähsozl*, ı¨‡ "l–`* wQfŒïå£0áæ&Š¥èNƒ 8)'kŒ0x
-/«%]JàGvÁ%$^(§íka$ª±z`x¦^ pUo0v|jd7°¥p±5F9(dš !e¸Še€ìnhá¦eünu¡meôE×¯ìÔsÈE3$MÉÓ]/ğ `{‚CÉª°4*So`®·¸Fe€v
-QYÇàÃm¤ D[aüvmp,nóVS´f#3º*–0+	d-ù-e$edy
-g(AS¥dy©`m*ÓwSìg&¬ IédQqtp¤,élvÄ-¤iãÅ'rSR3İu+Úü$l‚:Y6QRî7u.g'uDÙCz-¡``lôàhfñ¥IaJß>
-"e›MtA}¯1ã1q´Tù)bY0.¬êQ(6ùÒ#v=*úç€øg@(oeEiädÁYÅ|7§oé?U^ƒùjp¬#¢LˆÕulÚ GDxjn;6`ñå¯£¹gw:¤%ÿ~(9G;E$GkfIs=­VK@VUXdòUÉNiÜ9ÁM]?=Î- !ÙŠ"p(6ÉI¬+pCSím`€ü"ÀeñıVatb8Hÿ*	°¹¹<Ù ş­``yH¨oóåîrfi}d8ß˜Ãq´¡éÆ,ha­Q»dmş=Xg4 1/Btôy(!'s9iËçÀ°|Acİ —’uÀlHeaT‘[¤äURu|hâvOm¤l¹,òÎ*eQj2c°@U|f:÷i¬a²ªŒ¬š_Ê
-÷J$Ã~LŠDeİFJTY&(;zğñ<mMë2 6Êú üå(‘l ¨
-´À%r{!b~jQªAUq 1Dşum$üH…xG®;ıù}æ:.Í#j©på©zê%—Ôb`'1y0p b.u««íá%!ù)ßšŠ,- wÀG; A3á4Ùp	ts”tònãee usödM5:1Né\É¢f%Oo!è¡iDAFE,çOîÍfäâaëôáolmF/Ad `Ã<ŠfBı‚Ff #üh‹]VA]GAÔhGF¦ªàQ‰o_j]„Á¤D4AÿgÛ-"g@Váb6!¸_O@êU³ö.'qVdhUNg|¬Ñ6Š±±qh5%qOKQn/$93á5eéy$“c™ßzgìL¨'DjèiDÔvJFc/ËÛ±T¡D}¡ĞàWnÿŒ86!$& Æ<÷Ü÷CcË\İD=UI;g¿n_àÑRËÙ³™"«´&)3w!éô/D3pdá?fG!h óïKöt)È=k<'âã<0›1@Ğğa¨Dìkw¢èö0Y¥(íyPuôŠƒ%sU}kEéÛ
-x($¢‚íeP'Äx]e7êÌm>ûŒC³?r¾à$8/ Tµ:£,NfÈ(qØic2§ÀiôV
-£A(q4q	 h¦oxmbO"!¦qŒ¢i@U`hâù¥Ôah9©áGÅam§zÁF'¢,H>
- :_¨lïH5Ps!©òbÓdÃ½¤_!8Ş¦gƒmfõüktc>- -%Ób%«•ùD 	v+…àI—:ê+«Lÿ}d¤”õsf^(d]¸1›B&k ,&Ãwæ9q  0A:pë¥/vcâ–4!cOùñ9|1Hg2`Ìr°7%`3h(4"y†ğHåDª"ûNLâ±îIA2CQuå®vL,!Lài¥š8j®C!©oc cÔu¢%%ƒ'é.bSBz¡l-8¥Vqêh6MÕÚJv5oæt}e*N `c¢.èÄ LwÂ^«yñĞSû¤¼w5:Y$5f/,` á¤pá.lÕ¬úııªC4ğ±	t=B$Qù}Ì Ÿ,ğ@¸`Ty,¤à ke0 !€i¤0¾áq¡0´àt´á* nqÄCºˆlŠ.Üa(!ãÃlbz¥(V#1KyQó |øÌ'¾ÂQqnzÄà›JA!$(-…½8^ ¬Ê P0Àâ ²r Ky|
-ğÙš÷L¤É<#Y´"$+h‚ h¥Ä l~U7Wr4D`€|%2à<4ÁF$ €Ø÷ †5¡"ÏØc -+¬:}pÑ/Hà¡ò(” (`2U)5E'¢$+nv&3-0ôK 'x `qä
-	° ')è(") bÊh2°dP`8ı<fi#àÁ'NA5ı"|ß‹i +Àµrw¡£p¡P”`!Dq©µ }|w—%ZlìfNB8©`$# Ğå`"$ÂsJâ@9x$g00
-®&)†’R”mq?L;¾HuWäEÖ°3AÂ!/Zr 4¡/?'@B…5 Ra´`Qu.ÿ.P¼1ap]H@Á6Á)°p¨œ«ï8Q°º(¨ğòu Ûo völs3c­‰:àãæVznm}áî`ˆ_-ÄËé)xÈ. kYnèÛJ .I¨R >«!!(*€ª8B¡‰&Rê‹´ãn"f) +À]ÇpLæíKÜ*4¿L$ @ç&úEO<aq,(OÇ`<ß¡!"+?$İÎ2Ks#¤fo$,hYh\D ®1PÊ %«ÏÙ/ëá41ÿ?èâƒFµ5Ô9Lc[ıtLüN!]rWbio8½¢œd¤}*É!i3Ì d¯®$ĞC $½ÀÈ¨%$ÃX!g5İ¯O¹LläöAjÑo~Fe»ëH@§‚aKáØè'k,*èA`è-_à'%G°q}ta!³&dÎ‘ÀB(%¤aöo}Í5^(%#Ç%q¬c0Ûc+Òc:öÀ./h@—”,#T´¥qØCJÈõ!kbit olb§œ&$(¡~€$ty¶k»p‚!G1Vh8X&
- ¶2&   Hru!lÈ@î´hÛ©ñ!'úGsnc¨&h §)²¯Hpc|wâL»~!
-Py$~èÉ…–i]v1Fƒj!8X8×¡$$hÛvp Shx'3h1¢,qd­=s~LÈûn˜)-+K1qà…(¥µ p`À N×ygoo~Œxqóëî9`¥‚ïëœ$¤&%`*ª4´¤–¤è.±šÃ¦å´"-âŠ4@!=>İ¼¨„ ( ©­>‘¡&j0f 04®lckÜ];Âb! Êa Á` 
-a‚VÓ  jR|à«ñAæË]V·L¡1{ÚÂ¡@Â–$ `‚FÒ` 2ˆ™Bñä#Ğ$Xğ°²8èùbp­Î ñ )`pa¡ÊŞ’Æê A0”oi$5=8õéiâĞqiûàd€z|°;sÒcƒğn 0*Bb *|qp¤:5?mGqu†$ÿg.âÂ a  :,(Pëz†x5à¤Ä$€ÑØ0)2lW
-¸¨Tá~zu—9j¹` , z0e#_}ú©®ô ‡2-?P AyÉ0 –&(D$âaCPêø" XEæ``sŸƒ(,` |'^hzb®Zw¹]ìåpŒ!i` i } #½07I(4w54êH‚ù¦!N btoúB-Eã‰M‚9lX32øû8,(ª~°=,¾€"~¿ğDï
-vå~Éí®G²ô`bõ_ïapñg ïì/¦tu>5&ï®<iÃ>ô2ìyC•¤Di´ècpàÎ“TìUÁ Å´°%( tmÈ%`ªttöB#Œ6c|U™¤zKĞÃm`u€¿(kKchig¤Àtå~%zn*şaém ï ,¤¥l	¢µáÒÂg«i2È"!¦Å²àx›U)¡» ¡ra\I-ËhaFF.=í¥†ÁOƒşë9$0 ¤4(4"¡Z"1AC>a``PLca&éÃeNõ¬t's=' (+·¥  (!gdùbwi,7¾¤À$K†Â p O8¹‚@ÎˆT;fRÔ<E†2L!Á\Kcy|$åkb¦B-/‡”¨'!(è¥ 0  Z`jôdsX†.u-zëìf…¦£)"0¯Š `£paBÌF]àeú4Wt,Í§ 0	­`R„ °!]P Nà, !z_ú¦-²ák_!óñİ|4‹Q&7
-`h
-?i"›ˆ KY,¾d_æ8¼uæ§tc£¼¶×aqÌëw”½ğ'> ")¢u6_¢©f.,8iJfô5°bdĞ´úgœ-TĞQÔ*ºdI‹  a0ğ° ä§æCa#¶ÆŠ>Jpùx=sh$ i@)¡"a`p jfq£¨Únof@öe+!BªaàJa`sã'éÑaál¥Šh$õ}4íåy4p$> Ö/9É„@;5ozôÈ¨gMÌ‰[%İfï(?yCi"WJ)4b58ï,'r»lqEª¹Nº,¡°y$Šj¦rïÍevİ;Qy)êIqá• 4 Ì$QÈ‹¾0ïtjH$¡”p²6°N7"Ğ™2ñaç=yAbt£nä]$³ü{G¨`¡í©$1>hôÌfF`i­šv,(­)y-Àu3”Apa ° ar›62'e})£ñ¤b&c-D©ij³ F<¢°l€*L`®h,ş¯Š!@ÄI9G‰w%ævñmÏv2 lcpp€u óşAôÎo.(ıhôF?r?½ù{tB `b±ô&3d$nPh5CH˜sn Â&aEc°µJiN""qÔG#+Dî Jğnfü?tÑCå¼0Ğ4aH67¬èjm³Œ¿$<|E=ú hDÚ¡èyd:LcîƒrT FeÛ6(`1\#êBáoK3ôR3º"jhêsë¥çeÿÜ®i%@ m`JkŞdqö•ÙñIhqa¤É°"!7"#A\O{viw(ğ1* p8‡KIÜ/óYJeo~õcß\söŸrG\2:‹<$®Š„A;(rS}weCz AÈ}8ñutÜa|OS'y<.`İ<˜MŠT„‘yÌàu™à%…HG1^%Êm“+İïqğ "P¨°HgÂF4à0æ|)l¦`&¼#À ¡âvQú~ËR%(é°2)è oW}Pif9Ã4u5:
-Kc¤†ík[ls&J àVà}…KØmÄ¿«kzBtAô väß»°,Ê;Ë8G°`2ÆÏåaõuë'¼jŸaËª5ß§O8¥uÊ*À5' ?¯›ÕBğ{~jåa` z‰W9†{å;²GJ÷Zw“!E„fı¤bvwÖ?t¿ñŸ[BdXF
-Àë0/3}/u+(uàa¤Œ"ö¾a»ï"ïuãPlôxEZgïH;s?Æ'¥#¥bn,Šè/V6‹’¨`*BQaNdmM®9Â­»wULZ°éAã›±-Ø›¨H t¥ÎUkwÖ§ß ` §6Tioâ\=ïXa5ÂdŒ@ 'ƒ-Éò¼¨: (0 $ `/fïvT­fcWw#²4J 08„ ,„¤aNçyÖNUîÿ "(¢I,'ª0
-å¯6QdÆÜ,;'))¤¡ ´¤ÍVdsÃGvÆë5ófÌyÃîév<!y	ğ  ! öÍİ,yh|wJÀ‰L10»xJ+H¦ª}‹à	WîHj{¯Šn2.í…HÄ©s$_5 Ò!	0İ+N1ù3Ş
+      error.code =
+        'LIVEKIT_NOT_CONNECTED';
+
+      throw error;
+    }
+
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getDisplayMedia !==
+        'function'
+    ) {
+      var unsupported = new Error(
+        'Screen sharing is not supported by this browser.'
+      );
+
+      unsupported.code =
+        'SCREEN_SHARE_UNSUPPORTED';
+
+      throw unsupported;
+    }
+
+    try {
+      return await activeRoom.localParticipant
+        .setScreenShareEnabled(
+          true,
+          {
+            audio: true
+          }
+        );
+    } catch (error) {
+      error.code =
+        error.code ||
+        'SCREEN_SHARE_FAILED';
+
+      throw error;
+    }
+  };
+
+  CHL.stopScreenShare = async function () {
+    if (!activeRoom) return false;
+
+    return activeRoom.localParticipant
+      .setScreenShareEnabled(false);
+  };
+
+  /*
+   * Media attachment helpers
+   */
+  CHL.attachLocalTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
+      return null;
+    }
+
+    try {
+      var element = track.attach();
+
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
+      }
+
+      return element;
+    } catch (error) {
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach local track.',
+          error
+        );
+      }
+
+      return null;
+    }
+  };
+
+  CHL.attachRemoteTrack = function (
+    track,
+    container
+  ) {
+    if (!track || !container) {
+      return null;
+    }
+
+    try {
+      var element = track.attach();
+
+      if (element) {
+        element.autoplay = true;
+        element.playsInline = true;
+
+        container.appendChild(
+          element
+        );
+      }
+
+      return element;
+    } catch (error) {
+      if (window.console) {
+        console.error(
+          '[Creator Hub] Unable to attach remote track.',
+          error
+        );
+      }
+
+      return null;
+    }
+  };
+
+  /*
+   * Remove an individual media track from the page.
+   */
+  CHL.detachTrack = function (
+    track
+  ) {
+    detachTrack(track);
+  };
+
+  /*
+   * Return the active LiveKit room.
+   * Useful for pages that need to inspect the real connection.
+   */
+  CHL.getActiveLiveKitRoom =
+    function () {
+      return activeRoom;
+    };
+
+  /*
+   * Determine whether the browser currently has
+   * a LiveKit connection.
+   */
+  CHL.isLiveKitConnected =
+    function () {
+      if (!activeRoom) {
+        return false;
+      }
+
+      try {
+        var state =
+          activeRoom.state;
+
+        return (
+          String(state || '')
+            .toLowerCase() ===
+          'connected'
+        );
+      } catch (_) {
+        return false;
+      }
+    };
+
+  /* Reliable room data carries LIVE reactions, polls, gifts and guest media requests. */
+  CHL.publishLiveData = async function (payload) {
+    if (!activeRoom || !activeRoom.localParticipant || !CHL.isLiveKitConnected()) {
+      throw createLiveKitError('Connect to the LIVE room before sending a room event.', 'LIVEKIT_NOT_CONNECTED');
+    }
+    if (!payload || payload.version !== 1 || !payload.roomId || typeof payload.type !== 'string') {
+      throw createLiveKitError('The LIVE room event is invalid.', 'LIVEKIT_INVALID_DATA');
+    }
+    var encoded;
+    try { encoded = new TextEncoder().encode(JSON.stringify(payload)); }
+    catch (error) { throw createLiveKitError('The LIVE room event could not be encoded.', 'LIVEKIT_DATA_ENCODING_FAILED', error); }
+    if (encoded.byteLength > 12000) throw createLiveKitError('The LIVE room event is too large.', 'LIVEKIT_DATA_TOO_LARGE');
+    await activeRoom.localParticipant.publishData(encoded, { reliable: true });
+    return true;
+  };
+
+  /*
+   * Determine whether the local participant
+   * has a published camera.
+   */
+  CHL.hasPublishedCamera =
+    function () {
+      if (!activeRoom) return false;
+
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
+
+        var found = false;
+
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
+
+              if (
+                type === 'camera' ||
+                type === 'video'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
+
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  /*
+   * Determine whether the local participant
+   * has a published microphone.
+   */
+  CHL.hasPublishedMicrophone =
+    function () {
+      if (!activeRoom) return false;
+
+      try {
+        var publications =
+          activeRoom.localParticipant
+            .trackPublications;
+
+        var found = false;
+
+        publications.forEach(
+          function (publication) {
+            if (
+              publication &&
+              publication.track
+            ) {
+              var type =
+                getTrackType(
+                  publication.track
+                );
+
+              if (
+                type === 'microphone' ||
+                type === 'audio'
+              ) {
+                found = true;
+              }
+            }
+          }
+        );
+
+        return found;
+      } catch (_) {
+        return false;
+      }
+    };
+
+  /*
+   * Convenience participant handlers.
+   */
+  CHL.handleParticipantConnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant joined: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleParticipantDisconnected =
+    function (participant) {
+      try {
+        var identity =
+          participant &&
+          participant.identity
+            ? participant.identity
+            : 'viewer';
+
+        if (CHL.toast) {
+          CHL.toast(
+            'Participant left: ' +
+            identity
+          );
+        }
+      } catch (_) {}
+    };
+
+  CHL.handleActiveSpeaker =
+    function (speakers) {
+      return speakers || [];
+    };
+
+  CHL.handleConnectionState =
+    function (state) {
+      return state;
+    };
+
+  /*
+   * Backward-compatible cleanup alias.
+   */
+  CHL.cleanup =
+    CHL.disconnectLiveKit;
+
+  /*
+   * Browser shutdown cleanup.
+   */
+  window.addEventListener(
+    'beforeunload',
+    function () {
+      unloading = true;
+
+      try {
+        CHL.disconnectLiveKit();
+      } catch (_) {}
+    }
+  );
+
+  /*
+   * If the page is restored from browser cache,
+   * don't leave an old disconnected LiveKit object behind.
+   */
+  window.addEventListener(
+    'pageshow',
+    function () {
+      if (
+        unloading &&
+        activeRoom
+      ) {
+        try {
+          CHL.disconnectLiveKit();
+        } catch (_) {}
+      }
+
+      unloading = false;
+    }
+  );
+})();
