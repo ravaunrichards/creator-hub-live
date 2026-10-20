@@ -30,7 +30,7 @@ const divisions = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'B4', 'B5', 'C1', 'C2', '
 for (const division of divisions) if (!ranks.includes("'" + division + "'")) throw new Error(`Official team division missing: ${division}`);
 
 const sw = fs.readFileSync(path.join(root, 'frontend/sw.js'), 'utf8');
-if (!sw.includes('chl-web-v3-3-11')) throw new Error('Service-worker cache was not invalidated after restoring page assets.');
+if (!sw.includes('chl-web-v3-3-12')) throw new Error('Service-worker cache was not invalidated after restoring page assets.');
 for (const rel of ['index.html', 'sw.js']) {
   const web = fs.readFileSync(path.join(root, 'frontend', rel));
   const android = fs.readFileSync(path.join(root, 'android/app/src/main/assets/web', rel));
