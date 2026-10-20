@@ -1336,134 +1336,30 @@ html[data-chl-contrast="high"] .note { background: var(--card); color: var(--txt
 .chl-photo-crop-editor{min-width:0}.chl-photo-crop-editor .field{margin:8px 0}.chl-photo-crop-canvas{max-height:300px;touch-action:pan-y}.chl-photo-crop-editor input[type=range]{accent-color:var(--brand,#8b79ff)}
 
 
-/* CHL Android/mobile LIVE sizing correction — overrides earlier oversized stacked layout. */
-@media (max-width: 860px) {
-  .main:has(.live-room-layout) {
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-    max-width: 100%;
-    height: calc(100vh - 56px);
-    height: calc(100dvh - 56px - env(safe-area-inset-bottom, 0px));
-    min-height: 0;
-    overflow: hidden;
-    padding: 4px 6px 5px;
-  }
-
-  .main:has(.live-room-layout) > .row.between {
-    flex: 0 0 auto;
-    gap: 4px;
-    margin: 0;
-  }
-  .main:has(.live-room-layout) .h1 { font-size: 17px; line-height: 1.15; margin: 0; }
-  .main:has(.live-room-layout) .sub { font-size: 10px; line-height: 1.2; margin: 1px 0 0; }
-
-  /* Keep the room compact: video on the left, chat/gifts on the right. */
-  .main:has(.live-room-layout) .live-room-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    grid-template-rows: minmax(0, 1fr);
-    align-items: stretch;
-    gap: 5px !important;
-    flex: 1 1 0;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .main:has(.live-room-layout) .live-video-card {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    padding: 4px;
-    overflow: hidden;
-  }
-  .main:has(.live-room-layout) .live-stage {
-    flex: 1 1 0;
-    width: 100%;
-    height: 0;
-    min-height: 90px;
-    max-height: 100%;
-    overflow: hidden;
-  }
-  .main:has(.live-room-layout) .live-stage video {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-  .main:has(.live-room-layout) .live-status {
-    top: 4px;
-    left: 4px;
-    padding: 3px 5px;
-    font-size: 9px;
-    line-height: 1.1;
-  }
-  .main:has(.live-room-layout) .live-controls {
-    display: flex;
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    gap: 3px;
-    margin-top: 2px !important;
-  }
-  .main:has(.live-room-layout) .live-controls .btn {
-    flex: 1 1 calc(50% - 3px);
-    min-width: 0;
-    min-height: 30px;
-    padding: 4px 3px;
-    font-size: 10px;
-    line-height: 1.1;
-    white-space: normal;
-  }
-
-  .main:has(.live-room-layout) .live-room-side {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    height: 100%;
-    overflow: hidden;
-  }
-  .main:has(.live-room-layout) .live-chat-card,
-  .main:has(.live-room-layout) .live-gift-card {
-    min-width: 0;
-    min-height: 0;
-    padding: 5px;
-    gap: 4px;
-    overflow: hidden;
-  }
-  .main:has(.live-room-layout) .live-chat-card { display: flex; flex: 1 1 0; flex-direction: column; }
-  .main:has(.live-room-layout) .live-chat-messages {
-    flex: 1 1 0 !important;
-    width: 100%;
-    height: 0 !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overflow-wrap: anywhere;
-  }
-  .main:has(.live-room-layout) .live-chat-card .note { margin: 2px 0; padding: 4px; font-size: 10px; line-height: 1.2; }
-  .main:has(.live-room-layout) .live-chat-card form { display: flex; flex: 0 0 auto; gap: 3px; margin-top: 2px; min-width: 0; }
-  .main:has(.live-room-layout) .live-chat-card form .input { flex: 1 1 0; width: 0; min-width: 0; padding: 6px 4px; font-size: 11px; }
-  .main:has(.live-room-layout) .live-chat-card form .btn { padding: 5px 6px; font-size: 10px; }
-  .main:has(.live-room-layout) .live-gift-card { flex: 0 1 38%; }
+/* CHL For You feed video sizing correction — shared by website and Android WebView. */
+html.chl-feed-active .chl-feed-shell,
+html.chl-feed-active .chl-feed-scroller,
+html.chl-feed-active .chl-feed-item {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
 }
-
-@media (max-width: 380px) {
-  .main:has(.live-room-layout) { padding-left: 4px; padding-right: 4px; }
-  .main:has(.live-room-layout) .live-room-layout { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 3px !important; }
-  .main:has(.live-room-layout) .live-video-card,
-  .main:has(.live-room-layout) .live-chat-card,
-  .main:has(.live-room-layout) .live-gift-card { padding: 3px; }
-  .main:has(.live-room-layout) .live-controls .btn { font-size: 9px; min-height: 28px; }
+html.chl-feed-active .chl-feed-item {
+  height: 100%;
+  flex: 0 0 100%;
+  overflow: hidden;
+}
+html.chl-feed-active video.chl-feed-media.chl-feed-video {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0;
+  transform: none !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  background: #05060a;
 }
