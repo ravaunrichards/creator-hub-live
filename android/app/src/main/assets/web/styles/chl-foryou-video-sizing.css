@@ -1,0 +1,28 @@
+/* Creator Hub Live — For You feed video sizing repair.
+   Keep full-height cards for swipe snapping; constrain only video media. */
+html.chl-feed-active .chl-feed-item > video.chl-feed-media {
+  position: absolute !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: min(92vw, 520px) !important;
+  max-height: 58vh !important;
+  max-height: 58dvh !important;
+  margin: auto !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  transform: none !important;
+}
+@media (min-width: 761px) {
+  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
+    max-width: min(70vw, 640px) !important;
+    max-height: 78vh !important;
+    max-height: 78dvh !important;
+  }
+}
+@media (max-height: 620px) {
+  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
+    max-height: 52vh !important;
+    max-height: 52dvh !important;
+  }
+}
