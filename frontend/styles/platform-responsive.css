@@ -252,27 +252,25 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 
-
-/* CHL For You video sizing — slightly shorter on every device, without changing scrolling. */
-html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-  position: absolute !important;
-  inset: 50% auto auto 50% !important;
-  transform: translate(-50%, -50%) !important;
-  width: auto !important;
-  height: auto !important;
-  max-width: 96vw !important;
-  max-height: 94vh !important;
-  max-height: 94dvh !important;
-  object-fit: contain !important;
-  object-position: center center !important;
-  margin: 0 !important;
-}
-
-/* Phones: reduce video height more noticeably; keep width responsive and preserve proportions. */
+/* CHL For You: shorten only the video element on phone-sized/touch screens.
+   Keep the feed card, snap points, scroller, and desktop rules unchanged. */
 @media screen and (max-width: 760px), screen and (hover: none) and (pointer: coarse) {
   html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    max-width: 90vw !important;
-    max-height: 65vh !important;
-    max-height: 65dvh !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    inset: 50% auto auto 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: auto !important;
+    height: 68vh !important;
+    height: 68dvh !important;
+    max-width: 94vw !important;
+    max-height: 68vh !important;
+    max-height: 68dvh !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    margin: 0 !important;
   }
 }
