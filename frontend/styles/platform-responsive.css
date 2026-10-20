@@ -260,165 +260,43 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 
 
-/* Creator Hub Live — For You video sizing correction (all viewports). */
-html.chl-feed-active,
-html.chl-feed-active body {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-html.chl-feed-active .main {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-html.chl-feed-active #outlet,
-html.chl-feed-active .chl-feed-shell {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  max-width: 100%;
-}
-.chl-feed-shell {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-.chl-feed-scroller {
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  gap: 0;
-  scroll-snap-type: y mandatory;
-}
-.chl-feed-item {
-  box-sizing: border-box;
-  flex: 0 0 100%;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  max-height: 100%;
-}
-/* Never crop/zoom feed videos. Preserve the full source frame on phones,
-   tablets, foldables, desktop browsers, and Android WebView. */
-.chl-feed-media.chl-feed-video,
-.chl-feed-item video.chl-feed-media {
-  position: absolute;
-  inset: 0;
-  display: block;
-  box-sizing: border-box;
-  width: 100% !important;
-  height: 100% !important;
-  min-width: 0;
-  min-height: 0;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  margin: 0;
-  padding: 0;
-  object-fit: contain !important;
-  object-position: center center !important;
-  transform: none !important;
-  transform-origin: center center;
-}
-.chl-feed-loading,
-.chl-feed-state {
-  box-sizing: border-box;
-  flex-basis: 100%;
-  min-height: 0;
-  max-width: 100%;
-}
-@media (max-width: 760px) {
-  html.chl-feed-active .main {
-    width: 100%;
-    height: calc(100vh - 60px - var(--chl-safe-bottom));
-    height: calc(100dvh - 60px - var(--chl-safe-bottom));
-    max-height: calc(100dvh - 60px - var(--chl-safe-bottom));
-    padding: 0;
-  }
-  html.chl-feed-active #outlet {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-  }
-  .chl-feed-shell {
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
-  }
-  .chl-feed-scroller {
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
-  }
-  .chl-feed-item {
-    flex-basis: 100%;
-    height: 100%;
-    min-height: 0;
-  }
-}
-@media (max-height: 500px) {
-  .chl-feed-header { padding-top: max(4px, var(--chl-safe-top)); padding-bottom: 4px; }
-  .chl-feed-brand-mark { width: 26px; height: 26px; }
-  .chl-feed-switcher a { min-height: 28px; padding-top: 3px; padding-bottom: 3px; }
-  .chl-feed-details { bottom: max(8px, calc(var(--chl-safe-bottom) + 6px)); }
-  .chl-feed-actions { bottom: max(8px, calc(var(--chl-safe-bottom) + 6px)); gap: 5px; }
-  .chl-feed-avatar { width: 32px; height: 32px; margin-bottom: 4px; }
-}
-
-
-/* CHL For You feed: size the video element by its native aspect ratio, not by stretching it to fill the screen. */
+/* CHL For You feed: force uncropped, unzoomed video within each responsive feed item. */
 html.chl-feed-active .chl-feed-scroller {
   min-width: 0;
   min-height: 0;
-  gap: 0;
+  max-width: 100%;
 }
 html.chl-feed-active .chl-feed-item {
-  box-sizing: border-box;
-  flex: 0 0 100%;
-  width: 100%;
-  height: 100%;
   min-width: 0;
-  min-height: 0;
-  max-height: 100%;
+  min-height: 0 !important;
+  max-width: 100%;
+  height: 100%;
+  flex: 0 0 100%;
   overflow: hidden;
 }
-html.chl-feed-active video.chl-feed-media,
-html.chl-feed-active .chl-feed-item video {
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  display: block !important;
-  box-sizing: border-box !important;
-  width: auto !important;
-  height: auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
+html.chl-feed-active video.chl-feed-media.chl-feed-video {
+  width: 100% !important;
+  height: 100% !important;
   max-width: 100% !important;
   max-height: 100% !important;
+  inset: 0 !important;
   margin: 0 !important;
-  padding: 0 !important;
+  transform: none !important;
   object-fit: contain !important;
   object-position: center center !important;
-  transform: translate(-50%, -50%) !important;
-  transform-origin: center center !important;
-  zoom: 1 !important;
 }
 @media (max-width: 760px) {
   html.chl-feed-active .main {
-    width: 100%;
     min-width: 0;
-    min-height: 0;
-    padding: 0;
+    max-width: 100vw;
     overflow: hidden;
   }
-  html.chl-feed-active .chl-feed-shell,
-  html.chl-feed-active .chl-feed-scroller {
+  html.chl-feed-active .chl-feed-shell {
     width: 100%;
-    min-width: 0;
+    max-width: 100vw;
     min-height: 0;
-    max-width: 100%;
-    max-height: 100%;
+  }
+  html.chl-feed-active .chl-feed-item {
+    min-height: 0 !important;
   }
 }
