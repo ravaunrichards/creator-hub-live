@@ -1,0 +1,9 @@
+Apply this single-line change in frontend/index.html:
+
+FROM:
+<link rel="stylesheet" href="styles/chl-foryou-video-sizing.css?v=1.0.0"/>
+
+TO:
+<link rel="stylesheet" href="styles/chl-foryou-video-sizing.css?v=1.0.1"/>
+
+Do not change any other index.html lines.
