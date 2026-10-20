@@ -1,8 +1,18 @@
 /*
- * Creator Hub Live — For You feed video sizing repair.
- * Scope is limited to the For You feed; do not apply to Following or live rooms.
+ * Creator Hub Live — For You and Following feed video sizing.
+ *
+ * Both the For You and Following vertical feeds share one identical sizing
+ * contract. Earlier builds scoped every rule to [aria-label="For You feed"]
+ * only, so the Following feed (aria-label="Following feed") fell back to
+ * platform-responsive.css object-fit:cover and rendered "too large" / cropped.
+ *
+ * The shell-level rules below target BOTH feeds with :is(...). The global
+ * document rules are anchored on html.chl-feed-active (a class swipe-feed.js
+ * toggles when a feed is mounted) so they work even where CSS :has() is not
+ * supported (older Android WebView), with a :has() fallback kept for browsers
+ * that honour it. Live rooms and other pages are not targeted.
  */
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-item > video.chl-feed-media {
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item > video.chl-feed-media {
   position: absolute !important;
   inset: 0 !important;
   display: block !important;
@@ -24,20 +34,24 @@
   z-index: 0;
 }
 
-/* Establish a stable containing block for the video and its overlays. */
-html:has(.chl-feed-shell[aria-label="For You feed"]) {
+/* Establish a stable containing block for the feed, its media and overlays.
+ * Primary anchor: html.chl-feed-active (broad WebView support). */
+html.chl-feed-active,
+html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) {
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
-html:has(.chl-feed-shell[aria-label="For You feed"]) body {
+html.chl-feed-active body,
+html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) body {
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
-html:has(.chl-feed-shell[aria-label="For You feed"]) .main {
+html.chl-feed-active .main,
+html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) .main {
   box-sizing: border-box;
   width: 100%;
   max-width: none;
@@ -48,14 +62,16 @@ html:has(.chl-feed-shell[aria-label="For You feed"]) .main {
   padding: 0;
   overflow: hidden;
 }
-html:has(.chl-feed-shell[aria-label="For You feed"]) #outlet {
+html.chl-feed-active #outlet,
+html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) #outlet {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
-.chl-feed-shell[aria-label="For You feed"] {
+
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
@@ -66,7 +82,7 @@ html:has(.chl-feed-shell[aria-label="For You feed"]) #outlet {
   background: #070910;
   color: #f8f9ff;
 }
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-scroller {
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-scroller {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -80,7 +96,7 @@ html:has(.chl-feed-shell[aria-label="For You feed"]) #outlet {
   overscroll-behavior-y: contain;
   scroll-snap-type: y mandatory;
 }
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-item {
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item {
   position: relative;
   isolation: isolate;
   box-sizing: border-box;
@@ -94,20 +110,20 @@ html:has(.chl-feed-shell[aria-label="For You feed"]) #outlet {
   scroll-snap-align: start;
   background: #090b13;
 }
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-shade {
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-shade {
   position: absolute;
   z-index: 1;
   inset: 0;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(0,0,0,.16), transparent 24%, transparent 45%, rgba(0,0,0,.78));
 }
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-actions,
-.chl-feed-shell[aria-label="For You feed"] .chl-feed-details {
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-actions,
+:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-details {
   position: absolute;
   z-index: 2;
 }
 @media (max-width: 760px) {
-  .chl-feed-shell[aria-label="For You feed"] .chl-feed-item {
+  :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item {
     min-height: 0;
   }
 }
