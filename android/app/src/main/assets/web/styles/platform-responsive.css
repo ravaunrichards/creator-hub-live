@@ -251,20 +251,3 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
   .chl-feed-spinner { animation: none; border-right-color: #fff; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
-
-
-/* CHL mobile For You feed video sizing — desktop rules above remain unchanged.
-   The coarse-pointer clause also catches phones using desktop-site mode. */
-@media screen and (max-width: 760px), screen and (hover: none) and (pointer: coarse) {
-  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    inset: 50% auto auto 50% !important;
-    transform: translate(-50%, -50%) !important;
-    width: min(70vw, 420px) !important;
-    height: min(52vh, 520px) !important;
-    max-width: 70vw !important;
-    max-height: 52vh !important;
-    object-fit: contain !important;
-    object-position: center center !important;
-    margin: 0 !important;
-  }
-}
