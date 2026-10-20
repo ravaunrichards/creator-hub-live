@@ -1331,35 +1331,3 @@ html[data-chl-theme="light"] .note { background: #fff7e6; border-color: #a16207;
 html[data-chl-theme="light"] .toast { background: #111111; color: #ffffff; }
 html[data-chl-theme="light"] .skeleton { background: linear-gradient(90deg, #e2e7f0, #f5f7fb, #e2e7f0); }
 html[data-chl-contrast="high"] .note { background: var(--card); color: var(--txt); }
-
-/* Profile photo crop and zoom controls */
-.chl-photo-crop-editor{min-width:0}.chl-photo-crop-editor .field{margin:8px 0}.chl-photo-crop-canvas{max-height:300px;touch-action:pan-y}.chl-photo-crop-editor input[type=range]{accent-color:var(--brand,#8b79ff)}
-
-
-/* CHL For You feed video sizing correction — shared by website and Android WebView. */
-html.chl-feed-active .chl-feed-shell,
-html.chl-feed-active .chl-feed-scroller,
-html.chl-feed-active .chl-feed-item {
-  min-width: 0;
-  min-height: 0;
-  max-width: 100%;
-}
-html.chl-feed-active .chl-feed-item {
-  height: 100%;
-  flex: 0 0 100%;
-  overflow: hidden;
-}
-html.chl-feed-active video.chl-feed-media.chl-feed-video {
-  display: block;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
-  margin: 0;
-  transform: none !important;
-  object-fit: contain !important;
-  object-position: center center !important;
-  background: #05060a;
-}
