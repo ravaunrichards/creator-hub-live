@@ -299,10 +299,45 @@
       var media = mediaOf(post);
       var video = null;
       if (media.length && String(media[0].type || '').indexOf('video') === 0) {
-        video = el('video', { class: 'chl-feed-media chl-feed-video', src: media[0].url, playsinline: true, muted: true, loop: true, controls: true, tabindex: '0', preload: index < 2 ? 'metadata' : 'none', 'aria-label': 'Creator video. Use playback controls to play or pause.' });
+        video = el('video', { class: 'chl-feed-media chl-feed-video', src: media[0].url, playsinline: true, muted: true, loop: true, controls: true, tabindex: '0', preload: index < 2 ? 'auto' : 'metadata', 'aria-label': 'Creator video. Use playback controls to play or pause.' });
+        // Explicit inline attributes are more reliable in Android WebView than boolean properties alone.
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.setAttribute('data-video-state', 'loading');
         if (safeUrl(post.cover_url)) video.setAttribute('poster', post.cover_url);
-        video.addEventListener('error', function () { video.setAttribute('data-playback-error','true'); });
+        var videoStatus = el('div', { class: 'chl-feed-video-status', role: 'status', 'aria-live': 'polite', text: 'Loading video…' });
+        videoStatus.hidden = true;
+        video.addEventListener('loadstart', function () { video.setAttribute('data-video-state', 'loading'); });
+        video.addEventListener('loadedmetadata', function () {
+          video.setAttribute('data-video-state', 'metadata');
+          // A zero videoWidth despite metadata is a strong sign that this browser cannot decode the video track.
+          if (video.videoWidth === 0 && video.videoHeight === 0) {
+            videoStatus.textContent = 'Video picture is not supported by this device. Try an MP4 encoded with H.264 video and AAC audio.';
+            videoStatus.hidden = false;
+          }
+        });
+        video.addEventListener('loadeddata', function () {
+          video.setAttribute('data-video-state', 'ready');
+          if (video.videoWidth > 0 && video.videoHeight > 0) videoStatus.hidden = true;
+        });
+        video.addEventListener('playing', function () {
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            video.setAttribute('data-video-state', 'playing');
+            videoStatus.hidden = true;
+          } else {
+            video.setAttribute('data-video-state', 'no-video-frames');
+            videoStatus.textContent = 'Audio is available, but this device cannot display the video track. The upload may need MP4/H.264 conversion.';
+            videoStatus.hidden = false;
+          }
+        });
+        video.addEventListener('error', function () {
+          video.setAttribute('data-playback-error', 'true');
+          video.setAttribute('data-video-state', 'error');
+          videoStatus.textContent = 'Could not display this video. Check the upload or try an MP4 with H.264 video and AAC audio.';
+          videoStatus.hidden = false;
+        });
         item.appendChild(video);
+        item.appendChild(videoStatus);
       } else if (media.length) {
         var image = el('img', { class: 'chl-feed-media', src: media[0].url, alt: 'Post media', loading: index < 2 ? 'eager' : 'lazy', decoding: 'async' });
         item.appendChild(image);
