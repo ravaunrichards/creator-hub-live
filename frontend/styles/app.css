@@ -864,88 +864,77 @@ label.field span {
 }
 
 /* ==========================================================
-   Creator Hub Live — responsive phone/tablet LIVE layout
-   Keep video controls usable and avoid clipping the page on mobile.
+   Creator Hub Live — compact phone LIVE layout
+   Keep the LIVE room inside the viewport.
+   Only chat messages should scroll.
    ========================================================== */
 
 @media (max-width: 860px) {
+  /* Apply these restrictions only to the page containing LIVE. */
   .main:has(.live-room-layout) {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    width: 100%;
-    max-width: 100%;
-    height: auto;
+    gap: 6px;
+    height: calc(100vh - 64px);
+    height: calc(100dvh - 64px);
     min-height: 0;
-    overflow: visible;
-    padding: 8px 10px calc(84px + env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    padding: 6px 10px 8px;
   }
 
+  /* Keep the LIVE heading compact. */
   .main:has(.live-room-layout) > .row.between {
     flex: 0 0 auto;
     margin: 0;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 4px;
   }
 
   .main:has(.live-room-layout) .h1 {
-    font-size: clamp(19px, 5vw, 23px);
+    font-size: 21px;
     line-height: 1.2;
     margin: 0;
   }
 
   .main:has(.live-room-layout) .sub {
     font-size: 12px;
-    line-height: 1.35;
+    line-height: 1.3;
     margin: 2px 0 0;
   }
 
-  /* Portrait phones and tablets stack the video, chat, and gifts vertically. */
+  /* Two compact columns: video on the left, chat and gifts on the right. */
   .main:has(.live-room-layout) .live-room-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
-    align-items: start;
-    gap: 10px !important;
-    flex: 0 0 auto;
-    width: 100%;
-    height: auto;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px !important;
+    flex: 1 1 0;
+    height: 100%;
     min-height: 0;
-    overflow: visible;
-  }
-
-  .main:has(.live-room-layout) .live-video-card {
-    display: flex;
-    flex-direction: column;
-    align-self: stretch;
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    height: auto;
-    padding: 8px;
-    overflow: visible;
-  }
-
-  /* Use a real responsive stage height; do not collapse it to zero. */
-  .main:has(.live-room-layout) .live-stage {
-    flex: 0 0 auto;
-    width: 100%;
-    height: clamp(220px, 42svh, 420px);
-    height: clamp(220px, 42vh, 420px);
-    min-height: 220px;
-    max-height: 420px;
     overflow: hidden;
   }
 
-  @supports (height: 42svh) {
-    .main:has(.live-room-layout) .live-stage {
-      height: clamp(220px, 42svh, 420px);
-    }
+  .main:has(.live-room-layout) .live-video-card {
+    align-self: stretch !important;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    height: 100%;
+    padding: 7px;
+  }
+
+  /* Prevent the video stage from forcing the page taller. */
+  .main:has(.live-room-layout) .live-stage {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 0;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
   }
 
   .main:has(.live-room-layout) .live-stage video {
-    display: block;
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -954,78 +943,73 @@ label.field span {
   .main:has(.live-room-layout) .live-status {
     top: 6px;
     left: 6px;
-    max-width: calc(100% - 12px);
     padding: 4px 6px;
-    font-size: 11px;
-    line-height: 1.25;
-    overflow-wrap: anywhere;
+    font-size: 10px;
+    line-height: 1.2;
   }
 
+  /* Keep the camera, microphone, share and end controls compact. */
   .main:has(.live-room-layout) .live-controls {
-    display: flex;
     flex: 0 0 auto;
-    flex-wrap: wrap;
-    gap: 6px;
+    gap: 5px;
     margin-top: 4px !important;
   }
 
   .main:has(.live-room-layout) .live-controls .btn {
-    flex: 1 1 calc(50% - 6px);
+    flex: 1 1 calc(50% - 5px);
     min-width: 0;
-    min-height: 42px;
-    padding: 8px 6px;
-    font-size: 12px;
-    line-height: 1.25;
+    padding: 7px 4px;
+    font-size: 11px;
+    line-height: 1.2;
     white-space: normal;
-    overflow-wrap: anywhere;
   }
 
+  /* Chat and gifts share the right column without page scrolling. */
   .main:has(.live-room-layout) .live-room-side {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    width: 100%;
+    gap: 8px;
     min-width: 0;
     min-height: 0;
-    height: auto;
-    overflow: visible;
+    height: 100%;
+    overflow: hidden;
   }
 
   .main:has(.live-room-layout) .live-chat-card {
     display: flex;
-    flex: 0 0 auto;
+    flex: 1 1 0;
     flex-direction: column;
-    gap: 6px;
-    width: 100%;
+    gap: 5px;
     min-width: 0;
     min-height: 0;
-    padding: 10px;
-    overflow: visible;
+    padding: 8px;
+    overflow: hidden;
   }
 
   .main:has(.live-room-layout) .live-chat-messages {
-    flex: 0 1 auto !important;
+    flex: 1 1 0 !important;
     width: 100%;
-    height: 170px !important;
-    min-height: 110px !important;
-    max-height: 220px !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     overflow-wrap: anywhere;
+    scrollbar-gutter: stable;
   }
 
   .main:has(.live-room-layout) .live-chat-card .note {
     margin: 4px 0;
-    padding: 7px;
-    font-size: 12px;
-    line-height: 1.35;
+    padding: 6px 7px;
+    font-size: 11px;
+    line-height: 1.3;
   }
 
   .main:has(.live-room-layout) .live-chat-card form {
     display: flex;
     flex: 0 0 auto;
-    gap: 6px;
+    gap: 4px;
     margin-top: 4px;
     min-width: 0;
   }
@@ -1034,82 +1018,72 @@ label.field span {
     flex: 1 1 0;
     width: 0;
     min-width: 0;
-    padding: 9px 8px;
-    font-size: 16px;
+    padding: 8px 6px;
+    font-size: 12px;
   }
 
   .main:has(.live-room-layout) .live-chat-card form .btn {
-    flex: 0 0 auto;
-    min-height: 42px;
-    padding: 8px 10px;
-    font-size: 12px;
+    padding: 7px 8px;
+    font-size: 11px;
   }
 
   .main:has(.live-room-layout) .live-gift-card {
     flex: 0 0 auto;
-    width: 100%;
     min-height: 0;
-    max-height: none;
+    max-height: 42%;
     margin-top: 0 !important;
-    padding: 10px;
-    overflow: visible;
+    padding: 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .main:has(.live-room-layout) .live-gift-card .gift-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
+    gap: 5px;
   }
 
   .main:has(.live-room-layout) .live-gift-card .gift {
-    min-width: 0;
-    padding: 7px 5px;
-    font-size: 11px;
-    line-height: 1.25;
+    padding: 5px 3px;
+    font-size: 10px;
+    line-height: 1.2;
     transform: none;
   }
 
   .main:has(.live-room-layout) .live-gift-card .gift .gift-art {
-    width: 100%;
-    max-width: 72px;
-    margin-bottom: 3px;
+    width: 100%; max-width: 72px; margin-bottom: 3px;
   }
-
   .main:has(.live-room-layout) .live-gift-card .gift .nm {
-    display: block;
-    font-size: 11px;
-    line-height: 1.2;
-    font-weight: 800;
-    color: var(--text);
+    display: block; font-size: 11px; line-height: 1.2; font-weight: 800; color: var(--text);
   }
 
   .main:has(.live-room-layout) .live-gift-card .gift .sub {
-    font-size: 10px !important;
+    font-size: 9px !important;
     margin-top: 2px !important;
   }
 }
 
-/* Very narrow phones: keep one column and prevent horizontal clipping. */
+/* Extra-tight layout for narrow phones. */
 @media (max-width: 380px) {
   .main:has(.live-room-layout) {
-    padding-left: 7px;
-    padding-right: 7px;
+    padding-left: 6px;
+    padding-right: 6px;
   }
 
   .main:has(.live-room-layout) .live-room-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px !important;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 5px !important;
   }
 
   .main:has(.live-room-layout) .live-video-card,
   .main:has(.live-room-layout) .live-chat-card,
   .main:has(.live-room-layout) .live-gift-card {
-    padding: 7px;
+    padding: 5px;
   }
 
   .main:has(.live-room-layout) .live-controls .btn {
-    flex: 1 1 calc(50% - 6px);
-    padding: 8px 4px;
-    font-size: 11px;
+    padding: 6px 2px;
+    font-size: 10px;
   }
 }
 
@@ -1357,6 +1331,3 @@ html[data-chl-theme="light"] .note { background: #fff7e6; border-color: #a16207;
 html[data-chl-theme="light"] .toast { background: #111111; color: #ffffff; }
 html[data-chl-theme="light"] .skeleton { background: linear-gradient(90deg, #e2e7f0, #f5f7fb, #e2e7f0); }
 html[data-chl-contrast="high"] .note { background: var(--card); color: var(--txt); }
-
-/* Profile photo crop and zoom controls */
-.chl-photo-crop-editor{min-width:0}.chl-photo-crop-editor .field{margin:8px 0}.chl-photo-crop-canvas{max-height:300px;touch-action:pan-y}.chl-photo-crop-editor input[type=range]{accent-color:var(--brand,#8b79ff)}
