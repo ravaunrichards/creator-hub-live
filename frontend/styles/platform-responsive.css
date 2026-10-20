@@ -251,3 +251,22 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
   .chl-feed-spinner { animation: none; border-right-color: #fff; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+
+
+/* CHL mobile For You video sizing — large, proportional fit on phones.
+   Keep the video nearly full-width/full-height without cropping; desktop rules stay unchanged. */
+@media screen and (max-width: 760px), screen and (hover: none) and (pointer: coarse) {
+  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
+    position: absolute !important;
+    inset: 50% auto auto 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: auto !important;
+    height: auto !important;
+    max-width: 94vw !important;
+    max-height: 82vh !important;
+    max-height: 82dvh !important;
+    object-fit: contain !important;
+    object-position: center center !important;
+    margin: 0 !important;
+  }
+}
