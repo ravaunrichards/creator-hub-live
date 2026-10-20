@@ -1,28 +1,113 @@
-/* Creator Hub Live — For You feed video sizing repair.
-   Keep full-height cards for swipe snapping; constrain only video media. */
-html.chl-feed-active .chl-feed-item > video.chl-feed-media {
+/*
+ * Creator Hub Live — For You feed video sizing repair.
+ * Scope is limited to the For You feed; do not apply to Following or live rooms.
+ */
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-item > video.chl-feed-media {
   position: absolute !important;
   inset: 0 !important;
-  width: auto !important;
-  height: auto !important;
-  max-width: min(92vw, 520px) !important;
-  max-height: 58vh !important;
-  max-height: 58dvh !important;
-  margin: auto !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
   object-fit: contain !important;
   object-position: center center !important;
   transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  background: #000;
+  z-index: 0;
 }
-@media (min-width: 761px) {
-  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    max-width: min(70vw, 640px) !important;
-    max-height: 78vh !important;
-    max-height: 78dvh !important;
-  }
+
+/* Establish a stable containing block for the video and its overlays. */
+html:has(.chl-feed-shell[aria-label="For You feed"]) {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
-@media (max-height: 620px) {
-  html.chl-feed-active .chl-feed-item > video.chl-feed-media {
-    max-height: 52vh !important;
-    max-height: 52dvh !important;
+html:has(.chl-feed-shell[aria-label="For You feed"]) body {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+html:has(.chl-feed-shell[aria-label="For You feed"]) .main {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: calc(100vh - 60px - var(--chl-safe-bottom, 0px));
+  height: calc(100dvh - 60px - var(--chl-safe-bottom, 0px));
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+html:has(.chl-feed-shell[aria-label="For You feed"]) #outlet {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.chl-feed-shell[aria-label="For You feed"] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #070910;
+  color: #f8f9ff;
+}
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-scroller {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y mandatory;
+}
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-item {
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  scroll-snap-align: start;
+  background: #090b13;
+}
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-shade {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(0,0,0,.16), transparent 24%, transparent 45%, rgba(0,0,0,.78));
+}
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-actions,
+.chl-feed-shell[aria-label="For You feed"] .chl-feed-details {
+  position: absolute;
+  z-index: 2;
+}
+@media (max-width: 760px) {
+  .chl-feed-shell[aria-label="For You feed"] .chl-feed-item {
+    min-height: 0;
   }
 }
