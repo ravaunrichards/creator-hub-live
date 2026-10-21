@@ -89,8 +89,11 @@ html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-la
   gap: 0;
   width: 100%;
   height: 100%;
+  /* Viewport fallback so the scroller is never zero-height if the ancestor
+   * height chain fails to resolve. */
+  min-height: calc(100vh - 60px - var(--chl-safe-bottom, 0px));
+  min-height: calc(100dvh - 60px - var(--chl-safe-bottom, 0px));
   min-width: 0;
-  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
@@ -100,12 +103,16 @@ html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-la
   position: relative;
   isolation: isolate;
   box-sizing: border-box;
-  flex: 0 0 100%;
+  flex: 0 0 auto;
   width: 100%;
-  height: 100%;
+  /* Anchor each slide on the viewport directly. Relying only on a 100%-of-
+   * ancestor chain let the whole feed collapse to zero height (blank feed /
+   * "no videos or pictures") when html.chl-feed-active's height chain did not
+   * resolve. A viewport-based height with vh fallback keeps media visible. */
+  height: calc(100vh - 60px - var(--chl-safe-bottom, 0px));
+  height: calc(100dvh - 60px - var(--chl-safe-bottom, 0px));
+  min-height: 420px;
   min-width: 0;
-  min-height: 0;
-  max-height: 100%;
   overflow: hidden;
   scroll-snap-align: start;
   background: #090b13;
@@ -124,6 +131,6 @@ html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-la
 }
 @media (max-width: 760px) {
   :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item {
-    min-height: 0;
+    min-height: 360px;
   }
 }
