@@ -161,6 +161,11 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
 .chl-feed-item { position: relative; isolation: isolate; flex: 0 0 100%; width: 100%; min-height: 360px; height: 100%; overflow: hidden; scroll-snap-align: start; scroll-snap-stop: always; background: radial-gradient(ellipse at 20% 20%, #293451, #090b13 66%); }
 .chl-feed-item:focus-visible { outline: 3px solid #88c7ff; outline-offset: -4px; }
 .chl-feed-media { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: cover; object-position: center; background: #090b13; }
+/* Videos fit the full frame (letterboxed) instead of being cropped by cover. */
+.chl-feed-media.chl-feed-video { object-fit: contain; object-position: center center; }
+/* Honest codec/decode status surfaced over a black video frame. */
+.chl-feed-video-status { position: absolute; left: 50%; bottom: 96px; z-index: 3; transform: translateX(-50%); max-width: min(86%, 440px); padding: 10px 14px; border-radius: 12px; background: rgba(9,11,19,.86); color: #fef0f3; border: 1px solid rgba(255,92,122,.5); font-size: 13px; line-height: 1.4; text-align: center; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+.chl-feed-video-status[hidden] { display: none; }
 .chl-feed-item:has(video) .chl-feed-media { cursor: pointer; }
 .chl-feed-item--text { background: radial-gradient(ellipse at 28% 22%, rgba(137,103,255,.75), transparent 42%), radial-gradient(ellipse at 80% 68%, rgba(255,56,111,.5), transparent 40%), #0d1220; }
 .chl-feed-text-art { position: absolute; inset: 12% 8% 22%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; color: rgba(255,255,255,.25); font-size: clamp(17px, 2.4vw, 30px); font-weight: 900; letter-spacing: .16em; text-align: center; pointer-events: none; }
@@ -251,3 +256,13 @@ html.chl-feed-active #chl-style-launcher { display: none !important; }
   .chl-feed-spinner { animation: none; border-right-color: #fff; }
 }
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+
+/* Profile metric row + creator crop/upload editor — mobile/tablet parity. */
+.chl-profile-metric { min-width: 0; }
+@media (max-width: 760px) {
+  .chl-profile .chl-profile-metric span { font-size: 12px; }
+  .chl-profile .chl-profile-metric strong { font-size: 16px; }
+}
+@media (max-width: 760px) {
+  [role="dialog"][aria-modal="true"] > div { width: 100% !important; max-height: 94vh; padding: 14px; }
+}
