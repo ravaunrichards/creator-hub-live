@@ -99,7 +99,14 @@
     root.appendChild(actions);
 
     var stats = el('div', { style: 'display:flex;gap:24px;flex-wrap:wrap;padding:18px 14px 14px;border-bottom:1px solid var(--line,#262636);margin-top:14px' });
-    stats.appendChild(stat(p.posts_count || 0, 'Posts', null));
+    var postsStat = stat(p.posts_count || 0, 'Posts', null);
+    var postsStatStrong = postsStat.querySelector('strong');
+    if (postsStatStrong) postsStatStrong.className = 'chl-posts-count';
+    stats.appendChild(postsStat);
+    var videoStat = stat(0, 'Videos', null);
+    var videoStatStrong = videoStat.querySelector('strong');
+    if (videoStatStrong) videoStatStrong.className = 'chl-videos-count';
+    stats.appendChild(videoStat);
     stats.appendChild(stat(p.followers_count || 0, 'Followers', null));
     stats.appendChild(stat(p.following_count || 0, 'Following', null));
     root.appendChild(stats);
@@ -133,6 +140,33 @@
     }
     if (postsTab) { postsTab.addEventListener('click', function () { showMode(false); }); draftsTab.addEventListener('click', function () { showMode(true); }); }
     loadPosts(p, own, grid, false);
+    // Show an authoritative, exact published-post count rather than the
+    // trigger-maintained profiles.posts_count column, which can drift.
+    refreshPostsCount(p.id);
+    refreshVideosCount(p.id);
+  }
+
+  // Query the exact number of published video posts for a creator and update
+  // the "Videos" profile header count in place.
+  function refreshVideosCount(profileId) {
+    if (!profileId) return;
+    sb.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profileId).eq('is_draft', false).eq('is_test', false).in('kind', ['video', 'short']).then(function (r) {
+      if (r && r.error) return;
+      var videoCount = r.count;
+      var node = document.querySelector('.chl-profile .chl-videos-count');
+      if (node && typeof videoCount === 'number') node.textContent = fmt(videoCount);
+    }).catch(function () {});
+  }
+
+  // Query the exact number of published (non-draft, non-test) posts for a
+  // creator and update the profile header count in place.
+  function refreshPostsCount(profileId) {
+    if (!profileId) return;
+    sb.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profileId).eq('is_draft', false).eq('is_test', false).then(function (r) {
+      if (r && r.error) return;
+      var node = document.querySelector('.chl-profile .chl-posts-count');
+      if (node && typeof r.count === 'number') node.textContent = fmt(r.count);
+    }).catch(function () {});
   }
 
   function stat(value, label, href) {
@@ -154,7 +188,8 @@
       var ids = posts.map(function (post) { return post.id; });
       var liked = {};
       var likeLoad = CHL.user ? sb.from('likes').select('post_id').eq('user_id', CHL.user.id).in('post_id', ids).then(function (lr) { (lr && lr.data || []).forEach(function (x) { liked[x.post_id] = true; }); }).catch(function () {}) : Promise.resolve();
-      likeLoad.then(function () { posts.forEach(function (post) { grid.appendChild(postCard(post, liked, !!showDrafts)); }); });
+      var reloadPosts = function () { loadPosts(p, own, grid, showDrafts); refreshPostsCount(p.id); };
+      likeLoad.then(function () { posts.forEach(function (post) { grid.appendChild(postCard(post, liked, !!showDrafts, reloadPosts)); }); });
     }).catch(function (err) {
       grid.innerHTML = '';
       grid.style.display = 'block';
@@ -162,7 +197,7 @@
     });
   }
 
-  function postCard(post, liked, isDraft) {
+  function postCard(post, liked, isDraft, reloadPosts) {
     var mediaUrl = post.cover_url || firstMediaUrl(post.media);
     var tile = el('button', { type: 'button', 'aria-label': 'Open post', style: 'position:relative;display:block;width:100%;aspect-ratio:3/4;min-width:0;padding:0;border:0;border-radius:8px;overflow:hidden;background:var(--card,#191926);cursor:pointer;text-align:left;color:var(--txt,#f4f4f8)' });
     if (mediaUrl) tile.appendChild(el('img', { src: mediaUrl, alt: post.caption || 'Creator post', loading: 'lazy', style: 'width:100%;height:100%;object-fit:cover;display:block' }));
@@ -171,22 +206,77 @@
     foot.appendChild(el('span', { text: isDraft ? 'Draft · private' : ((post.kind === 'video' || post.kind === 'short') ? '▶ ' + fmt(post.view_count || 0) : '♥ ' + fmt(post.like_count || 0)) }));
     if (!isDraft) foot.appendChild(el('span', { class: 'chl-post-like-count', text: liked[post.id] ? '♥' : '♡' }));
     tile.appendChild(foot);
-    tile.addEventListener('click', function () { openPost(post, liked, tile, isDraft); });
+    tile.addEventListener('click', function () { openPost(post, liked, tile, isDraft, reloadPosts); });
     return tile;
   }
 
-  function openPost(post, liked, tile, isDraft) {
-    var mediaUrl = post.cover_url || firstMediaUrl(post.media);
+  function openPost(post, liked, tile, isDraft, reloadPosts) {
+    var media = firstMedia(post.media);
+    var mediaUrl = post.cover_url || (media && media.url) || '';
     var overlay = modalShell();
     var panel = el('div', { style: 'width:min(720px,100%);max-height:92vh;overflow:auto;background:var(--card,#191926);border:1px solid var(--line,#262636);border-radius:16px;padding:14px;color:var(--txt,#f4f4f8)' });
-    if (mediaUrl) panel.appendChild(el('img', { src: mediaUrl, alt: post.caption || 'Post media', style: 'display:block;max-width:100%;max-height:58vh;object-fit:contain;margin:0 auto 12px;border-radius:10px' }));
+    // Video posts must play inline with native controls. Earlier builds rendered
+    // every post (including uploaded videos) as a static <img>, so videos on a
+    // creator profile could never be played. Render a real <video> element with
+    // an error fallback when the post is a video and a playable source exists.
+    if (isVideoPost(post) && media && media.url) {
+      var videoEl = el('video', { src: media.url, controls: true, playsinline: true, preload: 'metadata', style: 'display:block;max-width:100%;max-height:58vh;margin:0 auto 12px;border-radius:10px;background:#000' });
+      if (post.cover_url) videoEl.setAttribute('poster', post.cover_url);
+      videoEl.addEventListener('error', function () {
+        if (videoEl.parentNode) videoEl.parentNode.replaceChild(el('div', { class: 'note', text: 'This video could not be played. The media file may be unavailable.' }), videoEl);
+      });
+      panel.appendChild(videoEl);
+    } else if (mediaUrl) {
+      panel.appendChild(el('img', { src: mediaUrl, alt: post.caption || 'Post media', style: 'display:block;max-width:100%;max-height:58vh;object-fit:contain;margin:0 auto 12px;border-radius:10px' }));
+    }
     if (isDraft) panel.appendChild(el('div', { class: 'note', text: 'Draft — only you can see this until it is published.' }));
-    if (post.caption) panel.appendChild(el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: post.caption }));
+    var captionEl = post.caption ? el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: post.caption }) : null;
+    if (captionEl) panel.appendChild(captionEl);
     var actions = el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px' });
     if (!isDraft) {
       var likeBtn = el('button', { class: 'btn primary', type: 'button', onclick: function () { toggleLike(post, likeBtn, liked, tile); } }, (liked[post.id] ? '♥ Liked' : '♡ Like') + ' · ' + fmt(post.like_count || 0));
       actions.appendChild(likeBtn);
       actions.appendChild(el('span', { class: 'chip', style: 'align-self:center', text: fmt(post.comment_count || 0) + ' comments' }));
+    }
+    // Owner-only edit/delete. The author_id guard is also enforced server-side
+    // by row-level security; this UI gate is a convenience, not the authority.
+    var isOwner = !!(CHL.user && String(post.author_id) === String(CHL.user.id));
+    if (isOwner) {
+      var editBtn = el('button', { class: 'btn', type: 'button' }, 'Edit caption');
+      editBtn.addEventListener('click', function () {
+        var next = window.prompt('Edit caption', post.caption || '');
+        if (next === null) return;
+        next = String(next).slice(0, 2200);
+        editBtn.disabled = true;
+        sb.from('posts').update({ caption: next }).eq('id', post.id).eq('author_id', CHL.user.id).then(function (r) {
+          if (r && r.error) throw r.error;
+          post.caption = next;
+          if (captionEl) { captionEl.textContent = next; captionEl.style.display = next ? '' : 'none'; }
+          else if (next) { captionEl = el('p', { style: 'white-space:pre-wrap;overflow-wrap:anywhere', text: next }); panel.insertBefore(captionEl, actions); }
+          editBtn.disabled = false;
+          CHL.toast('Caption updated.');
+        }).catch(function (err) {
+          editBtn.disabled = false;
+          CHL.toast('Could not update caption: ' + (err && err.message ? err.message : 'Please try again.'));
+        });
+      });
+      actions.appendChild(editBtn);
+      var deleteBtn = el('button', { class: 'btn danger', type: 'button' }, 'Delete');
+      deleteBtn.addEventListener('click', function () {
+        if (!window.confirm('Delete this post? This cannot be undone.')) return;
+        deleteBtn.disabled = true;
+        sb.from('posts').delete().eq('id', post.id).eq('author_id', CHL.user.id).then(function (r) {
+          if (r && r.error) throw r.error;
+          if (tile && typeof tile.remove === 'function') tile.remove();
+          overlay.close();
+          CHL.toast('Post deleted.');
+          if (typeof reloadPosts === 'function') reloadPosts();
+        }).catch(function (err) {
+          deleteBtn.disabled = false;
+          CHL.toast('Could not delete post: ' + (err && err.message ? err.message : 'Please try again.'));
+        });
+      });
+      actions.appendChild(deleteBtn);
     }
     if (actions.childNodes.length) panel.appendChild(actions);
     overlay.panel.appendChild(panel);
@@ -364,6 +454,22 @@
     if (!Array.isArray(media) || !media.length) return '';
     var item = media[0];
     return typeof item === 'string' ? item : item && (item.url || item.src || item.publicUrl) || '';
+  }
+  // Return the first media entry as { url, type } so callers can decide whether
+  // to render a <video> or an <img>. Strings are treated as untyped media.
+  function firstMedia(media) {
+    if (!Array.isArray(media) || !media.length) return null;
+    var item = media[0];
+    if (typeof item === 'string') return { url: item, type: '' };
+    return { url: (item && (item.url || item.src || item.publicUrl)) || '', type: (item && item.type) || '' };
+  }
+  // A post is a video when its kind marks it as video/short, or when its first
+  // media entry declares a video MIME/type.
+  function isVideoPost(post) {
+    if (!post) return false;
+    if (post.kind === 'video' || post.kind === 'short') return true;
+    var m = firstMedia(post.media);
+    return !!(m && String(m.type || '').toLowerCase().indexOf('video') >= 0);
   }
   function initials(name) { return String(name || 'CH').trim().split(/\s+/).slice(0, 2).map(function (x) { return x.charAt(0); }).join('').toUpperCase() || 'CH'; }
   function fmt(value) { var n = Number(value) || 0; return n.toLocaleString(); }

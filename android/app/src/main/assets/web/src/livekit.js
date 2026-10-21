@@ -823,6 +823,179 @@
   };
 
   /*
+   * Camera switching (front / rear or next available camera).
+   *
+   * pages-room.js calls CHL.switchCamera() from the "Flip camera" control.
+   * This was previously undefined, so the control always threw. We enumerate
+   * real video input devices and switch the active LiveKit camera device to
+   * the next one, which transparently restarts the published camera track.
+   */
+  function getLocalCameraTrack() {
+    if (!activeRoom || !activeRoom.localParticipant) return null;
+    var found = null;
+    try {
+      activeRoom.localParticipant.trackPublications.forEach(function (publication) {
+        if (publication && publication.track && getTrackType(publication.track) === 'camera') {
+          found = publication.track;
+        }
+      });
+    } catch (_) {}
+    return found;
+  }
+
+  function currentCameraDeviceId() {
+    var track = getLocalCameraTrack();
+    try {
+      var mediaStreamTrack = track && track.mediaStreamTrack;
+      if (mediaStreamTrack && typeof mediaStreamTrack.getSettings === 'function') {
+        var settings = mediaStreamTrack.getSettings();
+        if (settings && settings.deviceId) return String(settings.deviceId);
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  CHL.switchCamera = async function () {
+    if (activeMediaMode !== 'video') {
+      var modeError = new Error('Camera switching is only available in Video LIVE.');
+      modeError.code = 'MEDIA_MODE_RESTRICTED';
+      throw modeError;
+    }
+    if (!activeRoom || !activeRoom.localParticipant) {
+      var notConnected = new Error('Not connected to LIVE.');
+      notConnected.code = 'LIVEKIT_NOT_CONNECTED';
+      throw notConnected;
+    }
+    if (!getLocalCameraTrack()) {
+      var noCamera = new Error('Enable your camera before switching cameras.');
+      noCamera.code = 'CAMERA_NOT_PUBLISHED';
+      throw noCamera;
+    }
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+      var unsupported = new Error('This browser cannot list camera devices.');
+      unsupported.code = 'CAMERA_ENUMERATION_UNSUPPORTED';
+      throw unsupported;
+    }
+
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var cameras = (devices || []).filter(function (device) {
+      return device && device.kind === 'videoinput';
+    });
+
+    if (cameras.length < 2) {
+      var single = new Error('Only one camera is available on this device.');
+      single.code = 'SINGLE_CAMERA';
+      throw single;
+    }
+
+    /*
+     * Prefer the OPPOSITE-facing camera. Earlier builds cycled by enumeration
+     * index, so "Flip camera" frequently re-selected a camera facing the same
+     * direction (the reported "selfie shows the rear view" bug). When device
+     * labels are available we classify each camera as front- or rear-facing
+     * and jump to the opposite facing; we only fall back to index cycling when
+     * labels are withheld (e.g. permissions not yet granted).
+     */
+    var frontPattern = /front|user|face|selfie|truedepth/i;
+    var rearPattern = /back|rear|environment|world|wide|tele/i;
+    var currentId = currentCameraDeviceId();
+    var currentIndex = -1;
+    for (var i = 0; i < cameras.length; i++) {
+      if (currentId && String(cameras[i].deviceId) === currentId) { currentIndex = i; break; }
+    }
+    function facingOf(device) {
+      var label = String((device && device.label) || '');
+      if (frontPattern.test(label)) return 'front';
+      if (rearPattern.test(label)) return 'rear';
+      return '';
+    }
+    var currentFacing = currentIndex >= 0 ? facingOf(cameras[currentIndex]) : '';
+    var next = null;
+    if (currentFacing === 'front' || currentFacing === 'rear') {
+      var wanted = currentFacing === 'front' ? 'rear' : 'front';
+      for (var j = 0; j < cameras.length; j++) {
+        if (j === currentIndex) continue;
+        if (facingOf(cameras[j]) === wanted) { next = cameras[j]; break; }
+      }
+    }
+    /* No labelled opposite-facing camera resolved — cycle to the next device. */
+    if (!next) next = cameras[(currentIndex + 1) % cameras.length];
+    if (!next || !next.deviceId) {
+      var resolveError = new Error('Could not resolve the next camera to switch to.');
+      resolveError.code = 'CAMERA_SWITCH_FAILED';
+      throw resolveError;
+    }
+
+    try {
+      if (typeof activeRoom.switchActiveDevice === 'function') {
+        await activeRoom.switchActiveDevice('videoinput', next.deviceId);
+      } else {
+        // Fallback: restart the local camera track onto the chosen device.
+        var track = getLocalCameraTrack();
+        if (track && typeof track.restartTrack === 'function') {
+          await track.restartTrack({ deviceId: { exact: next.deviceId } });
+        } else {
+          throw new Error('Camera switching is not supported by this LiveKit build.');
+        }
+      }
+    } catch (error) {
+      error.code = error.code || 'CAMERA_SWITCH_FAILED';
+      throw error;
+    }
+
+    return { deviceId: next.deviceId, label: next.label || '' };
+  };
+
+  /*
+   * Hardware camera zoom.
+   *
+   * pages-room.js calls CHL.setCameraZoom(level) from the zoom controls. This
+   * was previously undefined. We apply a real MediaStreamTrack zoom constraint
+   * when the camera hardware/driver advertises the capability, and throw an
+   * explicit error otherwise (no fake CSS "zoom").
+   */
+  CHL.setCameraZoom = async function (level) {
+    if (!activeRoom || !activeRoom.localParticipant) {
+      var notConnected = new Error('Not connected to LIVE.');
+      notConnected.code = 'LIVEKIT_NOT_CONNECTED';
+      throw notConnected;
+    }
+    /* Hardware zoom must target the live published camera track, not an
+     * arbitrary stream, so the constraint applies to what viewers receive. */
+    var cameraSource = getLocalCameraTrack();
+    var mediaStreamTrack = cameraSource && cameraSource.mediaStreamTrack;
+    if (!mediaStreamTrack || typeof mediaStreamTrack.getCapabilities !== 'function' || typeof mediaStreamTrack.applyConstraints !== 'function') {
+      var unsupported = new Error('Hardware zoom is not available on this camera.');
+      unsupported.code = 'ZOOM_UNSUPPORTED';
+      throw unsupported;
+    }
+
+    var capabilities = mediaStreamTrack.getCapabilities();
+    if (!capabilities || !capabilities.zoom) {
+      var noZoom = new Error('Hardware zoom is not available on this camera.');
+      noZoom.code = 'ZOOM_UNSUPPORTED';
+      throw noZoom;
+    }
+
+    var requested = Number(level);
+    if (!Number.isFinite(requested)) requested = 1;
+    var min = Number(capabilities.zoom.min);
+    var max = Number(capabilities.zoom.max);
+    if (!Number.isFinite(min)) min = requested;
+    if (!Number.isFinite(max)) max = requested;
+    var zoom = Math.max(min, Math.min(max, requested));
+
+    try {
+      await mediaStreamTrack.applyConstraints({ advanced: [{ zoom: zoom }] });
+    } catch (error) {
+      error.code = error.code || 'ZOOM_FAILED';
+      throw error;
+    }
+
+    return { zoom: zoom };
+  };
+
+  /*
    * Media attachment helpers
    */
   CHL.attachLocalTrack = function (

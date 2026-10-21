@@ -1,55 +1,126 @@
 /*
  * Creator Hub Live — For You and Following feed video sizing.
- * Both feeds share identical viewport, item, media and overlay sizing.
- * Live rooms and other pages are not targeted.
+ *
+ * Both the For You and Following vertical feeds share one identical sizing
+ * contract. Earlier builds scoped every rule to [aria-label="For You feed"]
+ * only, so the Following feed (aria-label="Following feed") fell back to
+ * platform-responsive.css object-fit:cover and rendered "too large" / cropped.
+ *
+ * The shell-level rules below target BOTH feeds with :is(...). The global
+ * document rules are anchored on html.chl-feed-active (a class swipe-feed.js
+ * toggles when a feed is mounted) so they work even where CSS :has() is not
+ * supported (older Android WebView), with a :has() fallback kept for browsers
+ * that honour it. Live rooms and other pages are not targeted.
  */
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item > video.chl-feed-media {
-  position: absolute !important; inset: 0 !important; display: block !important;
-  box-sizing: border-box !important; width: 100% !important; height: 100% !important;
-  min-width: 0 !important; min-height: 0 !important; max-width: none !important;
-  max-height: none !important; margin: 0 !important; padding: 0 !important;
-  object-fit: contain !important; object-position: center center !important;
-  transform: none !important; opacity: 1 !important; visibility: visible !important;
-  background: #000; z-index: 0;
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+  transform: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  background: #000;
+  z-index: 0;
 }
+
+/* Establish a stable containing block for the feed, its media and overlays.
+ * Primary anchor: html.chl-feed-active (broad WebView support). */
+html.chl-feed-active,
 html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) {
-  width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
+html.chl-feed-active body,
 html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) body {
-  width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
+html.chl-feed-active .main,
 html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) .main {
-  box-sizing: border-box; width: 100%; max-width: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
   height: calc(100vh - 60px - var(--chl-safe-bottom, 0px));
   height: calc(100dvh - 60px - var(--chl-safe-bottom, 0px));
-  min-height: 0; margin: 0; padding: 0; overflow: hidden;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
+html.chl-feed-active #outlet,
 html:has(:is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"])) #outlet {
-  box-sizing: border-box; width: 100%; height: 100%; min-height: 0; overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
+
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) {
-  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
-  width: 100%; height: 100%; min-width: 0; min-height: 0;
-  overflow: hidden; background: #070910; color: #f8f9ff;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #070910;
+  color: #f8f9ff;
 }
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-scroller {
-  position: relative; display: flex; flex-direction: column; gap: 0;
-  width: 100%; height: 100%; min-width: 0; min-height: 0;
-  overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   scroll-snap-type: y mandatory;
 }
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item {
-  position: relative; isolation: isolate; box-sizing: border-box; flex: 0 0 100%;
-  width: 100%; height: 100%; min-width: 0; min-height: 0; max-height: 100%;
-  overflow: hidden; scroll-snap-align: start; background: #090b13;
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  scroll-snap-align: start;
+  background: #090b13;
 }
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-shade {
-  position: absolute; z-index: 1; inset: 0; pointer-events: none;
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
   background: linear-gradient(180deg, rgba(0,0,0,.16), transparent 24%, transparent 45%, rgba(0,0,0,.78));
 }
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-actions,
 :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-details {
-  position: absolute; z-index: 2;
+  position: absolute;
+  z-index: 2;
 }
 @media (max-width: 760px) {
   :is(.chl-feed-shell[aria-label="For You feed"], .chl-feed-shell[aria-label="Following feed"]) .chl-feed-item {

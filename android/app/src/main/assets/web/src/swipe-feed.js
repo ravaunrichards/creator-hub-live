@@ -332,8 +332,34 @@
       var media = mediaOf(post);
       var video = null;
       if (media.length && String(media[0].type || '').indexOf('video') === 0) {
-        video = el('video', { class: 'chl-feed-media', src: media[0].url, playsinline: true, muted: true, loop: true, tabindex: '0', role: 'button', preload: index < 2 ? 'metadata' : 'none', 'aria-label': 'Creator video. Activate to play or pause.' });
+        video = el('video', { class: 'chl-feed-media chl-feed-video', src: media[0].url, muted: true, loop: true, tabindex: '0', role: 'button', preload: index < 2 ? 'metadata' : 'none', 'aria-label': 'Creator video. Activate to play or pause.' });
+        /* playsinline as an explicit empty attribute keeps iOS/WebView inline
+         * playback instead of forcing the native fullscreen player. */
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
         if (safeUrl(post.cover_url)) video.setAttribute('poster', post.cover_url);
+        /* A decodable file but a black frame almost always means an
+         * unsupported codec in this WebView. We surface an honest, actionable
+         * message rather than leaving viewers on a silent black square. */
+        var videoStatus = el('div', { class: 'chl-feed-video-status', role: 'status', 'aria-live': 'polite', hidden: true });
+        function showVideoStatus(message) { videoStatus.textContent = message; videoStatus.hidden = false; }
+        function clearVideoStatus() { videoStatus.hidden = true; videoStatus.textContent = ''; }
+        var sawDecodedFrame = false;
+        video.addEventListener('loadedmetadata', function () {
+          if (!(video.videoWidth > 0 && video.videoHeight > 0)) {
+            showVideoStatus('This video track has no displayable picture. Re-upload it as H.264 video and AAC audio in an MP4 container.');
+          }
+        });
+        video.addEventListener('loadeddata', function () {
+          if (video.videoWidth > 0 && video.videoHeight > 0) { sawDecodedFrame = true; clearVideoStatus(); }
+          else showVideoStatus('This video could not be decoded for display. Re-upload it as H.264 video and AAC audio in an MP4 container.');
+        });
+        video.addEventListener('playing', function () {
+          if (video.videoWidth > 0 && video.videoHeight > 0) { sawDecodedFrame = true; clearVideoStatus(); }
+        });
+        video.addEventListener('error', function () {
+          showVideoStatus('This video failed to load. If it keeps failing, re-upload it as H.264 video and AAC audio in an MP4 container.');
+        });
         function toggleVideoPlayback() {
           if (video.paused) video.play().catch(function () { CHL.toast('Playback was blocked. Tap the video to try again.'); });
           else video.pause();
@@ -343,6 +369,7 @@
           if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); toggleVideoPlayback(); }
         });
         item.appendChild(video);
+        item.appendChild(videoStatus);
       } else if (media.length) {
         var image = el('img', { class: 'chl-feed-media', src: media[0].url, alt: 'Post media', loading: index < 2 ? 'eager' : 'lazy', decoding: 'async' });
         item.appendChild(image);
@@ -375,6 +402,22 @@
       right.appendChild(save);
       right.appendChild(el('button', { class: 'chl-feed-action', type: 'button', 'aria-label': 'Share post', onclick: function () { sharePost(post); } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '↗' }), el('strong', { class: 'chl-feed-action-label', text: 'Share' })]));
       right.appendChild(el('button', { class: 'chl-feed-action', type: 'button', 'aria-label': 'View creator profile for gifting and LIVE availability', onclick: function () { CHL.navigate('#/profile/' + encodeURIComponent(authorHandle || authorId || '')); } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '✦' }), el('strong', { class: 'chl-feed-action-label', text: 'Creator' })]));
+      /* Owner-only delete. The author_id match is also enforced by row-level
+       * security; verifying the returned row proves the delete actually
+       * affected the signed-in owner's post and nothing else. */
+      if (CHL.user && authorId && String(authorId) === String(CHL.user.id)) {
+        var del = el('button', { class: 'chl-feed-action', type: 'button', 'aria-label': 'Delete this post', onclick: function () {
+          if (!window.confirm('Delete this post? This cannot be undone.')) return;
+          del.disabled = true;
+          CHL.sb.from('posts').delete().eq('id', post.id).eq('author_id', CHL.user.id).select('id').maybeSingle().then(function (r) {
+            if (r.error) throw r.error;
+            if (!r.data) throw new Error('The post was not deleted; it may have already been removed.');
+            item.remove();
+            CHL.toast('Post deleted.');
+          }).catch(function (err) { del.disabled = false; CHL.toast((err && err.message) || 'Could not delete this post.'); });
+        } }, [el('span', { class: 'chl-feed-action-icon', 'aria-hidden': 'true', text: '✕' }), el('strong', { class: 'chl-feed-action-label', text: 'Delete' })]);
+        right.appendChild(del);
+      }
       item.appendChild(right);
 
       var details = el('div', { class: 'chl-feed-details' });
