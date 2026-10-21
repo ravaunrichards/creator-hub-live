@@ -103,6 +103,10 @@
     var postsStatStrong = postsStat.querySelector('strong');
     if (postsStatStrong) postsStatStrong.className = 'chl-posts-count';
     stats.appendChild(postsStat);
+    var videoStat = stat(0, 'Videos', null);
+    var videoStatStrong = videoStat.querySelector('strong');
+    if (videoStatStrong) videoStatStrong.className = 'chl-videos-count';
+    stats.appendChild(videoStat);
     stats.appendChild(stat(p.followers_count || 0, 'Followers', null));
     stats.appendChild(stat(p.following_count || 0, 'Following', null));
     root.appendChild(stats);
@@ -139,6 +143,19 @@
     // Show an authoritative, exact published-post count rather than the
     // trigger-maintained profiles.posts_count column, which can drift.
     refreshPostsCount(p.id);
+    refreshVideosCount(p.id);
+  }
+
+  // Query the exact number of published video posts for a creator and update
+  // the "Videos" profile header count in place.
+  function refreshVideosCount(profileId) {
+    if (!profileId) return;
+    sb.from('posts').select('id', { count: 'exact', head: true }).eq('author_id', profileId).eq('is_draft', false).eq('is_test', false).in('kind', ['video', 'short']).then(function (r) {
+      if (r && r.error) return;
+      var videoCount = r.count;
+      var node = document.querySelector('.chl-profile .chl-videos-count');
+      if (node && typeof videoCount === 'number') node.textContent = fmt(videoCount);
+    }).catch(function () {});
   }
 
   // Query the exact number of published (non-draft, non-test) posts for a

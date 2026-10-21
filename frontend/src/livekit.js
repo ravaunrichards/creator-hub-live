@@ -888,12 +888,38 @@
       throw single;
     }
 
+    /*
+     * Prefer the OPPOSITE-facing camera. Earlier builds cycled by enumeration
+     * index, so "Flip camera" frequently re-selected a camera facing the same
+     * direction (the reported "selfie shows the rear view" bug). When device
+     * labels are available we classify each camera as front- or rear-facing
+     * and jump to the opposite facing; we only fall back to index cycling when
+     * labels are withheld (e.g. permissions not yet granted).
+     */
+    var frontPattern = /front|user|face|selfie|truedepth/i;
+    var rearPattern = /back|rear|environment|world|wide|tele/i;
     var currentId = currentCameraDeviceId();
     var currentIndex = -1;
     for (var i = 0; i < cameras.length; i++) {
       if (currentId && String(cameras[i].deviceId) === currentId) { currentIndex = i; break; }
     }
-    var next = cameras[(currentIndex + 1) % cameras.length];
+    function facingOf(device) {
+      var label = String((device && device.label) || '');
+      if (frontPattern.test(label)) return 'front';
+      if (rearPattern.test(label)) return 'rear';
+      return '';
+    }
+    var currentFacing = currentIndex >= 0 ? facingOf(cameras[currentIndex]) : '';
+    var next = null;
+    if (currentFacing === 'front' || currentFacing === 'rear') {
+      var wanted = currentFacing === 'front' ? 'rear' : 'front';
+      for (var j = 0; j < cameras.length; j++) {
+        if (j === currentIndex) continue;
+        if (facingOf(cameras[j]) === wanted) { next = cameras[j]; break; }
+      }
+    }
+    /* No labelled opposite-facing camera resolved — cycle to the next device. */
+    if (!next) next = cameras[(currentIndex + 1) % cameras.length];
     if (!next || !next.deviceId) {
       var resolveError = new Error('Could not resolve the next camera to switch to.');
       resolveError.code = 'CAMERA_SWITCH_FAILED';
@@ -934,8 +960,10 @@
       notConnected.code = 'LIVEKIT_NOT_CONNECTED';
       throw notConnected;
     }
-    var track = getLocalCameraTrack();
-    var mediaStreamTrack = track && track.mediaStreamTrack;
+    /* Hardware zoom must target the live published camera track, not an
+     * arbitrary stream, so the constraint applies to what viewers receive. */
+    var cameraSource = getLocalCameraTrack();
+    var mediaStreamTrack = cameraSource && cameraSource.mediaStreamTrack;
     if (!mediaStreamTrack || typeof mediaStreamTrack.getCapabilities !== 'function' || typeof mediaStreamTrack.applyConstraints !== 'function') {
       var unsupported = new Error('Hardware zoom is not available on this camera.');
       unsupported.code = 'ZOOM_UNSUPPORTED';
