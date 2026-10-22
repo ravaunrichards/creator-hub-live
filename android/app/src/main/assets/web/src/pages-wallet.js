@@ -37,6 +37,22 @@
     } catch (packageError) {
       packageGrid.innerHTML = ''; packageGrid.appendChild(el('div', { class: 'note', text: packageError.message || 'Your packages could not be loaded. You can still request a server-priced custom amount below.' }));
     }
+    var presetPanel = el('section', { class: 'card', style: 'max-width:900px;margin-top:8px' });
+    presetPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Quick coin amounts' }));
+    presetPanel.appendChild(el('p', { class: 'sub', text: 'Pick a popular amount. The secure server quotes the price and you confirm the payment method before any PayPal checkout starts.' }));
+    var presetGrid = el('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px' });
+    [100, 500, 1000, 2500, 5000, 10000].forEach(function (presetCoins) {
+      var presetCard = el('div', { class: 'card', style: 'padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0' });
+      presetCard.appendChild(el('div', { style: 'font-size:18px;font-weight:850', text: CHL.fmt(presetCoins) + ' coins' }));
+      var presetPrice = el('div', { class: 'sub', text: 'Server quote\u2026' });
+      presetCard.appendChild(presetPrice);
+      CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(presetCoins))
+        .then(function (quote) { var price = Number(quote && quote.amountUsd); presetPrice.textContent = formatMoney(price, (quote && quote.currency) || 'USD'); })
+        .catch(function () { presetPrice.textContent = 'Price unavailable'; });
+      presetCard.appendChild(el('button', { class: 'btn primary block', type: 'button', text: 'Buy ' + CHL.fmt(presetCoins), onclick: (function (coins) { return function () { buy({ coins: coins }); }; })(presetCoins) }));
+      presetGrid.appendChild(presetCard);
+    });
+    presetPanel.appendChild(presetGrid); outlet.appendChild(presetPanel);
     var customPanel = el('section', { class: 'card', style: 'max-width:720px;margin-top:8px' });
     customPanel.appendChild(el('div', { class: 'h1', style: 'font-size:18px;margin-bottom:6px', text: 'Choose your coin amount' }));
     customPanel.appendChild(el('p', { class: 'sub', text: 'Enter any whole-number amount from 1 to 50,000 coins. The secure server calculates the price and PayPal is the checkout provider.' }));
@@ -202,7 +218,32 @@
     try { var d = await CHL.authenticatedApiRequest('/api/payments/paypal/capture-order', { method: 'POST', headers: { 'PayPal-Request-Id': 'capture-' + orderId, 'Idempotency-Key': 'capture:' + orderId }, body: { orderId: orderId } }); CHL.toast(d.credited || d.captured ? 'Payment completed. Coins were credited.' : 'Payment is pending verification.'); }
     catch (e) { CHL.toast(e.message || 'PAYMENT_VERIFICATION_FAILED'); }
   }
-  async function buy(p) {
+  function buy(p) {
+    if (!p || !Number.isSafeInteger(Number(p.coins)) || Number(p.coins) <= 0) { CHL.toast('Select a valid coin amount first.'); return; }
+    selectPaymentMethod(p);
+  }
+  function selectPaymentMethod(p) {
+    var existing = document.getElementById('wallet-pay-method'); if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var backdrop = el('div', { id: 'wallet-pay-method', class: 'modal-backdrop', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Choose a payment method', style: 'position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px' });
+    var panel = el('div', { class: 'card', style: 'max-width:420px;width:100%;display:flex;flex-direction:column;gap:12px' });
+    panel.appendChild(el('div', { class: 'h1', style: 'font-size:18px', text: 'Choose a payment method' }));
+    panel.appendChild(el('p', { class: 'sub', text: 'You are buying ' + CHL.fmt(Number(p.coins)) + ' coins. The secure server quotes and charges the final amount \u2014 the browser never supplies the price.' }));
+    var priceLine = el('div', { class: 'note', 'aria-live': 'polite', text: 'Fetching the secure server quote\u2026' });
+    panel.appendChild(priceLine);
+    panel.appendChild(el('div', { class: 'card', style: 'padding:10px 12px', text: 'PayPal \u2014 the only supported wallet recharge provider.' }));
+    var paypalBtn = el('button', { class: 'btn primary block', type: 'button', text: 'Continue to PayPal', disabled: true, onclick: function () { closeDialog(); startPaypalCheckout(p); } });
+    panel.appendChild(paypalBtn);
+    panel.appendChild(el('button', { class: 'btn block', type: 'button', text: 'Cancel', onclick: function () { closeDialog(); } }));
+    backdrop.appendChild(panel); document.body.appendChild(backdrop);
+    function closeDialog() { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); document.removeEventListener('keydown', onKey); }
+    function onKey(ev) { if (ev.key === 'Escape') closeDialog(); }
+    document.addEventListener('keydown', onKey);
+    backdrop.addEventListener('click', function (ev) { if (ev.target === backdrop) closeDialog(); });
+    CHL.authenticatedApiRequest('/api/payments/coin-quote?coins=' + encodeURIComponent(Number(p.coins)))
+      .then(function (quote) { var price = Number(quote && quote.amountUsd); if (!Number.isFinite(price) || price <= 0) throw new Error('The wallet service returned an invalid price. No checkout was started.'); priceLine.textContent = 'Server quote: ' + formatMoney(price, (quote && quote.currency) || 'USD') + '. The final amount is re-checked during PayPal checkout.'; paypalBtn.disabled = false; })
+      .catch(function (error) { priceLine.textContent = error.message || 'A secure quote is unavailable right now. Please try again shortly.'; });
+  }
+  async function startPaypalCheckout(p) {
     try {
       var d = await CHL.authenticatedApiRequest('/api/payments/paypal/create-order', { method: 'POST', headers: { 'Idempotency-Key': 'checkout:' + CHL.uuid() }, body: { coins: p.coins } });
       if (!d || !d.approveUrl) throw new Error('PAYMENT_PROVIDER_ERROR: checkout approval URL was not returned.');

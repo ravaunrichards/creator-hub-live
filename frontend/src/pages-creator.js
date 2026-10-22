@@ -235,7 +235,7 @@
   CHL.route('/teams', function(o,r){
     if (guard(o,'Teams','Create or join a team, climb levels 1\u201350, compete in leagues.')) return;
     if (r.params && r.params.length){ renderTeam(o, r.params[0]); return; }
-    var top=el('div',{class:'row between',style:'margin-bottom:12px'},[ el('span'), el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){CHL.navigate('#/login');return;} CHL.toast('Create-team form \u2014 connect backend to persist'); }},'\u2795 Create team') ]);
+    var top=el('div',{class:'row between',style:'margin-bottom:12px'},[ el('span'), el('a',{href:'#/teams/create',class:'btn primary'},'\u2795 Create team') ]);
     o.appendChild(top);
     var list=el('div',{class:'grid live'}); o.appendChild(list); list.appendChild(ui.spinner());
     sb.from('teams').select('id,name,level,points').order('points',{ascending:false}).limit(30)
@@ -252,7 +252,7 @@
         o.appendChild(el('div',{class:'card',style:'display:flex;gap:16px;align-items:center;flex-wrap:wrap'},[
           el('div',{class:'ava',style:'width:64px;height:64px;font-size:24px',text:CHL.initials(t.name).toUpperCase()}),
           el('div',{style:'flex:1;min-width:160px'},[ el('div',{style:'font-size:20px;font-weight:800',text:t.name}), el('div',{style:'color:var(--mut)',text:'Level '+(t.level||1)+' \u00B7 '+CHL.fmt(t.points||0)+' points'}) ]),
-          el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){CHL.navigate('#/login');return;} CHL.toast('Join request sent'); }},'Join team')
+          el('button',{class:'btn primary',onclick:function(){ if(!CHL.user){CHL.navigate('#/login');return;} CHL.authenticatedApiRequest('/api/teams/'+encodeURIComponent(id)+'/join',{method:'POST',body:{}}).then(function(){ renderTeam(o, id); }).catch(function(err){ CHL.toast((err&&err.message)?err.message:'Could not join team.'); }); }},'Join team')
         ]));
       }).catch(function(e){ o.innerHTML=''; o.appendChild(el('div',{class:'note',text:e.message})); });
   }

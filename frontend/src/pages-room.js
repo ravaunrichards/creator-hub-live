@@ -28,6 +28,7 @@
   var liveMicButton = null;
   var liveCameraButton = null;
   var liveZoomControls = null;
+  var liveScreenStopButton = null;
   var livePollDisplay = null;
   var liveChallengeDisplay = null;
   var liveMediaRequestPanel = null;
@@ -168,8 +169,14 @@
     });
     liveCameraButton = cameraButton;
     liveZoomControls = zoomControls;
+    liveScreenStopButton = screenStopButton;
+    var screenStopButton = el('button', { class: 'btn danger live-screen-stop', type: 'button', style: 'display:none', text: 'Stop screen-share LIVE', onclick: function () {
+      screenStopButton.disabled = true;
+      CHL.stopScreenShare().then(function () { CHL.toast('Screen sharing stopped.'); }).catch(function (e) { CHL.toast(e.message || 'Could not stop screen sharing.'); }).then(function () { screenStopButton.disabled = false; syncMediaButtons(); });
+    } });
     var shareButton = el('button', { class: 'btn', type: 'button', onclick: function () {
-      CHL.startScreenShare().then(function () { CHL.toast('Screen sharing started. End sharing from the browser’s sharing control or end the LIVE session.'); }).catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); });
+      shareButton.disabled = true;
+      CHL.startScreenShare().then(function () { CHL.toast('Screen sharing started. Use “Stop screen-share LIVE” to end it.'); }).catch(function (e) { CHL.toast(e.message || 'Screen share failed.'); }).then(function () { shareButton.disabled = false; syncMediaButtons(); });
     } }, 'Share screen');
     var screenStartButton = el('button', { class: 'btn primary', type: 'button', style: 'display:none', text: 'Choose screen and Go LIVE', onclick: function () {
       startScreenBroadcast(roomId, status, screenStartButton);
@@ -186,7 +193,7 @@
     } });
     var endButton = el('button', { class: 'btn danger', type: 'button', onclick: function () { endLive(roomId); } }, 'End LIVE');
     endButton.style.display = 'none';
-    [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, screenStartButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
+    [micButton, cameraButton, flipButton, monitorButton, zoomControls, shareButton, screenStopButton, screenStartButton, leaveStageButton, endButton].forEach(function (control) { controls.appendChild(control); });
     video.appendChild(controls);
 
     var funPanel = el('section', { class: 'card live-fun-panel', 'aria-label': 'LIVE entertainment tools' });
@@ -822,6 +829,7 @@
     var mic = !!participant.isMicrophoneEnabled; var camera = !!participant.isCameraEnabled;
     if (liveMicButton) { liveMicButton.textContent = mic ? 'Mic: ON' : 'Mic: MUTED'; liveMicButton.classList.toggle('is-active', mic); liveMicButton.setAttribute('aria-pressed', String(mic)); }
     if (liveCameraButton) { liveCameraButton.textContent = camera ? 'Camera: ON' : 'Camera: OFF'; liveCameraButton.classList.toggle('is-active', camera); liveCameraButton.setAttribute('aria-pressed', String(camera)); }
+    if (liveScreenStopButton) { var sharing = !!participant.isScreenShareEnabled; liveScreenStopButton.style.display = sharing ? '' : 'none'; }
   }
 
   function updateZoomButtons() {

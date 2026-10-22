@@ -8,12 +8,15 @@
   var ui = CHL.ui;
   var sb = CHL.sb;
 
-  // CHL's requested original five-tier competitive rank ladder. Keep team
+  // CHL's competitive rank ladder, lowest to highest. Keep team
   // league divisions A1–D5 separate; never insert unrelated rank tiers here.
   var TIERS = [
     { key: 'bronze', name: 'Bronze', icon: '🥉', divisions: ['I', 'II', 'III'], description: 'Entry rank and first step in the CHL competitive ladder.' },
     { key: 'silver', name: 'Silver', icon: '🥈', divisions: ['I', 'II', 'III'], description: 'Build consistency and progress through the Silver rank.' },
     { key: 'gold', name: 'Gold', icon: '🥇', divisions: ['I', 'II', 'III', 'IV'], description: 'Advance through Gold before reaching the elite ranks.' },
+    { key: 'platinum', name: 'Platinum', icon: '🛡️', divisions: ['I', 'II', 'III', 'IV'], description: 'Prove durability across Platinum to enter the elite ranks.' },
+    { key: 'diamond', name: 'Diamond', icon: '💎', divisions: ['I', 'II', 'III', 'IV'], description: 'Elite competitive rank reserved for consistent verified performers.' },
+    { key: 'heroic', name: 'Heroic', icon: '🏆', divisions: [], description: 'Top-tier competitive rank earned through sustained verified results.' },
     { key: 'master', name: 'Master', icon: '🔮', divisions: [], description: 'An advanced competitive rank earned through verified results.' },
     { key: 'grandmaster', name: 'Grandmaster', icon: '🌌', divisions: [], description: 'The highest CHL competitive rank, awarded only from verified results.' }
   ];

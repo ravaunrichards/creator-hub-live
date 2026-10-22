@@ -180,4 +180,11 @@
     if (route && route.params && route.params.length) renderDetail(out, route.params[0]);
     else renderList(out);
   };
+
+  // Deep-linkable team-creation route so "Create team" works from any entry point.
+  CHL.routes['/teams/create'] = function (out) {
+    if (!CHL.configured) { pageHead(out, 'Create and manage creator teams.'); out.appendChild(ui.setupNotice()); return; }
+    if (!CHL.user) { CHL.navigate('#/login'); return; }
+    renderCreateForm(out, function () { CHL.navigate('#/teams'); });
+  };
 })();
