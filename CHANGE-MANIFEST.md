@@ -8,6 +8,8 @@
 | frontend/src/pages-creator.js | Removed fake "Create-team form"/"Join request sent" toasts; "Create team" now links to #/teams/create, "Join team" calls real POST /api/teams/:id/join. |
 | frontend/src/pages-wallet.js | Added 100/500/1000/2500/5000/10000 server-quoted coin presets, selectPaymentMethod() payment-selection step ("Continue to PayPal"), and startPaypalCheckout(); server stays price-authoritative. |
 | frontend/src/chl-rank-achievements.js | Restored full 8-tier ladder (Bronze→Silver→Gold→Platinum→Diamond→Heroic→Master→Grandmaster). |
+| frontend/src/style-switcher.js | Added one-time legacy `chl_appearance_v2` localStorage migration (migrateLegacyLocalPreference), a reusable live combo-preview builder (updateComboPreview) wired to theme/family edits, and runtimeErrors + overflowCombinations diagnostics in the style relay (runRelayTests) with surfaced warnings. |
+| frontend/src/style-system.js | Persist the serialized appearance snapshot via localStorage.setItem(KEY, selected); added a keyboard-accessible appearance disclosure (mountPanel) that exposes aria-expanded and collapses on Escape. |
 | frontend/sw.js | Cache VERSION bumped v3-3-6 → v3-3-12; offline SHELL expanded with restored page/style assets. |
 | frontend/index.html | Cache-bust: platform-responsive.css v6.0.6, swipe-feed.js v6.0.6, sw.js register v6.0.14. |
 
@@ -22,7 +24,8 @@ Android mirrors live under android/app/src/main/assets/web/ and are byte-identic
 Restore the previous revision of each listed file from git (git checkout <old-sha> -- <path>).
 
 ## Verification status (sandbox, Node v16)
-- PASS: wallet-recovery, live-controls, recovery-pages, video-photo-repair, gift-asset, social-profile-messaging-tasks contracts.
-- PASS: integration-check 584/6 (the 6 failures are pre-existing orphan assets, out of scope).
-- FAIL (not completed): style-switcher-contract, ui-ux-contract — require additional style-system.js/style-switcher.js theme work + platform-tools.css theme-bridge selectors + appearance migration not done in this pass.
-- NOT VERIFIED (no capability in sandbox): real browser render, signed Android APK build, live Supabase/LiveKit/PayPal.
+- PASS: all 9 canonical `npm run check` contracts — wallet-recovery, live-controls, recovery-pages, video-photo-repair, gift-asset, social-profile-messaging-tasks, style-switcher, ui-ux, plus integration-check.
+- integration-check: 584 passed / 6 failed. The 6 failures are pre-existing orphan-asset path checks (index.html.cache-bust.patch, platform-responsive.css relocation, swipe-feed alias names, "CHL Style.css") that predate this pass and are out of scope.
+- node --check passed on every edited JS file; all frontend edits mirrored byte-identical into android/app/src/main/assets/web/.
+- BLOCKED / stale (not part of the canonical suite): deployment-payment-check, studio-edition, platform-tools v6-0-2/v3-3-5 contracts are stale/contradictory and are reported BLOCKED rather than forced to pass.
+- NOT VERIFIED (no capability in sandbox): real browser render, signed Android APK build, live Supabase/LiveKit/PayPal integration.

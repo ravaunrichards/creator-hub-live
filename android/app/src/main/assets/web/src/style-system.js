@@ -96,7 +96,8 @@
     root.style.colorScheme = theme.id === 'light' ? 'light' : 'dark';
     if (persist !== false) {
       try {
-        localStorage.setItem(KEY, JSON.stringify(preferences));
+        var selected = JSON.stringify(preferences);
+        localStorage.setItem(KEY, selected);
         localStorage.setItem(LEGACY_THEME_KEY, preferences.theme);
       } catch (_) {}
     }
@@ -170,6 +171,43 @@
     select.addEventListener('change', function () { var next = Object.assign({}, preferences); next[id] = select.value; apply(next, true, true); });
     wrap.appendChild(label); wrap.appendChild(select); panel.appendChild(wrap);
   }
+  function mountPanel(container) {
+    // Real, keyboard-accessible appearance disclosure. The toggle exposes its
+    // expanded state via aria-expanded and the whole panel collapses on Escape.
+    if (!container) return null;
+    var existing = document.getElementById('chl-style-panel');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var panel = document.createElement('section');
+    panel.className = 'chl-appearance-panel';
+    panel.id = 'chl-style-panel';
+    var toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'btn chl-appearance-toggle';
+    toggle.textContent = 'Appearance';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-controls', 'chl-appearance-fields');
+    var fields = document.createElement('div');
+    fields.id = 'chl-appearance-fields';
+    fields.className = 'chl-appearance-fields';
+    fields.hidden = true;
+    function setExpanded(open) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      fields.hidden = !open;
+    }
+    toggle.addEventListener('click', function () { setExpanded(toggle.getAttribute('aria-expanded') !== 'true'); });
+    panel.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') { setExpanded(false); toggle.focus(); }
+    });
+    createField(fields, 'Theme', 'theme', THEMES.map(function (t) { return { id: t.id, label: t.label }; }));
+    createField(fields, 'Layout', 'layout', LAYOUTS.map(function (l) { return { id: l.id, label: l.label }; }));
+    createField(fields, 'Font', 'font', FONTS.map(function (f) { return { id: f.id, label: f.label }; }));
+    createField(fields, 'Accent', 'accent', ACCENTS.map(function (a) { return { id: a.id, label: a.label }; }));
+    panel.appendChild(toggle);
+    panel.appendChild(fields);
+    container.appendChild(panel);
+    syncControls();
+    return panel;
+  }
   function setup() {
     // Remove any legacy launcher in a soft-reloaded page. Appearance controls
     // now live only under Settings and must never cover the live/chat controls.
@@ -186,6 +224,7 @@
     scales: [{ id: '0.9', label: 'Small' }, { id: '1', label: 'Standard' }, { id: '1.1', label: 'Large' }, { id: '1.2', label: 'Extra large' }],
     get: function () { return Object.assign({}, preferences); },
     apply: function (next) { apply(Object.assign({}, preferences, next || {}), true, true); },
+    mountPanel: mountPanel,
     open: function () { if (window.CHL && typeof CHL.navigate === 'function') CHL.navigate('#/settings/appearance'); }
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { once: true }); else setup();

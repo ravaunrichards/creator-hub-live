@@ -6,6 +6,7 @@
   var el = CHL.el;
   var GUEST_KEY = 'chl.appearance.guest.v1';
   var USER_KEY_PREFIX = 'chl.appearance.user.v1.';
+  var LEGACY_V2_KEY = 'chl_appearance_v2';
   var activeUserId = null;
   var syncPromise = null;
 
@@ -101,6 +102,22 @@
     }
     return normalize({ mode: 'combo', theme: theme, typography: value.font === 'readable' ? 'readable' : (value.font === 'studio' ? 'studio' : 'system'), surfaces: 'standard', density: value.layout === 'compact' || value.scale === 'compact' || Number(value.scale) < 0.95 ? 'compact' : 'comfortable', motion: 'standard', contrast: 'standard' });
   }
+  function migrateLegacyLocalPreference() {
+    // One-time migration of the older `chl_appearance_v2` localStorage record
+    // into the current per-user / guest token format, then remove the legacy key.
+    try {
+      var raw = localStorage.getItem(LEGACY_V2_KEY);
+      if (!raw) return false;
+      var parsed = JSON.parse(raw);
+      var migrated = validPreference(parsed) ? normalize(parsed) : legacyToPreference(parsed);
+      if (migrated) {
+        var target = CHL.user && CHL.user.id ? userKey(CHL.user.id) : GUEST_KEY;
+        if (!safeGet(target)) safeSet(target, migrated);
+      }
+      localStorage.removeItem(LEGACY_V2_KEY);
+      return !!migrated;
+    } catch (_) { return false; }
+  }
   async function saveAccountPreference(p) {
     if (!CHL.user || !CHL.user.id || !CHL.sb) return { synced: false, reason: 'guest' };
     try {
@@ -192,6 +209,8 @@
     var attrs = ['data-chl-theme','data-chl-typography','data-chl-surfaces','data-chl-density','data-chl-motion','data-chl-contrast'];
     var previous = attrs.map(function (name) { return root.getAttribute(name); });
     var passed = 0, failed = [], total = 0, contrastFailures = 0;
+    var runtimeErrors = [];
+    var overflowCombinations = 0;
     function luminance(hex) {
       var raw = hex.replace('#','');
       if (raw.length === 3) raw = raw.split('').map(function (c) { return c+c; }).join('');
@@ -208,7 +227,9 @@
               Object.keys(FAMILIES.motion).forEach(function (motion) {
                 Object.keys(FAMILIES.contrast).forEach(function (contrast) {
                   total++;
+                  try {
                   root.setAttribute(attrs[0], theme); root.setAttribute(attrs[1], typography); root.setAttribute(attrs[2], surfaces); root.setAttribute(attrs[3], density); root.setAttribute(attrs[4], motion); root.setAttribute(attrs[5], contrast);
+                  if (root.scrollWidth > root.clientWidth) overflowCombinations++;
                   var tokens = ['--bg','--bg2','--card','--line','--txt','--mut','--brand','--brand2','--radius'];
                   var values = tokens.map(readToken);
                   var cssValid = values.every(function (v) { return !!v; }) && CSS.supports('color', readToken('--bg')) && CSS.supports('border-radius', readToken('--radius'));
@@ -216,6 +237,7 @@
                   var contrastOk = ratio(txt,bg) >= 4.5 && ratio(txt,card) >= 4.5 && ratio(mut,bg) >= 4.5 && ratio(mut,card) >= 4.5 && ratio('#ffffff',brand) >= 4.5 && ratio('#ffffff',brand2) >= 4.5;
                   if (cssValid && contrastOk) passed++;
                   else { if (!contrastOk) contrastFailures++; if (failed.length < 12) failed.push({theme:theme,typography:typography,surfaces:surfaces,density:density,motion:motion,contrast:contrast,cssValid:cssValid,contrastOk:contrastOk}); }
+                  } catch (comboError) { if (runtimeErrors.length < 12) runtimeErrors.push({ theme:theme, typography:typography, surfaces:surfaces, density:density, motion:motion, contrast:contrast, message: comboError && comboError.message || String(comboError) }); }
                 });
               });
             });
@@ -225,7 +247,21 @@
     } finally {
       attrs.forEach(function (name, i) { if (previous[i] == null) root.removeAttribute(name); else root.setAttribute(name, previous[i]); });
     }
-    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth } };
+    return { total: total, passed: passed, failed: total-passed, contrastFailures: contrastFailures, runtimeErrors: runtimeErrors, overflowCombinations: overflowCombinations, examples: failed, viewport: { width: document.documentElement.clientWidth, height: document.documentElement.clientHeight, horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth } };
+  }
+
+  function updateComboPreview(previewEl, draft) {
+    // Rebuild the live combo preview chips from the current draft so the
+    // preview reflects theme/family edits before the user applies & saves.
+    if (!previewEl) return previewEl;
+    previewEl.innerHTML = '';
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: THEMES[draft.theme].label }));
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.typography[draft.typography].label }));
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.surfaces[draft.surfaces].label }));
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.density[draft.density].label }));
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.motion[draft.motion].label }));
+    previewEl.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.contrast[draft.contrast].label }));
+    return previewEl;
   }
 
   function render(container) {
@@ -263,16 +299,11 @@
         var themeField = el('label', { class: 'field chl-style-field' }); themeField.appendChild(el('span', { text: 'Base colour style' }));
         var themeSelect = el('select', { class: 'input', 'aria-label': 'Base colour style' });
         themeIds.forEach(function (id) { themeSelect.appendChild(el('option', { value: id }, THEMES[id].label)); }); themeSelect.value = draft.theme;
-        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
+        themeSelect.addEventListener('change', function () { draft.theme = themeSelect.value; updateComboPreview(preview, draft); }); themeField.appendChild(themeSelect); chooser.appendChild(themeField);
         var familyGrid = el('div', { class: 'chl-family-grid' }); chooser.appendChild(familyGrid);
-        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; })); });
+        familyIds.forEach(function (key) { familyGrid.appendChild(optionSelect(FAMILIES[key] && key.charAt(0).toUpperCase()+key.slice(1), key, draft[key], function (value) { draft[key] = value; updateComboPreview(preview, draft); })); });
         var preview = el('div', { class: 'chl-combo-preview' });
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: THEMES[draft.theme].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.typography[draft.typography].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.surfaces[draft.surfaces].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.density[draft.density].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.motion[draft.motion].label }));
-        preview.appendChild(el('span', { class: 'chl-preview-chip', text: FAMILIES.contrast[draft.contrast].label }));
+        updateComboPreview(preview, draft);
         chooser.appendChild(preview);
       }
     }
@@ -296,7 +327,10 @@
         if (result.viewport.horizontalOverflow) message += ' Warning: this viewport currently has horizontal overflow.';
         else message += ' No horizontal overflow at ' + result.viewport.width + '×' + result.viewport.height + '.';
         if (result.failed) message += ' ' + result.failed + ' combinations need review; contrast-related failures: ' + result.contrastFailures + '.';
-        say(message, result.failed || result.viewport.horizontalOverflow ? 'warning' : 'success');
+        if (result.overflowCombinations) message += ' ' + result.overflowCombinations + ' combinations triggered overflow.';
+        if (result.runtimeErrors && result.runtimeErrors.length) message += ' ' + result.runtimeErrors.length + ' combinations raised runtime errors.';
+        say(message, result.failed || result.viewport.horizontalOverflow || result.overflowCombinations || (result.runtimeErrors && result.runtimeErrors.length) ? 'warning' : 'success');
+        if (result.runtimeErrors && result.runtimeErrors.length) console.table(result.runtimeErrors);
         if (result.failed && result.examples.length) console.table(result.examples);
       } catch (error) { say('Style relay could not finish: ' + (error && error.message || 'unknown error'), 'error'); }
       finally { relayBtn.disabled = false; relayBtn.textContent = 'Run style relay tests'; }
@@ -314,11 +348,14 @@
     combos: COMBOS,
     normalize: normalize,
     getPreference: getPreference,
+    migrateLegacyLocalPreference: migrateLegacyLocalPreference,
+    updateComboPreview: updateComboPreview,
     apply: apply,
     save: save,
     render: render,
     runRelayTests: runRelayTests,
     onAuthChanged: onAuthChanged
   };
+  migrateLegacyLocalPreference();
   apply(safeGet(GUEST_KEY) || clone(DEFAULTS));
 })();
