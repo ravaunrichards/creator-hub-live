@@ -1,15 +1,15 @@
 {
-  "name": "creator-hub-live",
+  "name": "creator-hub-live-next",
+  "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "description": "Creator Hub Live Next — server-authoritative financial core + payment orchestration for a creator/livestream/commerce platform. New codebase, not derived from the reference project's source.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=16.17" },
   "scripts": {
-    "check": "node tests/integration-check.js && node tests/gift-asset-contract.mjs && node tests/social-profile-messaging-tasks-contract.mjs && node tests/style-switcher-contract.mjs && node tests/ui-ux-contract.mjs && node tests/wallet-recovery-contract.mjs && node tests/live-controls-contract.mjs && node tests/recovery-pages-contract.mjs && node tests/video-photo-repair-contract.mjs",
-    "backend:check": "cd backend && npm run check",
-    "backend:test": "cd backend && npm run test",
-    "sync:android-web": "node scripts/sync-web-assets.js",
-    "repair:contracts": "node tests/repair-contract.js",
-    "backend:smoke": "cd backend && npm run smoke",
-    "restore:missing": "node scripts/restore-missing-source-assets.mjs"
+    "test": "node --test test/",
+    "smoke": "node scripts/smoke.js",
+    "check": "node --test test/ && node scripts/smoke.js",
+    "start": "node src/http/server.js"
   },
-  "description": "Creator Hub Live full-stack project with restored original LIVE gift assets."
+  "dependencies": {}
 }
